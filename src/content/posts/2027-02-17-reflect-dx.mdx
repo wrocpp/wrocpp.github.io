@@ -1,0 +1,188 @@
+---
+title: "reflect_dx: auto-generated debugger pretty-printers and docs"
+slug: "reflect-dx"
+pubDate: 2027-02-17
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 22
+audience: working-cpp
+tags: [reflection, cpp26, debugger, lldb, gdb, natvis, docs, reflect_dx]
+summary: "Every C++ shop writes .natvis files by hand and they go stale. Every C++ shop wishes their headers were documented but can't face Doxygen XML. reflect_dx ships as a build-step tool: walk your headers with reflection, emit LLDB / GDB / Visual Studio pretty-printers + markdown docs. Your struct is your documentation and its debugger visualisation."
+draft: true
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+> **Library repo:** [github.com/wrocpp/reflect_dx](https://github.com/wrocpp/reflect_dx) · v0.1.0 · MIT.
+> **Two tools in one repo:** `reflect-pretty` (debugger visualisation) + `reflect-docs` (documentation).
+
+Two universal C++ papercuts this post closes.
+
+## Papercut #1: debugger pretty-printers
+
+The default LLDB / GDB / Visual Studio debugger view of a nested struct is a tree of braces:
+
+```
+(lldb) p user
+(User) {
+  name = {
+    _M_local_buf = ...
+    _M_string_length = 5
+  }
+  age = 40
+  admin = true
+  home = {
+    city = { _M_local_buf = ..., _M_string_length = 6 }
+    postal_code = 12345
+  }
+}
+```
+
+You can make this nicer by writing a pretty-printer — a `.natvis` XML blob for Visual Studio, a Python formatter for LLDB, a Python formatter for GDB. Every team I've worked with writes one for their critical types and then watches it go stale as the types evolve.
+
+`reflect-pretty` emits the formatter **at build time** from your reflected types:
+
+```sh
+$ reflect-pretty include/models.hpp \
+    --out-natvis  debug/models.natvis \
+    --out-lldb    debug/models.lldb.py \
+    --out-gdb     debug/models.gdb.py
+```
+
+Now:
+
+```
+(lldb) p user
+(User) { name="Filip" age=40 admin=true home=Address{city="Warsaw" postal=12345} }
+```
+
+Change a struct, re-run the tool, the formatter follows.
+
+## Papercut #2: documentation
+
+Doxygen is 30 years old and still the standard. Its output looks 30 years old too. Modern alternatives (Sphinx-cpp, Hugo-doc) mostly parse Doxygen XML under the hood.
+
+The real problem: Doxygen doesn't know about your *annotations* — the `[[=json_name("id")]]` that names the JSON wire field, the `[[=gen::range(0, 150)]]` that constrains property test inputs. Those are where the actual semantic information lives in a reflection-driven codebase, and Doxygen can't see them.
+
+`reflect-docs` walks your headers with reflection, extracts identifiers + annotations + comments, and emits modern markdown / HTML:
+
+```sh
+$ reflect-docs include/models.hpp --out docs/api/
+```
+
+Produces `docs/api/user.md`:
+
+```markdown
+# `struct User`
+
+Creates a new user account. (from `[[=description("...")]]`)
+
+| Field | Type | Constraints | Description |
+|---|---|---|---|
+| `name` | `std::string` | — | Display name |
+| `age`  | `int` | `gen::range(0, 150)` | — |
+| `email`| `std::string` | `gen::regex("...")` | — |
+| `admin`| `bool` | — | — |
+
+## JSON wire format
+
+```json
+{
+  "name":"filip",
+  "age":40,
+  "email":"filip@example.com",
+  "admin":false
+}
+```
+
+(generated from `reflect_json` schema, shows cross-format renames if any)
+```
+
+Your `struct` declaration is your documentation source of truth.
+
+## How the build step works
+
+`reflect-pretty` and `reflect-docs` are thin binaries built on top of the **clang-p2996 compiler frontend as a library**. When you run `reflect-pretty models.hpp`, it:
+
+1. Invokes clang-p2996 frontend to parse `models.hpp`.
+2. Walks every top-level struct/class reflection (`namespace_members_of(^^your_namespace)` — a P3547-ish capability via namespace reflection).
+3. For each type, generates an emitter snippet in the target format:
+   - **natvis:** XML with `<DisplayString>` + `<Expand>` blocks.
+   - **LLDB:** Python class subclassing `lldb.SBSyntheticValueProvider`.
+   - **GDB:** Python class subclassing `gdb.printing.PrettyPrinter`.
+4. Writes the output file.
+
+The generated Python/XML files are small — you can check them in, review diffs, rerun in CI.
+
+## Walking for pretty-printers (sketch)
+
+```cpp
+template <typename T>
+consteval std::string natvis_snippet() {
+    std::string out;
+    out += "<Type Name=\"";
+    out += std::meta::display_string_of(^^T);
+    out += "\">\n  <DisplayString>{" ;
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    bool first = true;
+    template for (constexpr auto m
+                  : std::define_static_array(
+                      std::meta::nonstatic_data_members_of(^^T, ctx))) {
+        if (!first) out += " ";
+        first = false;
+        out += std::meta::identifier_of(m);
+        out += "={";
+        out += std::meta::identifier_of(m);
+        out += "}";
+    }
+    out += "}</DisplayString>\n  <Expand>";
+    template for (constexpr auto m
+                  : std::define_static_array(
+                      std::meta::nonstatic_data_members_of(^^T, ctx))) {
+        out += "\n    <Item Name=\"";
+        out += std::meta::identifier_of(m);
+        out += "\">";
+        out += std::meta::identifier_of(m);
+        out += "</Item>";
+    }
+    out += "\n  </Expand>\n</Type>";
+    return out;
+}
+```
+
+One function walks the fields, emits the visualisation. `reflect-pretty` composes this over every struct it finds in the header, producing a `.natvis` file.
+
+## Comparison
+
+| Tool | Source of truth | Manual per-field writing | Stays in sync |
+|---|---|---|---|
+| Hand-written natvis | .natvis files | Yes | No |
+| Visual Studio native | debug info | No | Partial (works for primitives) |
+| LLDB / GDB pythons | .py files | Yes | No |
+| Rust `#[derive(Debug)]` | The struct | No (auto) | Yes |
+| **reflect_dx** | **The struct** | **No (reflection)** | **Yes (re-run on change)** |
+
+<GodboltEmbed id="TODOdx" title="reflect_dx — natvis emission from a reflection walk" />
+
+## Why both tools in one repo
+
+`reflect-pretty` and `reflect-docs` share 80% of their plumbing: a frontend wrapper around clang-p2996 that exposes reflection to a host program as a C++ library. Splitting them would duplicate that infrastructure. Keeping them together lets teams opt into one or both without adding a second dependency.
+
+Future sibling tool in the same repo: `reflect-bindings` — emit Python / Lua / WASM bindings from a C++ header. Follow-up post.
+
+## What the library ships
+
+Under [github.com/wrocpp/reflect_dx](https://github.com/wrocpp/reflect_dx):
+
+- `reflect-pretty` CLI — emits .natvis / .lldb.py / .gdb.py.
+- `reflect-docs` CLI — emits markdown / HTML / JSON Schema.
+- `libreflect_dx_core.a` — the shared clang-p2996-frontend wrapper.
+- CMake integration: `reflect_dx_generate()` CMake function drops the outputs into your build tree automatically.
+- Sample `.natvis` / LLDB output for common STL types.
+
+## What's next
+
+- **[Post 23 — reflect_telemetry](/posts/reflect-telemetry/)** — compile-time metrics for production.
+- Companion Monday short: *"How LLDB summary providers actually work"*.

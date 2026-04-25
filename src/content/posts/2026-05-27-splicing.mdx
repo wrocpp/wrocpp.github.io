@@ -1,0 +1,170 @@
+---
+title: "Splicing: [: r :] and putting reflections back into code"
+slug: "splicing"
+pubDate: 2026-05-27
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 3
+audience: working-cpp
+tags: [reflection, cpp26, splicer, p2996]
+summary: "Splicing is the inverse of ^^: it takes a std::meta::info and drops the referred entity back into your source. Types, expressions, template arguments, member accesses — all round-trippable."
+draft: true
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+[Post 2](/posts/first-reflection/) covered reflecting *into* `std::meta::info`. The hard question was: how do we get *out* again — how do we use a reflection as if we'd written the original name?
+
+The answer is the splicer, `[: r :]`. It's the inverse of `^^`. Where `^^int` gives you an `info`, `[:r:]` (for a reflection `r` of `int`) gives you back `int` — in a type position, an expression position, or wherever the original entity would fit.
+
+## Four things you can splice
+
+A splicer is context-sensitive: it unwraps the reflection into whatever the surrounding syntax expects.
+
+### Types
+
+```cpp
+constexpr auto r = ^^std::vector<int>;
+[:r:]            v;      // std::vector<int> v;
+[:r:]::iterator  it;     // std::vector<int>::iterator
+```
+
+If the reflection refers to a type and the context expects a type, the splicer drops that type in.
+
+### Expressions
+
+```cpp
+int x = 42;
+constexpr auto r = ^^x;
+int y = [:r:];           // reads the value of x
+[:r:] = 99;              // assigns to x
+```
+
+Reflections of variables splice back as lvalues.
+
+### Template arguments
+
+```cpp
+template <int N> struct array_of {
+    int data[N];
+};
+
+constexpr std::meta::info r_size = std::meta::reflect_constant(10);
+array_of<[:r_size:]> a;   // array_of<10>
+```
+
+This is how you get a value out of an `info` for use in a template-id position.
+
+### Member accesses — the load-bearing one
+
+This is the move that powers every serializer, printer, and walker we'll write:
+
+```cpp
+template <std::meta::info M, typename T>
+auto read(T const& obj) {
+    return obj.[: M :];       // obj.x, obj.y, obj.home, ...
+}
+```
+
+`[: M :]` in member-access position resolves to the specific `T::<member>` that `M` reflects. Combined with `template for` over the list of members, this is how we visit every field.
+
+## The shape of a splice
+
+```cpp
+[:  r  :]
+```
+
+Two colons, each next to a bracket. Whitespace inside is optional but conventional for readability. The syntax is a nod to the `::` scope operator — "open the reflection, let me in."
+
+## What `r` has to be
+
+`r` must be a **constant expression** of type `std::meta::info`. This is why post 2's `nonstatic_data_members_of` returns a `vector` (fine for iteration) but we can't splice `members[0]` directly — `members` is a `consteval` vector, not a `constexpr` one.
+
+Three patterns for making reflections splice-ready:
+
+1. **Template non-type parameter** — our favourite:
+   ```cpp
+   template <std::meta::info M, typename T>
+   void do_thing(T const& obj) { /* [:M:] is fine, M is a template NTTP */ }
+   ```
+   Usable inside a `template for` loop by passing `m` as a template argument each iteration.
+
+2. **`constexpr auto` variable** — direct:
+   ```cpp
+   constexpr auto r = ^^int;
+   [:r:] x = 0;   // int x = 0;
+   ```
+
+3. **`std::define_static_array`** — promote a `consteval` vector to a `constexpr` span:
+   ```cpp
+   constexpr auto members = std::define_static_array(
+       std::meta::nonstatic_data_members_of(^^T, ctx));
+   // members[0], members.subspan(1), etc. are now constant expressions
+   ```
+
+## Round-tripping
+
+Reflect a type, immediately splice it back, and you have the original:
+
+```cpp
+using Same = [: ^^int :];          // int
+static_assert(std::is_same_v<Same, int>);
+```
+
+That's not useful on its own — but swap `^^int` for *a computation that produces `^^int`* and you've got code generation:
+
+```cpp
+template <typename T>
+using decayed_t = [: std::meta::dealias(std::meta::type_of(^^T)) :];
+// strips aliases; e.g. decayed_t<std::string::size_type> = std::size_t
+```
+
+## A worked example: spliced member access
+
+Putting `[:M:]` in member-access position, over a list of members, is exactly the serializer pattern:
+
+```cpp
+template <std::meta::info M, typename T>
+void dump_field(T const& obj) {
+    std::println("  {} = {}",
+                 std::meta::identifier_of(M),
+                 obj.[: M :]);
+}
+
+template <typename T>
+void dump(T const& obj) {
+    constexpr auto ctx     = std::meta::access_context::unchecked();
+    constexpr auto members = std::define_static_array(
+        std::meta::nonstatic_data_members_of(^^T, ctx));
+    std::println("{}:", std::meta::display_string_of(^^T));
+    template for (constexpr auto m : members) {
+        dump_field<m>(obj);
+    }
+}
+
+struct Point { int x; int y; };
+
+int main() {
+    dump(Point{3, 4});
+    // Point:
+    //   x = 3
+    //   y = 4
+}
+```
+
+`dump_field<m>` — we pass the reflection as a template argument so `M` is a constant expression inside the helper, and `obj.[:M:]` is a real member access the compiler can check.
+
+<GodboltEmbed id="TODOsplicing" title="Splicing — reflections back to code" />
+
+## What splicing isn't
+
+- **Not a string substitution.** `[:^^int:]` is not "paste the string 'int'." It's a compiler operation on an `info` value. Misspelled reflections don't exist.
+- **Not runtime.** Every splice is resolved during compilation. By the time `main` starts, `obj.[:M:]` has become `obj.x` or `obj.y` in object code.
+- **Not ambiguous.** The context (type position, expression position, member position) determines which form the splicer takes. You don't need to annotate it.
+
+## What's next
+
+- **[Post 4 — `template for`](/posts/template-for-expansion-statements/)** — loops that unroll at compile time, the natural partner to splicing.
+- **[Post 8 — A 40-line JSON serializer](/posts/json-naive/)** — full payoff: `^^` + `[:r:]` + `template for` fused into a working library.

@@ -1,0 +1,162 @@
+---
+title: "Goodbye magic_enum: enum reflection done right"
+slug: "enum-to-string"
+pubDate: 2026-06-24
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 5
+audience: working-cpp
+tags: [reflection, cpp26, enum, magic_enum]
+summary: "A reflection-driven enum↔string library in 30 lines. No __PRETTY_FUNCTION__ tricks, no compile-time range knob, no compiler-specific behaviour — and unbounded, including enum values beyond 128."
+draft: true
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+[`magic_enum`](https://github.com/Neargye/magic_enum) is one of the cleverest tricks in modern C++. It gives you `enum → string` and back by extracting names from `__PRETTY_FUNCTION__` in a `constexpr` loop over a fixed integer range. It works well — *within its limits*. Those limits:
+
+- Range-bound: default `[-128, 128]`. Outside that, it silently returns nothing. Knob `MAGIC_ENUM_RANGE_MIN`/`MAX` widens — at compile-time cost.
+- Compiler-specific: it parses `__PRETTY_FUNCTION__`, whose format is GCC / Clang / MSVC each different. Format changes break it.
+- Slow to compile: instantiates N specialisations where N is the range size.
+- Can't deal with flags enums that combine values (`1 | 2 | 4` isn't in the range).
+
+P2996 collapses this. `enumerators_of(^^E)` returns a list of every declared enumerator, directly from the compiler. No range, no format parsing, no knob.
+
+## The core: 20 lines
+
+```cpp
+#include <experimental/meta>
+#include <optional>
+#include <string_view>
+
+namespace renum {
+
+template <typename E>
+consteval auto enumerators_of_static() {
+    return std::define_static_array(std::meta::enumerators_of(^^E));
+}
+
+template <typename E>
+constexpr std::string_view to_string(E value) {
+    template for (constexpr auto e : enumerators_of_static<E>()) {
+        if ([: e :] == value) return std::meta::identifier_of(e);
+    }
+    return "<unknown>";
+}
+
+template <typename E>
+constexpr std::optional<E> from_string(std::string_view name) {
+    template for (constexpr auto e : enumerators_of_static<E>()) {
+        if (std::meta::identifier_of(e) == name) return E{[: e :]};
+    }
+    return std::nullopt;
+}
+
+}  // namespace renum
+```
+
+Three moves:
+
+1. **`enumerators_of(^^E)`** — `std::vector<std::meta::info>`, one `info` per enumerator, declared order.
+2. **`template for (constexpr auto e : ...)`** — iteration at compile time. `e` is a reflection of the individual enumerator.
+3. **`[: e :] == value`** — splice the enumerator back into code. In expression context, `[: e :]` is a value of type `E`, equal to that enumerator's constant.
+
+The compiler unrolls the loop into a short-circuited if/else chain. `to_string(Color::green)` becomes `return "green"` after optimization — as efficient as a hand-written switch.
+
+## Usage
+
+```cpp
+enum class Color { red, green, blue };
+
+static_assert(renum::to_string(Color::green) == "green");
+static_assert(renum::from_string<Color>("blue") == Color::blue);
+static_assert(renum::from_string<Color>("purple") == std::nullopt);
+```
+
+Everything is `constexpr`. You can use these results in static asserts, template parameters, anywhere.
+
+## What about flags enums?
+
+Flags enums use bitwise combinations — `Permission::read | Permission::write = 3`, which is not itself a declared enumerator. Reflection handles this because you write the decomposition yourself, you're not bound by what `enumerators_of` returned:
+
+```cpp
+enum class Permission : unsigned { read = 1, write = 2, exec = 4 };
+
+template <typename E>
+constexpr std::string to_flags_string(E value) {
+    using U = std::underlying_type_t<E>;
+    std::string out;
+    template for (constexpr auto e : enumerators_of_static<E>()) {
+        if ((static_cast<U>(value) & static_cast<U>([: e :])) != 0) {
+            if (!out.empty()) out += '|';
+            out += std::meta::identifier_of(e);
+        }
+    }
+    return out.empty() ? "0" : out;
+}
+
+// to_flags_string(Permission::read | Permission::write) == "read|write"
+```
+
+`magic_enum::enum_flags_name` does this too — but only up to the range limit.
+
+## What you lose vs. `magic_enum`
+
+Honestly, not much that matters:
+
+- **Single-statement usage at any scope.** `magic_enum::enum_name(x)` is usable anywhere without setup. Our version requires you to have included the header. Same.
+- **Automatic detection of scoped vs unscoped enums.** Both work identically in our code.
+- **Works on `enum` (unscoped)**. Works the same.
+
+## What you gain
+
+- **Unbounded range.** Any enumerator value, including ones larger than `INT_MAX`.
+- **No compile-time knob.** Whatever you declared, reflection sees. No `MAGIC_ENUM_RANGE_MAX`.
+- **Faster compiles.** `magic_enum` at high range instantiates thousands of template specialisations. We instantiate one per real enumerator.
+- **No compiler-specific parsing.** Works the same on clang-p2996 / gcc / MSVC — wherever P2996 ships.
+- **First-class IDE support.** Your debugger and IDE navigate into reflection library calls like any other code. `__PRETTY_FUNCTION__` parsing is invisible to both.
+
+## Adding `std::formatter`
+
+A one-liner makes enum values `{}`-printable in `std::format`:
+
+```cpp
+template <typename E>
+    requires std::is_enum_v<E>
+struct std::formatter<E> : std::formatter<std::string_view> {
+    auto format(E value, std::format_context& ctx) const {
+        return std::formatter<std::string_view>::format(
+            renum::to_string(value), ctx);
+    }
+};
+
+std::println("{}", Color::red);  // red
+```
+
+## The full demo
+
+```cpp
+#include <experimental/meta>
+#include <print>
+
+enum class Color { red, green, blue };
+enum class Permission : unsigned { read = 1, write = 2, exec = 4 };
+
+int main() {
+    std::println("{}", renum::to_string(Color::green));   // green
+    std::println("{}", renum::from_string<Color>("blue")
+                          .transform([](auto c){ return renum::to_string(c); })
+                          .value_or("<none>"));           // blue
+    std::println("{}", renum::to_flags_string(
+                          Permission::read | Permission::exec));  // read|exec
+}
+```
+
+<GodboltEmbed id="TODOenumstr" title="Goodbye magic_enum — reflection-driven enum↔string" />
+
+## What's next
+
+- **[Post 6 — Auto `std::formatter<T>` for any aggregate](/posts/auto-formatter/)** — the same pattern, applied to struct printing.
+- **[Post 7 — Derive equality, hashing, ordering](/posts/derive-eq-hash/)** — from struct shape.

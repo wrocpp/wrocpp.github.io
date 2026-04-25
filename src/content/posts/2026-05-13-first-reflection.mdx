@@ -1,0 +1,148 @@
+---
+title: "Your first ^^: reflecting types and walking members"
+slug: "first-reflection"
+pubDate: 2026-05-13
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 2
+audience: mixed
+tags: [reflection, cpp26, fundamentals, p2996]
+summary: "Hands-on introduction to C++26 reflection: the ^^ operator, std::meta::info, and walking struct members. We take the post-1 teaser apart and rebuild it from primitives."
+draft: true
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+[Post 1](/posts/why-cpp26-reflection-matters/) showed a 40-line JSON serializer and waved at five new pieces of C++. This post builds three of those pieces from scratch: the reflect operator `^^`, the `std::meta::info` handle, and the queries that let you walk a struct's members.
+
+By the end, you'll have a working "print every field of any struct" utility in about twelve lines.
+
+## The one import
+
+Everything reflection-related lives in one header:
+
+```cpp
+#include <experimental/meta>
+```
+
+In clang-p2996 this also exists as plain `<meta>`. Both work; stick with `experimental` while the feature is, well, experimental.
+
+## The reflect operator
+
+`^^` takes an *entity* and returns a value of type `std::meta::info`:
+
+```cpp
+constexpr std::meta::info r_int    = ^^int;
+constexpr std::meta::info r_vector = ^^std::vector<int>;
+constexpr std::meta::info r_printf = ^^std::printf;
+constexpr std::meta::info r_std    = ^^std;
+```
+
+An "entity" is anything your program can name: types, variables, functions, namespaces, templates, even expressions. `std::meta::info` is opaque — you can compare two of them (`r_int == ^^int`), copy them, store them in containers, pass them to `consteval` functions — but you can't inspect their bits directly. All access goes through `std::meta::` queries.
+
+Three things worth internalising:
+
+- **Values, not types.** A reflection is a `constexpr` value. `^^int` is not a type; it's a handle you can compare, return from functions, and pass as a non-type template parameter. Templates don't need to be involved.
+- **Compile-time only.** `^^T` only has meaning during constant evaluation. You can put a `std::meta::info` in a `constexpr` variable, but `std::meta::info` objects have no runtime representation.
+- **Opaque handles.** The compiler decides the layout. Every operation is a `consteval` library function.
+
+## Walking non-static data members
+
+Given a reflection of a class type, you can ask the compiler for its non-static data members:
+
+```cpp
+struct Point { int x; int y; };
+
+constexpr auto ctx = std::meta::access_context::unchecked();
+constexpr auto members = std::meta::nonstatic_data_members_of(^^Point, ctx);
+// members is a std::vector<std::meta::info> with two entries:
+//   one for Point::x, one for Point::y
+```
+
+Two things to name:
+
+1. **`access_context`.** Member queries take an access context because what's visible depends on "who is asking." `::unchecked()` ignores access control; `::current()` uses the caller's privileges; `::unprivileged()` limits to public. For library code that walks members anyway, `unchecked` is the right choice.
+2. **Returns a `std::vector`, not a pack.** The result is a regular consteval `std::vector` of reflections. That's simple to work with but — heads up — a `vector` can't be used directly as a `template for` range because its storage is heap-transient. We fix that next post.
+
+Querying each member:
+
+```cpp
+for (auto m : members) {
+    std::println("field: {}  type: {}",
+                 std::meta::identifier_of(m),          // "x" / "y"
+                 std::meta::display_string_of(
+                     std::meta::type_of(m)));          // "int"
+}
+```
+
+- `identifier_of(info)` — name as a `std::string_view`.
+- `type_of(info)` — reflection of the member's type.
+- `display_string_of(info)` — a human-readable string for printing (pretty-printer, not a mangled name).
+
+## Putting it together
+
+```cpp
+#include <experimental/meta>
+#include <print>
+
+struct Point { int x; int y; };
+
+template <typename T>
+consteval auto describe() {
+    std::string out;
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    for (auto m : std::meta::nonstatic_data_members_of(^^T, ctx)) {
+        out += std::meta::identifier_of(m);
+        out += ": ";
+        out += std::meta::display_string_of(std::meta::type_of(m));
+        out += '\n';
+    }
+    return out;
+}
+
+int main() {
+    static constexpr auto desc = describe<Point>();
+    std::println("Point:\n{}", desc);
+}
+```
+
+Output:
+
+```
+Point:
+x: int
+y: int
+```
+
+Twelve meaningful lines. No macros, no external tool, no `#define BOOST_...`.
+
+<GodboltEmbed id="TODOfirstrefl" title="Your first ^^ — walking Point's members" />
+
+## The primitives you just used
+
+| Primitive | Role |
+|---|---|
+| `^^T` | Reflect a type into `std::meta::info`. |
+| `std::meta::info` | Opaque compile-time handle. |
+| `nonstatic_data_members_of(info, ctx)` | List the fields of a class. |
+| `identifier_of(info)` | Get the name as `string_view`. |
+| `type_of(info)` | Get a reflection of the member's type. |
+| `display_string_of(info)` | Human-readable printable form. |
+
+Everything else in the series composes these.
+
+## What's missing (and comes next)
+
+Two obvious gaps:
+
+1. **Actually reading the field values.** `members[i]` reflects `Point::x` the field declaration — it doesn't give you the value of `p.x` for a specific `p`. You need the *splicer* `[: r :]` for that: `obj.[:m:]`. That's [post 3](/posts/splicing/).
+2. **Iterating at compile time without a plain `for`.** The walk above uses a runtime `for` that happens to run during `consteval`. To emit per-member code in a non-`consteval` context, you need an *expansion statement* — `template for`. That's [post 4](/posts/template-for-expansion-statements/).
+
+Once we have splicing and expansion statements, the post-1 JSON serializer teaser isn't a teaser anymore — it's the natural composition of these primitives.
+
+## What's next
+
+- **[Post 3 — Splicing with `[: r :]`](/posts/splicing/)** — turn a reflection back into code.
+- **[Post 4 — `template for`](/posts/template-for-expansion-statements/)** — iterate reflections at compile time.

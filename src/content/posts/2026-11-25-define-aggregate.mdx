@@ -1,0 +1,219 @@
+---
+title: "define_aggregate: synthesising types at compile time"
+slug: "define-aggregate"
+pubDate: 2026-11-25
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 16
+audience: working-cpp
+tags: [reflection, cpp26, type-synthesis, define_aggregate]
+summary: "TypeScript's Pick, Omit, and Partial have direct C++26 equivalents. define_aggregate lets you construct a new type from a list of member specs — opening up type-level programming that was previously pure metaprogramming wizardry."
+draft: true
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+TypeScript:
+
+```typescript
+interface User { name: string; age: number; password_hash: string; }
+
+type PublicUser = Omit<User, 'password_hash'>;
+// { name: string; age: number }
+
+type UserPatch = Partial<User>;
+// { name?: string; age?: number; password_hash?: string }
+```
+
+Until C++26, C++ had no direct analog. Template metaprogramming could approximate it (`boost::hana`, `std::tuple` shenanigans), but the result was a tuple, not a named struct. P2996's `define_aggregate` gives you real types back.
+
+## The primitive
+
+```cpp
+namespace std::meta {
+
+consteval auto define_aggregate(info target, std::span<info const> members) -> info;
+consteval auto data_member_spec(info type, data_member_options opts) -> info;
+
+}
+```
+
+`define_aggregate` takes a target (an incomplete class template specialisation) and a list of `data_member_spec`s. It finishes the target with those members. The returned `info` reflects the now-defined type.
+
+Usage pattern:
+
+```cpp
+template <typename T>
+struct impl;   // forward-declared, never defined by hand
+
+template <typename T>
+using Picked = [: build_picked<T>() :];
+
+template <typename T>
+consteval auto build_picked() {
+    std::vector<std::meta::info> specs;
+    // ... collect data_member_specs ...
+    return std::meta::define_aggregate(^^impl<T>, specs);
+}
+
+Picked<User> u;   // real, instantiable type
+```
+
+The splicer `[: ... :]` pulls the synthesised type back into C++ source.
+
+## `Pick<T, Fields...>`
+
+Keep only named members:
+
+```cpp
+template <typename T, fixed_string... Fields>
+struct pick_impl;
+
+template <typename T, fixed_string... Fields>
+using Pick = [: build_pick<T, Fields...>() :];
+
+template <typename T, fixed_string... Fields>
+consteval auto build_pick() {
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    std::vector<std::meta::info> specs;
+    for (auto m : std::meta::nonstatic_data_members_of(^^T, ctx)) {
+        auto name = std::meta::identifier_of(m);
+        if (((name == std::string_view{Fields.data}) || ...)) {
+            specs.push_back(std::meta::data_member_spec(
+                std::meta::type_of(m),
+                { .name = std::define_static_string(name) }));
+        }
+    }
+    return std::meta::define_aggregate(^^pick_impl<T, Fields...>, specs);
+}
+```
+
+Usage:
+
+```cpp
+struct User { std::string name; int age; std::string password_hash; bool admin; };
+
+using PublicUser = Pick<User, "name", "age", "admin">;
+// struct { std::string name; int age; bool admin; };
+```
+
+`PublicUser` is a real type. You can construct it, name its fields (`pu.name`), pass it across ABIs, hash it, serialise it with [`rjson`](/posts/json-naive/). It's indistinguishable from a hand-written struct.
+
+## `Omit<T, Fields...>`
+
+Inverse of `Pick`:
+
+```cpp
+template <typename T, fixed_string... Fields>
+consteval auto build_omit() {
+    /* same as Pick, but skip members whose name is in Fields */
+}
+
+using PublicUser = Omit<User, "password_hash">;
+```
+
+## `Partial<T>`: wrap every field in `std::optional`
+
+```cpp
+template <typename T>
+consteval auto build_partial() {
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    std::vector<std::meta::info> specs;
+    for (auto m : std::meta::nonstatic_data_members_of(^^T, ctx)) {
+        specs.push_back(std::meta::data_member_spec(
+            std::meta::substitute(^^std::optional, {std::meta::type_of(m)}),
+            { .name = std::define_static_string(std::meta::identifier_of(m)) }));
+    }
+    return std::meta::define_aggregate(^^partial_impl<T>, specs);
+}
+
+using UserPatch = Partial<User>;
+// struct { optional<string> name; optional<int> age; ... };
+```
+
+`substitute` is the other key primitive — it instantiates a template with given arguments at compile time, returning an `info`. `substitute(^^std::optional, {type_of(m)})` gives the reflection of `std::optional<T>` for that field's `T`.
+
+## `Required<T>`: inverse of Partial
+
+Strip `std::optional` from every field:
+
+```cpp
+template <typename T>
+consteval auto build_required() {
+    std::vector<std::meta::info> specs;
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    for (auto m : std::meta::nonstatic_data_members_of(^^T, ctx)) {
+        auto t = std::meta::type_of(m);
+        if (is_optional(t)) {
+            // unwrap T from optional<T>
+            t = std::meta::template_arguments_of(t)[0];
+        }
+        specs.push_back(std::meta::data_member_spec(
+            t, { .name = std::define_static_string(std::meta::identifier_of(m)) }));
+    }
+    return std::meta::define_aggregate(^^required_impl<T>, specs);
+}
+```
+
+`Required<UserPatch>` recovers a `User`-like type (modulo ordering).
+
+## `Readonly<T>`: make every field `const`
+
+```cpp
+template <typename T>
+consteval auto build_readonly() {
+    std::vector<std::meta::info> specs;
+    for (auto m : std::meta::nonstatic_data_members_of(^^T, ctx)) {
+        auto t = std::meta::add_const(std::meta::type_of(m));
+        specs.push_back(std::meta::data_member_spec(t, {/* ... */}));
+    }
+    return std::meta::define_aggregate(^^readonly_impl<T>, specs);
+}
+```
+
+## Beyond TypeScript
+
+TypeScript's utility types stop at the type level — you can't inspect why they work at runtime. In C++, `Pick<User, "name">` *is* a first-class type:
+
+- You can serialise a `Pick<User, "name">` with `reflect_json`.
+- You can pass it across a network as a MessagePack `Pick<User, ...>`.
+- You can store it in a database column-by-column via `reflect_orm`.
+- You can diff two `Partial<User>`s field-by-field.
+
+Every library we've built in this series composes with every synthesised type automatically — because they all walk reflection, and the synthesised type has genuine reflection.
+
+## Data transfer objects
+
+A common enterprise pattern:
+
+```cpp
+struct User { /* 30 fields, including sensitive ones */ };
+struct UserPublicView   = Omit<User, "password_hash", "internal_id", "created_at_for_audit">;
+struct UserAdminView    = Pick<User, "id", "name", "email", "role", "last_login">;
+struct UserRegistration = Pick<User, "name", "email", "password">;
+```
+
+Each is a proper type you can return from API handlers, serialise, validate. You write the field list once; every variant falls out.
+
+## Cost model
+
+`define_aggregate` runs at compile time. The synthesised type has no runtime marker — it's a genuine C++ type with a proper layout, alignment, size, and `std::is_standard_layout_v`-ness (when applicable). Zero runtime overhead.
+
+Compile-time cost scales with the number of `data_member_spec`s — linear in field count. For types with a few dozen fields, the overhead is negligible. For types with hundreds, measure; but it's still cheaper than the equivalent tuple-based TMP.
+
+## Caveats (again, implementation-dependent)
+
+`define_aggregate` is newer and less settled than the other P2996 primitives. clang-p2996 implements it behind the `-freflection-latest` flag, but some edge cases (inheritance, virtual functions, member templates) may not round-trip cleanly. The simpler uses above (flat aggregates) are reliable.
+
+## What this enables long-term
+
+Combined with the serialization, CLI, ORM, DI, and mocking machinery from earlier posts, `define_aggregate` closes the loop. You can describe data **shapes** declaratively — by filtering, transforming, or combining existing types — and every surface (wire formats, database columns, help text, test doubles) follows. That's the programming model TypeScript has offered since 2016. C++ has it now, at compile time, zero-cost.
+
+<GodboltEmbed id="TODOdefineag" title="Pick / Omit / Partial in C++26" />
+
+## What's next
+
+- **[Post 17 — Replacing Qt's MOC](/posts/qt-moc-replacement/)** — a famous codegen tool retired by reflection.
+- **[Post 18 — Reflection across languages](/posts/cross-language-comparison/)** — the capstone.
