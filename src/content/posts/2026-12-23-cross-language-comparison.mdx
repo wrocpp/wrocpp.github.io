@@ -1,0 +1,396 @@
+---
+title: "Reflection across languages: C++26 vs Rust, C#, Java, TypeScript, Go, Python"
+slug: "cross-language-comparison"
+pubDate: 2026-12-23
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 18
+audience: polyglot
+tags: [reflection, cpp26, comparison, rust, csharp, java, typescript, go, python]
+summary: "Capstone: the canonical reflection tasks — serialize, enum↔string, CLI parsing, ORM row binding — side by side in seven mainstream languages. Where C++ lands, and what the uniquely-C++ angle actually gives you."
+draft: true
+---
+
+Eighteen posts in. This one zooms out. We take five canonical tasks and line them up across seven languages: **Rust**, **C#**, **Java**, **TypeScript**, **Go**, **Python**, and **C++26**. Not to declare a winner — there isn't one — but to be precise about what kind of reflection each gives you, at what cost, with what ceiling.
+
+## The five tasks
+
+1. **Serialize a struct to JSON with field rename and skip.**
+2. **Enum ↔ string conversion (unbounded).**
+3. **Parse argv into a typed struct (CLI).**
+4. **Insert a row into a database table from a struct.**
+5. **Generate a mock from an interface.**
+
+Each task shows what the "standard idiom" looks like in each language — the thing a working engineer actually writes.
+
+## Task 1 — JSON serialization
+
+### Rust (serde)
+
+```rust
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct User {
+    #[serde(rename = "id")] user_id: u64,
+    user_name: String,
+    #[serde(skip)] password_hash: String,
+    #[serde(skip_serializing_if = "str::is_empty")] bio: String,
+}
+let j = serde_json::to_string(&user).unwrap();
+```
+
+### C# (System.Text.Json)
+
+```csharp
+public record User(
+    [property: JsonPropertyName("id")]    long UserId,
+    [property: JsonPropertyName("userName")] string UserName,
+    [property: JsonIgnore]                string PasswordHash,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] string Bio);
+
+var j = JsonSerializer.Serialize(user);
+```
+
+### Java (Jackson)
+
+```java
+@JsonNaming(PropertyNamingStrategies.LowerCamelCaseStrategy.class)
+public record User(
+    @JsonProperty("id")     long userId,
+    String                  userName,
+    @JsonIgnore             String passwordHash,
+    @JsonInclude(JsonInclude.Include.NON_EMPTY) String bio) {}
+
+var j = new ObjectMapper().writeValueAsString(user);
+```
+
+### TypeScript
+
+```typescript
+const user = { userName: 'filip', id: 42, bio: '' };
+const j = JSON.stringify(user);
+// renames, skips: manual Pick/Omit + transform, no direct equivalent
+```
+
+### Go
+
+```go
+type User struct {
+    UserID       int64  `json:"id"`
+    UserName     string `json:"userName"`
+    PasswordHash string `json:"-"`
+    Bio          string `json:"bio,omitempty"`
+}
+j, _ := json.Marshal(user)
+```
+
+### Python (Pydantic)
+
+```python
+class User(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+    user_id: int = Field(alias='id')
+    user_name: str
+    password_hash: str = Field(exclude=True)
+    bio: str = ''
+    @field_serializer('bio')
+    def skip_empty(self, v): return v if v else SkipJsonSchema()
+j = user.model_dump_json(by_alias=True)
+```
+
+### C++26
+
+```cpp
+struct [[=rjson::rename_all(rjson::naming::camel_case)]] User {
+                                std::string  user_name;
+    [[=rjson::json_name("id")]] std::uint64_t user_id;
+    [[=rjson::skip{}]]          std::string  password_hash;
+    [[=rjson::omit_if_empty{}]] std::string  bio;
+};
+auto j = rjson::to_json(user);
+```
+
+### Verdict
+
+The vocabulary is identical everywhere. Spelling differs; concepts map 1:1.
+
+**What makes C++ distinctive**: every dispatch resolves at compile time. The binary contains no per-field attribute table. The output function for `User` is a straight-line string builder that the optimiser sees end-to-end. Rust is comparable via `proc_macro` (separate codegen phase, generated code compiled normally). Java, C#, Python, Go all do the walk at runtime.
+
+## Task 2 — Enum ↔ string, unbounded
+
+### Rust (strum)
+
+```rust
+#[derive(Display, EnumString)]
+enum Color { Red, Green, Blue }
+let s: String = Color::Red.to_string();   // "Red"
+let c: Color  = "Blue".parse().unwrap();  // Color::Blue
+```
+
+### Java
+
+```java
+Color.valueOf("BLUE");   // built-in for enums
+color.name();            // built-in
+```
+
+### C#
+
+```csharp
+nameof(Color.Red);                     // "Red"
+Enum.Parse<Color>("Blue");
+```
+
+### Go
+
+```go
+// Not built-in — use the stringer tool (code generator) or write a lookup manually.
+```
+
+### TypeScript
+
+```typescript
+enum Color { Red, Green, Blue }
+Color[Color.Red];   // "Red" (numeric enums have reverse mapping)
+Color[value] as Color
+```
+
+### Python
+
+```python
+class Color(Enum): RED = auto(); GREEN = auto(); BLUE = auto()
+Color.RED.name          # "RED"
+Color["BLUE"]           # Color.BLUE
+```
+
+### C++26
+
+```cpp
+renum::to_string(Color::red);              // "red"
+renum::from_string<Color>("blue");         // Color::blue
+```
+
+### Verdict
+
+Most languages solved this decades ago. C++ has needed `magic_enum` (clever but compiler-dependent) or manual lookup tables. C++26 finally ships the capability natively, with unbounded range (no `MAGIC_ENUM_RANGE_MIN/MAX`).
+
+## Task 3 — CLI parsing
+
+### Rust (clap)
+
+```rust
+#[derive(Parser)]
+struct Args { #[arg(short, long)] verbose: bool, input: String }
+let a = Args::parse();
+```
+
+### Go (cobra or flag)
+
+```go
+var verbose bool
+flag.BoolVar(&verbose, "verbose", false, "")
+flag.Parse()
+input := flag.Arg(0)
+```
+
+### Python (argparse / click)
+
+```python
+parser = argparse.ArgumentParser()
+parser.add_argument('--verbose', action='store_true')
+parser.add_argument('input')
+args = parser.parse_args()
+```
+
+### C#
+
+```csharp
+// Modern: System.CommandLine. Declarative API, reflection under the hood.
+```
+
+### Java (picocli)
+
+```java
+@Command class MyApp implements Runnable {
+    @Option(names="--verbose") boolean verbose;
+    @Parameters String input;
+}
+```
+
+### C++26
+
+```cpp
+struct Args {
+    [[=cli::short_('v')]] bool verbose = false;
+    [[=cli::positional{}]] std::string input;
+};
+auto a = cli::parse<Args>(argc, argv);
+```
+
+### Verdict
+
+C++ had CLI11 and cxxopts — fine but imperative (`.add_option(...)` chains). The declarative struct-based form was out of reach. C++26 gets it.
+
+## Task 4 — Insert row from struct
+
+### Rust (Diesel)
+
+```rust
+diesel::insert_into(users::table).values(&new_user).execute(conn)?;
+```
+
+### C# (Entity Framework)
+
+```csharp
+context.Users.Add(user);
+context.SaveChanges();
+```
+
+### Java (JPA / Hibernate)
+
+```java
+entityManager.persist(user);
+```
+
+### Go (GORM)
+
+```go
+db.Create(&user)
+```
+
+### Python (SQLAlchemy)
+
+```python
+session.add(user)
+session.commit()
+```
+
+### C++ today (ODB — external codegen)
+
+```cpp
+db->persist(user);   // after running odb.exe on the header
+```
+
+### C++26
+
+```cpp
+orm::insert(db, user);
+```
+
+### Verdict
+
+Every modern-language ORM offers the same ergonomics. C++ had ODB, which works but requires an extra compiler pass. C++26 puts the ORM in a header. Note: relational features (joins, eager loading) are harder — [post 13](/posts/tiny-orm/) covers the naive foundation.
+
+## Task 5 — Generate a mock
+
+### Mockito (Java)
+
+```java
+IClock clock = mock(IClock.class);
+when(clock.now()).thenReturn(Instant.parse("2020-01-01T00:00:00Z"));
+```
+
+### Moq (C#)
+
+```csharp
+var clock = new Mock<IClock>();
+clock.Setup(c => c.Now).Returns(DateTime.Parse("2020-01-01"));
+```
+
+### Rust (mockall)
+
+```rust
+#[automock]
+trait Clock { fn now(&self) -> u64; }
+let mut m = MockClock::new();
+m.expect_now().returning(|| 1234567);
+```
+
+### Go
+
+```go
+// Manual interface satisfaction; mock libraries (testify/mock) require per-method setup.
+```
+
+### TypeScript (Jest)
+
+```typescript
+const clock: IClock = { now: jest.fn().mockReturnValue(new Date('2020-01-01')) };
+```
+
+### Python (unittest.mock)
+
+```python
+clock = Mock(spec=IClock)
+clock.now.return_value = datetime(2020, 1, 1)
+```
+
+### C++ today (gmock)
+
+```cpp
+class MockClock : public IClock {
+public:
+    MOCK_METHOD(std::chrono::seconds, now, (), (override));
+};
+```
+
+### C++26
+
+```cpp
+auto mock = mocks::make<IClock>();
+mock.set_return<&IClock::now>(std::chrono::seconds{1000});
+```
+
+### Verdict
+
+gmock's `MOCK_METHOD` boilerplate is the thing C++26 retires. Every other language has had auto-mocks since their respective mock frameworks landed (~2004 for Mockito, ~2006 for Moq). Reflection gets C++ there.
+
+## The five axes
+
+For each language, five dimensions of reflection:
+
+| | C++26 | Rust | Java | C# | TypeScript | Go | Python |
+|---|---|---|---|---|---|---|---|
+| **Static vs dynamic** | static | static (proc_macro) | dynamic | dynamic | dynamic | dynamic | dynamic |
+| **Compile-time vs runtime** | compile | compile | runtime | runtime | runtime | runtime | runtime |
+| **Type-safe** | yes | yes | cast-required | yes (generics) | structural | yes (interface assertion) | duck-typed |
+| **Zero runtime cost** | yes | yes | no | no | no | no | no |
+| **Not a preprocessor** | yes | no (separate codegen phase) | yes | yes | yes | yes | yes |
+
+No language hits all five except C++26 (and arguably D and Zig). Rust hits four but pays the proc_macro separation. Java/C#/Python/Go pay runtime cost. TypeScript is compile-time-only for types, runtime for values.
+
+## What C++ genuinely gained
+
+Three things that are new, in addition to closing the gap:
+
+1. **Unified reflection**: one mechanism for types, functions, namespaces, templates, expressions, annotations — via a single `std::meta::info` value type. Most other languages have separate mechanisms per entity.
+2. **First-class `constexpr` composition**: reflection results can be used in `static_assert`, as NTTPs, in `consteval` function composition. The reflection *is* constexpr data; everything flows.
+3. **Zero runtime cost**: no metadata in binaries, no RTTI inflation, no JIT-time hashing. The output code is what a hand-rolled specialisation would look like.
+
+## What C++ still doesn't have (and may never)
+
+- **Runtime reflection.** If you need to load a plugin at runtime and introspect it without knowing its types at compile time, reflection doesn't help. C++'s answer remains `dlopen` + C ABI.
+- **Annotation-aware tooling ecosystem.** Java has 25 years of annotation processors, IntelliJ plugins, frameworks that parse `@Inject`. C++26 annotations are new; the tooling doesn't yet exist.
+- **REPL-driven reflection.** Python and C# have `dir()` / `GetType()` at a prompt. C++ is batch-compiled; there's no equivalent.
+
+Each of these is a trade-off, not a bug.
+
+## What to take away
+
+- If you're choosing a language for a project where **reflection is central and runtime cost doesn't matter**, Java, C#, and Python remain excellent.
+- If **compile-time correctness and zero runtime cost** matter, C++26 and Rust are the options, and C++26 has the slight edge in unification and composability at the cost of a younger ecosystem.
+- If you're **already in C++** and have been working around the lack of reflection with macros, codegen tools, or template metaprogramming — that work becomes a library now.
+
+The headline is not "C++ won." It's **C++ finally joined the conversation** — with a seat at the table that has particular strengths (compile-time, zero-cost) that nobody else has quite the same way.
+
+## What's next
+
+This is post 18 — the final post in the C++26 Reflection series. It's the end of a thread, not the end of the site.
+
+What comes after: deep dives on specific language features (contracts, pattern matching, executors), more patterns, case studies from local Wrocław C++ shops, guest posts from the community. If you want to write one, [open an issue](https://github.com/wrocpp/wrocpp.github.io/issues/new?template=guest-post.md).
+
+Thank you for following along. See you at the next meetup — RSVP on [Meetup](https://www.meetup.com/wro-cpp/), chat on [Slack](https://wrocpp.slack.com).
+
+— *Filip*

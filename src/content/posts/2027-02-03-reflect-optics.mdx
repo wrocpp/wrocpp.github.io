@@ -1,0 +1,176 @@
+---
+title: "reflect_optics: Haskell-style lenses for C++26"
+slug: "reflect-optics"
+pubDate: 2027-02-03
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 21
+audience: working-cpp
+tags: [reflection, cpp26, optics, lens, haskell, reflect_optics]
+summary: "Haskell's lens library has been the gold standard for nested data access for fifteen years. Ports to C++ needed macro hell and never felt right. Reflection makes the pattern genuinely tractable. field<\"address.city\">(person) is now a first-class, zero-overhead, type-safe, composable lens."
+draft: true
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+> **Library repo:** [github.com/wrocpp/reflect_optics](https://github.com/wrocpp/reflect_optics) · v0.1.0 · MIT.
+
+The pitch: you have a `Company` with departments which have teams which have members which have addresses. You want to update *one member's postal code*. In plain C++:
+
+```cpp
+company.departments[2].teams[0].members[5].address.postal_code = 54321;
+```
+
+Fine if it's one place. Painful if you need the same access pattern across twenty call sites, or conditional ("update if the member exists, otherwise skip"), or collection-wide ("update every member's postal code in-place"). The Haskell answer has been lenses:
+
+```haskell
+-- Haskell, using the `lens` library
+company & departments . ix 2 . teams . ix 0 . members . ix 5 . address . postalCode .~ 54321
+```
+
+Each of `departments`, `teams`, `members`, `address`, `postalCode` is a **lens** — a composable first-class getter/setter pair. You can build them, compose them, pipe them, and the compiler proves the whole chain type-correct.
+
+C++ has tried: Boost.Fusion, graninas/cpp_lenses, Scelta, various macro-heavy attempts. Every one required generating per-field boilerplate. Reflection removes the generator.
+
+## Targeted API
+
+```cpp
+#include <reflect_optics/optics.hpp>
+
+struct Address { std::string city; int postal_code; };
+struct Member  { std::string name; Address address; };
+struct Team    { std::vector<Member> members; };
+
+Team team{...};
+
+// Compose lenses with |
+constexpr auto fifth_member_postal =
+    optics::field<&Team::members>
+    | optics::at(5)
+    | optics::field<&Member::address>
+    | optics::field<&Address::postal_code>;
+
+// Get
+int code = optics::view(team, fifth_member_postal);
+
+// Set (returns modified copy)
+Team team2 = optics::set(team, fifth_member_postal, 54321);
+
+// Modify (apply a function)
+Team team3 = optics::over(team, fifth_member_postal, [](int p) { return p + 1; });
+```
+
+Each `optics::field<...>` is a small value type (pointer-to-member plus reflection metadata). `|` is a constexpr composition that produces a new lens type. The whole chain compiles to the same machine code as the hand-written access — genuinely zero-overhead.
+
+## The shape of a lens
+
+```cpp
+template <typename Whole, typename Part>
+struct Lens {
+    std::function<Part(Whole const&)>         view;
+    std::function<Whole(Whole, Part)>         set;
+    std::function<Whole(Whole, auto&&)>       over;   // over(f) = set(f(view()))
+};
+```
+
+In our real library the `std::function` goes away — we template on function-pointer-like non-type template parameters so the whole thing is stamped out by the compiler per lens. No runtime allocation; no virtual dispatch. `constexpr auto` all the way down.
+
+## Reflection's job
+
+The `field<M>` constructor takes a *reflection* of a data member:
+
+```cpp
+template <std::meta::info M>
+constexpr auto field() {
+    using Whole = [: std::meta::parent_of(M) :];
+    using Part  = [: std::meta::type_of(M) :];
+    return Lens<Whole, Part>{
+        .view = [](Whole const& w) -> Part const& { return w.[:M:]; },
+        .set  = [](Whole w, Part v) -> Whole { w.[:M:] = std::move(v); return w; },
+    };
+}
+```
+
+No macros. No code generation. The member access `w.[:M:]` is a splicer consumed once at template instantiation; the resulting lambda is a direct field-of-struct access.
+
+## Lens laws (static_assert)
+
+The library ships compile-time proofs that every synthesised lens satisfies the lens laws:
+
+```cpp
+static_assert(lens_laws_hold<optics::field<&Address::postal_code>>);
+
+// Which expands to:
+//   set(view(w)) == w                (Get-Put)
+//   view(set(w, p)) == p             (Put-Get)
+//   set(set(w, p1), p2) == set(w, p2) (Put-Put)
+```
+
+These assertions run at compile time against a few sample values. If you synthesise a "lens" that doesn't obey the laws, the build fails. (Mostly affects custom lenses; the reflection-derived ones always pass.)
+
+## Prisms and traversals
+
+Lenses handle "always-present" parts (a struct's field). Prisms handle "maybe-present" (a variant case, `std::optional` content):
+
+```cpp
+constexpr auto just_some = optics::prism<std::optional<int>>(
+    [](std::optional<int> o) { return o ? std::make_optional(*o) : std::nullopt; },
+    [](int v)                { return std::make_optional(v); });
+```
+
+Traversals handle "multi-present" (every element of a container):
+
+```cpp
+constexpr auto every_member_postal =
+    optics::field<&Team::members>
+    | optics::traverse()
+    | optics::field<&Member::address>
+    | optics::field<&Address::postal_code>;
+
+// Modify every member's postal code
+Team team_norm = optics::over(team, every_member_postal,
+                              [](int p) { return (p / 1000) * 1000; });
+```
+
+A traversal is "zero or more" access — the composition of a traversal with a lens produces another traversal. The type system tracks this.
+
+## Comparison
+
+| Language / library | Lens-like available? | Auto-derived from struct? | Composable with pipe? |
+|---|---|---|---|
+| Haskell `optics` / `lens` | Yes | Yes (Template Haskell / Generic) | Yes |
+| Scala `monocle` | Yes | Yes (via macro) | Yes |
+| Rust `druid` / `accesso` | Partial | Via macro derive | Yes |
+| TypeScript `monocle-ts` | Yes | Partial | Yes |
+| Python `lenses` library | Yes | Runtime reflection | Yes |
+| Pre-reflect C++ (Boost.Fusion) | Awkward | Only with macros | Limited |
+| **C++26 `reflect_optics`** | **Yes** | **Yes (reflection)** | **Yes** |
+
+<GodboltEmbed id="TODOoptics" title="reflect_optics — lens composition with |" />
+
+## Why this is now tractable
+
+Barry Revzin pointed out in his 2025 CppCon talk that the splicer + expansion statement combination finally makes structural types viable as non-type template parameters. Lenses need exactly that: a way to "name" a member inside a type at compile time. `std::meta::info` is the NTTP you always needed.
+
+## What the library ships
+
+Under [github.com/wrocpp/reflect_optics](https://github.com/wrocpp/reflect_optics):
+
+- `optics::field<&T::member>` — field lens.
+- `optics::at(index)` — index lens (for `std::vector`, `std::array`).
+- `optics::key(key)` — key lens (for `std::map`).
+- `optics::just` / `optics::nothing` — `std::optional` prisms.
+- `optics::alt<I>` — `std::variant` alternative prisms.
+- `optics::traverse()` — range traversal.
+- `optics::iso<F, G>` — isomorphism between two types (via round-trippable functions).
+- Static laws checker.
+- `|` composition.
+
+Depends on `reflect_dx` (next post) for the compile-time ADL-fu that makes `|` find the right combinators.
+
+## What's next
+
+- **[Post 22 — reflect_dx](/posts/reflect-dx/)** — pretty-printers + documentation generator.
+- Companion Monday short: *"A Haskell lens primer for C++ developers"*.

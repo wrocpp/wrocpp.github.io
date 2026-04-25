@@ -1,0 +1,26 @@
+# Canonical Compiler Explorer short links for every wro.cpp post example.
+# Created via the godbolt.org/api/shortener API with compiler id `clang_bb_p2996`
+# and options `-std=c++26 -freflection-latest -stdlib=libc++`.
+#
+# To regenerate after bumping the pinned clang-p2996 SHA, run:
+#   scripts/shorten-examples.py
+#
+# Format: <slug>.<variant>: { id, url, title }
+
+why-cpp26-reflection-matters:
+  teaser:
+    id: n4eK93vfv
+    url: https://godbolt.org/z/n4eK93vfv
+    title: "40-line JSON serializer with reflection"
+  teaser_peel:
+    id: MzM4bh3rj
+    url: https://godbolt.org/z/MzM4bh3rj
+    title: "Peel-first variant — first iteration hoisted to compile time"
+  teaser_annotated:
+    id: 97WdeKs7v
+    url: https://godbolt.org/z/97WdeKs7v
+    title: "Annotated serializer — rename, skip, skip-if-empty, rename_all"
+  teaser_formats:
+    id: WKhjGxE7K
+    url: https://godbolt.org/z/WKhjGxE7K
+    title: "One reflection walk, three formats: JSON · YAML · XML"

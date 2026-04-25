@@ -1,0 +1,116 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PostCard from '../components/PostCard.astro';
+import { getCollection } from 'astro:content';
+import { isPublished, byDateDesc } from '../lib/posts';
+
+// isPublished gates on `!draft && pubDate <= today` in prod, `true` in dev.
+const allPosts = await getCollection('posts', isPublished);
+const posts = allPosts.sort(byDateDesc);
+const latest = posts.slice(0, 6);
+
+const allEvents = await getCollection('events', ({ data }) => !data.draft).catch(() => []);
+const now = new Date();
+const nextEvent = allEvents
+  .filter((e) => e.data.date >= now)
+  .sort((a, b) => a.data.date.valueOf() - b.data.date.valueOf())[0];
+
+const flagshipCount = posts.filter((p) => p.data.kind === 'flagship').length;
+const shortCount = posts.filter((p) => p.data.kind === 'short').length;
+const reflectionCount = posts.filter((p) => p.data.series === 'cpp26-reflection').length;
+---
+<BaseLayout
+  title="wro.cpp — modern C++ from Wrocław"
+  description="wro.cpp — Wrocław C++ community. Hands-on technical posts in English, community glue in Polish, and the people who ship serious C++."
+>
+  <section class="hero reveal">
+    <div class="wrap">
+      <div class="hero__marker">// wro.cpp · established 2021</div>
+      <h1 class="hero__title">
+        Modern&nbsp;C<span class="accent">++</span><br />
+        from&nbsp;Wroc&#322;aw<span class="period">.</span>
+      </h1>
+      <p class="hero__sub">
+        Hands-on deep dives into modern C++. Events that bring local developers into the same room.
+        Flagship posts in English; community chat in Polish, over on Slack.
+      </p>
+      <div class="hero__ctas">
+        <a href="/posts/" class="btn btn-primary">
+          Read the blog <span class="btn__arrow">→</span>
+        </a>
+        <a href="https://wrocpp.slack.com" class="btn btn-secondary">Join Slack</a>
+        <a href="/events/" class="btn btn-ghost">Upcoming events</a>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <div class="status-strip reveal reveal-1">
+      <span><span class="k">posts</span> {posts.length}</span>
+      <span><span class="k">flagship</span> {flagshipCount}</span>
+      <span><span class="k">short</span> {shortCount}</span>
+      <span><span class="k">reflection-series</span> {reflectionCount}/18</span>
+      <span><span class="k">events</span> {allEvents.length}</span>
+      <span style="margin-left:auto"><span class="k">slack</span> wrocpp.slack.com · <span class="k">meetup</span> wro-cpp</span>
+    </div>
+
+    {nextEvent && (
+      <section class="reveal reveal-2" style="margin-top:2.5rem;padding:1.3rem 1.5rem;border:1px solid var(--rule);border-left:3px solid var(--blue);background:var(--paper-2);display:flex;gap:1rem;align-items:center;flex-wrap:wrap;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:var(--blue-deep);letter-spacing:0.08em;text-transform:uppercase;">next event</div>
+        <div style="font-family:'Quicksand',sans-serif;font-weight:600;font-size:1.1rem;">{nextEvent.data.title}</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;color:var(--ink-muted);margin-left:auto;">{nextEvent.data.date.toISOString().slice(0, 10)}</div>
+      </section>
+    )}
+
+    <section class="reveal reveal-3">
+      <div class="section-head">
+        <div class="section-head__title">
+          <span class="section-head__num">01</span>
+          Latest posts
+        </div>
+        <a href="/posts/" class="section-head__link">all posts →</a>
+      </div>
+      {latest.length === 0 ? (
+        <p style="font-family:'Source Serif 4',serif;color:var(--ink-muted);">No posts yet — the first one drops this Wednesday.</p>
+      ) : (
+        <div class="card-grid">
+          {latest.map((p) => <PostCard post={p} />)}
+        </div>
+      )}
+    </section>
+
+    <section class="reveal reveal-4" style="margin-top:4rem;">
+      <div class="section-head">
+        <div class="section-head__title">
+          <span class="section-head__num">02</span>
+          What to expect
+        </div>
+      </div>
+      <div class="card-grid">
+        <div style="padding:1.4rem;border:1px solid var(--rule);border-left:3px solid var(--brand-orange,#EA541E);background:var(--paper-2);">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:var(--orange);letter-spacing:0.08em;text-transform:uppercase;">wednesday · flagship</div>
+          <h3 style="font-family:'Quicksand',sans-serif;font-weight:700;font-size:1.2rem;margin-top:0.4rem;">Long-form technical posts</h3>
+          <p style="font-family:'Source Serif 4',serif;color:var(--ink-muted);font-size:0.98rem;line-height:1.55;margin-top:0.5rem;">
+            Hands-on deep dives with runnable code: C++26 reflection, language features,
+            patterns, case studies from local shops.
+          </p>
+        </div>
+        <div style="padding:1.4rem;border:1px solid var(--rule);border-left:3px solid var(--brand-blue,#3EB5E9);background:var(--paper-2);">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:var(--blue-deep);letter-spacing:0.08em;text-transform:uppercase;">monday · short</div>
+          <h3 style="font-family:'Quicksand',sans-serif;font-weight:700;font-size:1.2rem;margin-top:0.4rem;">"C++ This Fortnight"</h3>
+          <p style="font-family:'Source Serif 4',serif;color:var(--ink-muted);font-size:0.98rem;line-height:1.55;margin-top:0.5rem;">
+            Curated news, tool spotlights, conference talk picks, tiny patterns worth sharing.
+          </p>
+        </div>
+        <div style="padding:1.4rem;border:1px solid var(--rule);border-left:3px solid var(--ink);background:var(--paper-2);">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:var(--ink);letter-spacing:0.08em;text-transform:uppercase;">monthly · events</div>
+          <h3 style="font-family:'Quicksand',sans-serif;font-weight:700;font-size:1.2rem;margin-top:0.4rem;">Meetups &amp; talks</h3>
+          <p style="font-family:'Source Serif 4',serif;color:var(--ink-muted);font-size:0.98rem;line-height:1.55;margin-top:0.5rem;">
+            Monthly online meetups streamed on YouTube + quarterly in-person at local venues
+            in Wrocław.
+          </p>
+        </div>
+      </div>
+    </section>
+  </div>
+</BaseLayout>

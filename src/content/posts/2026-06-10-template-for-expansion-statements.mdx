@@ -1,0 +1,185 @@
+---
+title: "template for: iterating reflections at compile time"
+slug: "template-for-expansion-statements"
+pubDate: 2026-06-10
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 4
+audience: working-cpp
+tags: [reflection, cpp26, expansion-statements, p1306]
+summary: "Expansion statements (proposal P1306) unroll a loop at compile time, instantiating the body once per element. They are the natural partner of reflection — one loop, N specialisations."
+draft: true
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+Reflection gives you a list of members. Splicing puts a single member back into code. What connects them is the *expansion statement* from [P1306](https://wg21.link/P1306):
+
+```cpp
+template for (constexpr auto m : some_range) {
+    // body is instantiated once per element of the range
+}
+```
+
+Each iteration produces a **separate instantiation** of the body, with its own `m` that is a constant expression inside that instantiation. This is what makes `[: m :]` legal inside the loop — `m` really is constexpr per-iteration, not just a runtime variable.
+
+## Ranges that work
+
+`template for` accepts any range whose elements are constant expressions at compile time. In practice that's:
+
+| Range | Example |
+|---|---|
+| **`std::span<const T>` over static memory** | `std::define_static_array(vec_of_info)` — the reflection-friendly idiom |
+| **`std::integer_sequence`** | `std::make_index_sequence<N>` |
+| **`std::views::iota`** | `std::views::iota(0zu, N)` if bounds are constant |
+| **Array of constant expressions** | `constexpr std::array xs = {1, 2, 3};` |
+| **Tuples / pairs** | `template for (constexpr auto x : std::tuple{1, "two", 3.0})` — each iteration is typed |
+| **Packs (via `indices_of_pack`)** | advanced |
+
+What doesn't work: a plain `std::vector` (heap allocation not promoted to constexpr), runtime-dependent ranges, or ranges whose elements aren't constant expressions.
+
+## The reflection pattern
+
+Nine times out of ten, a reflection-driven loop looks like this:
+
+```cpp
+constexpr auto ctx = std::meta::access_context::unchecked();
+template for (constexpr auto m
+              : std::define_static_array(
+                  std::meta::nonstatic_data_members_of(^^T, ctx))) {
+    // do something with obj.[: m :]
+}
+```
+
+Three moves at play:
+
+1. `nonstatic_data_members_of(^^T, ctx)` returns a `consteval` `std::vector<info>`.
+2. `std::define_static_array(...)` materialises the vector into a `constexpr` `std::span<const info>` in program-static storage.
+3. `template for (constexpr auto m : span)` expands once per member, with `m` a constant expression on every iteration.
+
+## What "once per member" means
+
+Each iteration is genuinely a distinct instantiation:
+
+```cpp
+template for (constexpr auto m : members) {
+    [:m:] obj_field = default_value_for<[:type_of(m):]>();
+    //   ^^^^          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    //   these are different types each iteration
+}
+```
+
+`obj_field` is declared once per pass, with the *type of that iteration's member*. If `Point` has `int x` and `double y`, the loop is equivalent to:
+
+```cpp
+{ int    obj_field = default_value_for<int>();    /* body for x */ }
+{ double obj_field = default_value_for<double>(); /* body for y */ }
+```
+
+That's the payoff. A regular runtime `for` over `members` couldn't do this — `obj_field` would need one fixed type.
+
+## Control flow
+
+Expansion statements behave like unrolled loops:
+
+- `break` — stops the expansion early.
+- `continue` — skips to the next iteration.
+- `return` — returns from the enclosing function.
+
+With `if constexpr` inside, you can prune iterations entirely:
+
+```cpp
+template for (constexpr auto m : members) {
+    if constexpr (std::meta::annotation_of_type<skip>(m).has_value()) {
+        continue;    // at compile time, this iteration is dead code
+    }
+    emit(obj.[:m:]);
+}
+```
+
+The `continue` here triggers on a constant expression, so the iteration with the `skip` annotation produces **no generated code at all**. It isn't a runtime branch; it's tree-shaking.
+
+## Iterating over tuples
+
+`template for` also works over `std::tuple` — each iteration's element is its actual type, not `std::variant`-erased:
+
+```cpp
+template for (constexpr auto x : std::tuple{1, std::string{"hi"}, 3.14}) {
+    std::println("{}", x);   // int, then string, then double
+}
+```
+
+Compare with the pre-P1306 equivalent using `std::apply` + fold expressions — two lines vs. an SFINAE-heavy helper.
+
+## Over enum values
+
+Given an enum, `enumerators_of` returns `info` for each enumerator; `template for` lets you emit code per enumerator:
+
+```cpp
+enum class Color { red, green, blue };
+
+template for (constexpr auto e : std::define_static_array(
+                                     std::meta::enumerators_of(^^Color))) {
+    std::println("{} = {}",
+                 std::meta::identifier_of(e),
+                 static_cast<int>([: e :]));
+}
+```
+
+This is the seed of [post 5](/posts/enum-to-string/): enum-name/value mappings without `magic_enum`'s compiler tricks.
+
+## What it isn't
+
+- **Not a runtime loop.** After instantiation, there's no "loop counter" in the generated code. The compiler has emitted N copies of the body, one per element.
+- **Not template metaprogramming.** No recursion, no SFINAE, no `std::integer_sequence` folding with `std::apply`. You write a loop and read a loop.
+- **Not `#pragma unroll`.** That's an optimisation hint. `template for` is a language construct with defined semantics.
+
+## Putting it together
+
+A complete "print every field" that uses `^^`, `[:m:]`, and `template for`:
+
+```cpp
+#include <experimental/meta>
+#include <print>
+
+template <typename T>
+void dump(T const& obj) {
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    std::println("{}:", std::meta::display_string_of(^^T));
+    template for (constexpr auto m
+                  : std::define_static_array(
+                      std::meta::nonstatic_data_members_of(^^T, ctx))) {
+        std::println("  {} = {}",
+                     std::meta::identifier_of(m),
+                     obj.[: m :]);
+    }
+}
+
+struct Point { int x; int y; };
+struct Line  { Point a; Point b; std::string name; };
+
+int main() {
+    dump(Line{{0,0}, {3,4}, "diag"});
+}
+```
+
+Output:
+
+```
+Line:
+  a = Point{x=0, y=0}      // once a {fmt} adapter is written for Point
+  b = Point{x=3, y=4}
+  name = diag
+```
+
+<GodboltEmbed id="TODOtplfor" title="template for — unroll over members" />
+
+## What's next
+
+Arc 1 is done. Arc 2 builds real tools out of these three primitives:
+
+- **[Post 5 — Goodbye `magic_enum`](/posts/enum-to-string/)** — enum ↔ string without compiler tricks.
+- **[Post 6 — Auto `std::formatter<T>`](/posts/auto-formatter/)** — pretty-printing any aggregate.
+- **[Post 7 — Derive equality, hash, ordering](/posts/derive-eq-hash/)**.

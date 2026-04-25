@@ -1,0 +1,44 @@
+---
+/**
+ * Lazy YouTube embed matching the wro.cpp palette.
+ * Accepts a full URL (youtu.be/ID, youtube.com/watch?v=ID, youtube.com/embed/ID)
+ * and extracts the ID.
+ */
+interface Props {
+  url: string;
+  title?: string;
+}
+const { url, title = 'YouTube recording' } = Astro.props;
+
+function extractId(u: string): string | null {
+  try {
+    const parsed = new URL(u);
+    if (parsed.hostname === 'youtu.be') return parsed.pathname.slice(1);
+    if (parsed.hostname.endsWith('youtube.com')) {
+      if (parsed.pathname.startsWith('/embed/')) return parsed.pathname.slice('/embed/'.length);
+      const v = parsed.searchParams.get('v');
+      if (v) return v;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+const id = extractId(url);
+const src = id ? `https://www.youtube-nocookie.com/embed/${id}` : undefined;
+---
+{src ? (
+  <figure class="yt">
+    <iframe
+      src={src}
+      title={title}
+      loading="lazy"
+      frameborder="0"
+      allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+      allowfullscreen
+      class="yt__frame"
+    ></iframe>
+  </figure>
+) : (
+  <p><a href={url} target="_blank" rel="noopener">Watch on YouTube ↗</a></p>
+)}

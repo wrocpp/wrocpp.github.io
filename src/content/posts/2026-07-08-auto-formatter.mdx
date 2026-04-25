@@ -1,0 +1,194 @@
+---
+title: "Auto-generating std::formatter<T> for any aggregate"
+slug: "auto-formatter"
+pubDate: 2026-07-08
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 6
+audience: working-cpp
+tags: [reflection, cpp26, formatter, debug-print, reflect_print]
+summary: "Rust's #[derive(Debug)] in C++: make any struct printable via std::format and std::println by dropping in one partial specialisation of std::formatter. Nested types, containers, enum names — all handled."
+draft: true
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+Rust:
+
+```rust
+#[derive(Debug)]
+struct User { name: String, age: u32, home: Address }
+
+println!("{:?}", user);
+// User { name: "filip", age: 40, home: Address { city: "Warsaw", postal_code: 12345 } }
+```
+
+C++ until 2026:
+
+```cpp
+// Write std::ostream& operator<<(std::ostream&, User const&) by hand.
+// Repeat for every aggregate.
+```
+
+Reflection closes this gap. One partial specialisation of `std::formatter` makes every aggregate `{}`-formattable. Add a field; it prints.
+
+## The one-liner
+
+```cpp
+#include <experimental/meta>
+#include <format>
+
+template <typename T>
+    requires std::is_aggregate_v<T> && (!std::is_array_v<T>)
+struct std::formatter<T> {
+    constexpr auto parse(auto& ctx) { return ctx.begin(); }
+
+    auto format(T const& obj, auto& ctx) const {
+        auto out = ctx.out();
+        out = std::format_to(out, "{}{{", std::meta::display_string_of(^^T));
+        bool first = true;
+        constexpr auto mctx = std::meta::access_context::unchecked();
+        template for (constexpr auto m
+                      : std::define_static_array(
+                          std::meta::nonstatic_data_members_of(^^T, mctx))) {
+            if (!first) out = std::format_to(out, ", ");
+            first = false;
+            out = std::format_to(out, "{}: {}",
+                                 std::meta::identifier_of(m),
+                                 obj.[: m :]);
+        }
+        return std::format_to(out, "}}");
+    }
+};
+```
+
+One partial specialisation, constrained to aggregates (so it doesn't collide with `std::formatter<int>` and friends). Everything plays.
+
+## Usage
+
+```cpp
+struct Address { std::string city; int postal_code; };
+struct User    { std::string name; int age; bool admin; Address home; };
+
+User u{"Filip", 40, true, {"Warsaw", 12345}};
+std::println("{}", u);
+// User{name: Filip, age: 40, admin: true, home: Address{city: Warsaw, postal_code: 12345}}
+```
+
+Nested aggregates work automatically — `Address` has the same partial specialisation applied. Containers of aggregates work — `std::vector<User>` prints via `std::formatter<std::vector<T>>` which recurses into each element's `std::formatter<User>`.
+
+## What the compiler does
+
+For a concrete `User`, the compiled `format` function:
+
+```cpp
+out = format_to(out, "{}{{", "User");
+out = format_to(out, "{}: {}", "name",  u.name);
+out = format_to(out, ", {}: {}", "age",   u.age);
+out = format_to(out, ", {}: {}", "admin", u.admin);
+out = format_to(out, ", {}: {}", "home",  u.home);    // recurses
+out = format_to(out, "}}");
+```
+
+No reflection walk at runtime. No string concatenation through an intermediate. `std::format_to` writes directly into the output iterator.
+
+## Handling non-trivial fields
+
+### Enums
+
+`{}` on a plain enum prints its numeric value by default. With the enum-to-string formatter from [post 5](/posts/enum-to-string/), enum values show their name instead:
+
+```cpp
+enum class Role { user, admin };
+struct User { std::string name; Role role; };
+
+User u{"filip", Role::admin};
+std::println("{}", u);
+// User{name: filip, role: admin}
+```
+
+### Optionals
+
+```cpp
+struct User { std::string name; std::optional<int> age; };
+
+User u{"filip", std::nullopt};
+std::println("{}", u);
+// User{name: filip, age: nullopt}
+```
+
+`std::formatter<std::optional<T>>` needs a small template too (C++26 adds it in the standard library; add yours if shipping earlier).
+
+### Sensitive fields
+
+Fields with a `[[=debug_print::skip{}]]` annotation get replaced with `"<redacted>"`:
+
+```cpp
+struct User {
+    std::string name;
+    [[=debug_print::skip{}]] std::string password_hash;
+};
+
+User u{"filip", "hash-goes-here"};
+std::println("{}", u);
+// User{name: filip, password_hash: <redacted>}
+```
+
+The check is a `template for` + `if constexpr` exactly like the JSON serializer's skip annotation.
+
+## Custom formatters for specific types
+
+When you want something other than the default, provide a regular non-reflective `std::formatter` specialisation:
+
+```cpp
+template <>
+struct std::formatter<MyDate> {
+    constexpr auto parse(auto& ctx) { return ctx.begin(); }
+    auto format(MyDate const& d, auto& ctx) const {
+        return std::format_to(ctx.out(), "{:04d}-{:02d}-{:02d}", d.year, d.month, d.day);
+    }
+};
+```
+
+The generic aggregate specialisation is more constrained (`is_aggregate_v<T>` + not an array), so it loses to your explicit one. Customise where you need to; let the default handle the rest.
+
+## Deep hierarchies
+
+What about inheritance? The default specialisation handles aggregates (no user-declared constructors, no private fields, no base classes by default). For classes with bases:
+
+```cpp
+template <typename T>
+    requires std::is_class_v<T> && !std::is_aggregate_v<T> /* and reflection can see fields */
+struct std::formatter<T> {
+    auto format(T const& obj, auto& ctx) const {
+        // Use members_of to include inherited members
+        constexpr auto ctx_ = std::meta::access_context::unchecked();
+        for (auto m : std::define_static_array(std::meta::members_of(^^T, ctx_))) {
+            if (std::meta::is_nonstatic_data_member(m)) {
+                // ... same pattern
+            }
+        }
+    }
+};
+```
+
+`members_of` returns all members (including inherited); `nonstatic_data_members_of` returns only direct fields. Pick the right one for your needs.
+
+## Comparison with Boost.PFR
+
+Boost.PFR offers similar "for free" printing for aggregates without requiring P2996. It uses structured bindings and template trickery. Downsides: limited to aggregates with ≤32 fields (without configuration), loses field names (prints positional `{0: filip, 1: 40, 2: true}`), and the template errors when it fails to decompose a struct are notorious.
+
+Our version: no field limit, preserves names, `is_aggregate_v` constraint produces clean failures.
+
+## Replacing `fmt::ostream_formatter`
+
+The `{fmt}` library has `FMT_FORMAT_AS(T, ...)` macros for teaching `fmt::format` how to print a type. They're great but per-type. Reflection replaces them with a single partial specialisation.
+
+<GodboltEmbed id="TODOfmt" title="reflect_print — auto std::formatter for any aggregate" />
+
+## What's next
+
+- **[Post 7 — Deriving equality, hashing, and ordering](/posts/derive-eq-hash/)** — same walker pattern, different emission.
+- **[Post 8 — A 40-line JSON serializer](/posts/json-naive/)** — the flagship use-case.
