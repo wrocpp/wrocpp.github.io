@@ -1,0 +1,45 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+<BaseLayout title="Contribute — wro.cpp" description="How to write a guest post, propose a talk, or help out.">
+  <div class="wrap">
+    <header class="page-head reveal">
+      <div class="page-head__eyebrow">// open source · PRs welcome</div>
+      <h1 class="page-head__title">Contribute</h1>
+      <p class="page-head__sub">
+        The site is <a href="https://github.com/wrocpp/wrocpp.github.io">open source</a>. Guest posts,
+        event proposals, and corrections welcome.
+      </p>
+    </header>
+
+    <article class="prose reveal reveal-1">
+      <h2>Guest post</h2>
+      <ol>
+        <li>Open <a href="https://github.com/wrocpp/wrocpp.github.io/issues/new?template=guest-post.md">a "guest post" issue</a> — pitch the idea in a paragraph.</li>
+        <li>We discuss scope, audience, and timing in the issue thread.</li>
+        <li>Submit the post as a PR to <code>src/content/posts/YYYY-MM-DD-slug.md</code>, with frontmatter matching the schema below.</li>
+        <li>Reviewers check for accuracy, clarity, and that all code examples compile.</li>
+      </ol>
+
+      <h2>Talk / speaker proposal</h2>
+      <p>Want to speak at a wro.cpp meetup? <a href="https://github.com/wrocpp/wrocpp.github.io/issues/new?template=event-proposal.md">Open an event proposal issue</a> with: title, one-paragraph abstract, target duration (30 or 45 min), and a short bio.</p>
+
+      <h2>Corrections</h2>
+      <p>Typos, stale links, bad code? Open a PR directly — or file an issue if you'd rather not edit.</p>
+
+      <h2>Frontmatter schema</h2>
+      <pre><code>{`title: "Your post title"
+pubDate: 2026-05-15
+author: your-github-handle
+language: en          # or 'pl'
+kind: flagship        # flagship | short | event-recap
+series: cpp26-reflection   # optional
+series_order: 3            # optional
+audience: working-cpp  # polyglot | working-cpp | mixed
+tags: [reflection, cpp26]
+summary: "One-sentence summary."
+draft: false
+`}</code></pre>
+    </article>
+  </div>
+</BaseLayout>

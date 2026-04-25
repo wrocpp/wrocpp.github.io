@@ -1,0 +1,26 @@
+---
+/**
+ * The official Wro.cpp horseshoe-magnet mark, cropped from the 2021 brand
+ * book asset (logo/old/wro_cpp_color_no_boarder.png). Renders a bitmap
+ * <img> — the source PNG is the brand canon.
+ *
+ * 1x asset: /assets/wro-cpp-mark.png  (160x160)
+ * 2x asset: /assets/wro-cpp-mark@2x.png (320x320)
+ */
+interface Props {
+  /** Visual size in pixels (square). Defaults to 40. */
+  size?: number;
+  class?: string;
+}
+const { size = 40, class: className = '' } = Astro.props;
+---
+<img
+  src="/assets/wro-cpp-mark.png"
+  srcset="/assets/wro-cpp-mark.png 1x, /assets/wro-cpp-mark@2x.png 2x"
+  width={size}
+  height={size}
+  alt="wro.cpp"
+  class={`brand-mark__icon ${className}`}
+  decoding="async"
+  loading="eager"
+/>

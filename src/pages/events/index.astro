@@ -1,0 +1,83 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import EventCard from '../../components/EventCard.astro';
+import { getCollection } from 'astro:content';
+
+const all = await getCollection('events', ({ data }) => !data.draft).catch(() => []);
+const now = new Date();
+const upcoming = all
+  .filter((e) => e.data.date >= now)
+  .sort((a, b) => a.data.date.valueOf() - b.data.date.valueOf());
+const past = all
+  .filter((e) => e.data.date < now)
+  .sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf());
+
+// 37 total past Wro.cpp editions per meetup.com/wro-cpp (Apr 2026). Archive
+// includes every edition for which we found a YouTube recording (#14+) plus
+// one sibling Poznań.cpp. Older editions (#1–#13) have no known recordings.
+const wrocppTotal = 37;
+const wrocppInArchive = past.filter((e) => e.data.episode !== undefined).length;
+const missing = Math.max(wrocppTotal - wrocppInArchive, 0);
+---
+<BaseLayout title="Events — wro.cpp" description="Meetups, past events, recordings, and slides from the Wrocław C++ community.">
+  <div class="wrap">
+    <header class="page-head reveal">
+      <div class="page-head__eyebrow">// since 2017 · 36+ editions · 1000+ members</div>
+      <h1 class="page-head__title">Events</h1>
+      <p class="page-head__sub">
+        Monthly online meetups and in-person gatherings in Wrocław, running since 2017.
+        RSVP on <a href="https://www.meetup.com/wro-cpp/">Meetup</a>, watch back on
+        <a href="https://www.youtube.com/@wrocpp">YouTube</a>, talk on
+        <a href="https://wrocpp.slack.com">Slack</a>.
+      </p>
+    </header>
+
+    <section class="reveal reveal-1" style="margin-bottom:3rem;">
+      <div class="section-head">
+        <div class="section-head__title">
+          <span class="section-head__num">01</span>
+          Upcoming
+        </div>
+      </div>
+      {upcoming.length === 0 ? (
+        <p style="font-family:'Source Serif 4',serif;color:var(--ink-muted);padding:1rem 0;">
+          No upcoming events announced yet. Join <a href="https://wrocpp.slack.com">Slack</a> or RSVP
+          on <a href="https://www.meetup.com/wro-cpp/">Meetup</a> to hear about the next one first.
+        </p>
+      ) : (
+        <div class="card-grid">
+          {upcoming.map((e) => <EventCard event={e} />)}
+        </div>
+      )}
+    </section>
+
+    <section class="reveal reveal-2">
+      <div class="section-head">
+        <div class="section-head__title">
+          <span class="section-head__num">02</span>
+          Past meetups
+        </div>
+        <a class="section-head__link" href="https://www.meetup.com/wro-cpp/" target="_blank" rel="noopener">full list on meetup.com →</a>
+      </div>
+      {past.length === 0 ? (
+        <p style="font-family:'Source Serif 4',serif;color:var(--ink-muted);padding:1rem 0;">No past events archived yet.</p>
+      ) : (
+        <div class="card-grid" style="grid-template-columns: 1fr;">
+          {past.map((e) => <EventCard event={e} />)}
+        </div>
+      )}
+
+      {missing > 0 && (
+        <div style="margin-top:2rem;padding:1.2rem 1.4rem;border:1px dashed var(--rule);background:var(--paper-2);font-family:'Source Serif 4',serif;color:var(--ink-muted);">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:var(--orange);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:0.4rem;">// archive incomplete</div>
+          Wro.cpp has run <strong>{wrocppTotal}</strong> editions; <strong>{wrocppInArchive}</strong> are in
+          the archive (everything for which we found a YouTube recording, #14 onward). The earliest
+          editions (#1–#13) pre-date the YouTube channel. If you have talk titles, speakers, recordings,
+          or slide decks for any missing edition, please
+          <a href="https://github.com/wrocpp/wrocpp.github.io/issues/new?template=event-archive.md"> open an archive-fill issue</a>
+          or PR directly to <code>src/content/events/</code>.
+        </div>
+      )}
+    </section>
+  </div>
+</BaseLayout>

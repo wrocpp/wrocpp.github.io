@@ -1,0 +1,81 @@
+---
+import BaseLayout from './BaseLayout.astro';
+import type { CollectionEntry } from 'astro:content';
+
+interface Props {
+  post: CollectionEntry<'posts'>;
+}
+const { post } = Astro.props;
+const { title, summary, pubDate, updatedDate, language, tags, series, series_order, audience, kind, draft } =
+  post.data;
+const date = pubDate.toISOString().slice(0, 10);
+const seriesTotal = series === 'cpp26-reflection' ? 18 : undefined;
+const progressPct =
+  seriesTotal && series_order ? Math.round((series_order / seriesTotal) * 100) : 0;
+---
+<BaseLayout title={`${draft ? '[DRAFT] ' : ''}${title}`} description={summary} canonicalPath={`/posts/${post.slug}/`}>
+  {draft && (
+    <div class="draft-banner">
+      <strong>DRAFT</strong> — visible only in local dev. Flip <code>draft: false</code> in the frontmatter to publish.
+    </div>
+  )}
+  <article class="article-wrap">
+    <aside class="article-rail">
+      {/* `reveal` animation removed from the rail specifically: its `transform:
+          translateY(...)` breaks `position: sticky` per CSS spec (transformed
+          elements can't be sticky). The rail shows up without fade-in; the
+          main article header + prose still have the reveal animation. */}
+      {series ? (
+        <>
+          <div class="article-rail__label">series</div>
+          <a href={`/series/${series}/`} class="article-rail__series">{series}</a>
+          {series_order && seriesTotal && (
+            <>
+              <div class="article-rail__progress" aria-label={`Part ${series_order} of ${seriesTotal}`}>
+                <span style={`width:${progressPct}%`}></span>
+              </div>
+              <div style="margin-top:0.4rem;font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:var(--ink-faint);">
+                part {series_order.toString().padStart(2, '0')} / {seriesTotal.toString().padStart(2, '0')}
+              </div>
+            </>
+          )}
+        </>
+      ) : (
+        <div class="article-rail__label">{kind}</div>
+      )}
+      <dl class="article-rail__meta">
+        <div><strong>{date}</strong></div>
+        {updatedDate && <div>upd {updatedDate.toISOString().slice(0, 10)}</div>}
+        <div>lang: {language}</div>
+        <div>for: {audience}</div>
+      </dl>
+    </aside>
+
+    <div>
+      <header class="article-head reveal reveal-1">
+        {series && (
+          <div class="article-head__eyebrow">
+            {series}{series_order && ` · part ${series_order.toString().padStart(2, '0')}`}
+          </div>
+        )}
+        {!series && <div class="article-head__eyebrow">{kind}</div>}
+        <h1 class="article-head__title">{title}</h1>
+        <div class="article-head__meta">
+          <time datetime={date}>{date}</time>
+          {updatedDate && <span>· upd {updatedDate.toISOString().slice(0, 10)}</span>}
+          <span>· {language === 'pl' ? 'polish' : 'english'}</span>
+          <span>· audience: {audience}</span>
+        </div>
+        {tags.length > 0 && (
+          <ul class="article-head__tags" role="list">
+            {tags.map((t) => (<li><a href={`/tags/${t}/`}>#{t}</a></li>))}
+          </ul>
+        )}
+      </header>
+
+      <div class="prose reveal reveal-2">
+        <slot />
+      </div>
+    </div>
+  </article>
+</BaseLayout>

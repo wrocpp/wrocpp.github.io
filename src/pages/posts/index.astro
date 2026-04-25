@@ -1,0 +1,24 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PostCard from '../../components/PostCard.astro';
+import { getCollection } from 'astro:content';
+import { isPublished, byDateDesc } from '../../lib/posts';
+
+const all = await getCollection('posts', isPublished);
+const posts = all.sort(byDateDesc);
+---
+<BaseLayout title="Posts — wro.cpp" description="All posts from the Wrocław C++ community.">
+  <div class="wrap">
+    <header class="page-head reveal">
+      <div class="page-head__eyebrow">// all entries</div>
+      <h1 class="page-head__title">Posts</h1>
+      <p class="page-head__sub">
+        Flagship technical posts and short-form community items, newest first.
+      </p>
+    </header>
+
+    <div class="card-grid reveal reveal-1">
+      {posts.map((p) => <PostCard post={p} />)}
+    </div>
+  </div>
+</BaseLayout>

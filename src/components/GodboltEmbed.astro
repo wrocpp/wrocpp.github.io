@@ -1,0 +1,54 @@
+---
+/**
+ * "Run on Compiler Explorer" call-to-action.
+ *
+ * Renders a compact, on-brand card that opens the referenced short-link
+ * on godbolt.org in a new tab. No iframe (CE's full UI embedded in a page
+ * is cluttered and ships privacy dialogs). The actual code lives in the
+ * adjacent code block in the post; this card is the "try it yourself"
+ * handoff.
+ *
+ * Usage:
+ *   <GodboltEmbed id="n4eK93vfv" title="40-line JSON serializer" />
+ */
+interface Props {
+  /** Short-link ID from godbolt.org/z/<ID>. Prefix `TODO` → placeholder mode. */
+  id: string;
+  /** Headline for the card. */
+  title?: string;
+  /** Override the playground repo link shown in placeholder mode. */
+  fallbackHref?: string;
+  /** Subtitle line. Defaults to the pinned compiler + flags. */
+  subtitle?: string;
+}
+const {
+  id,
+  title = 'Run this example',
+  subtitle = 'clang_bb_p2996 · -std=c++26 -freflection-latest -stdlib=libc++',
+  fallbackHref = 'https://github.com/wrocpp/cpp26-playground',
+} = Astro.props;
+
+const isPlaceholder = id.startsWith('TODO') || id === 'placeholder';
+const href = `https://godbolt.org/z/${id}`;
+---
+{isPlaceholder ? (
+  <div class="ce-cta ce-cta--placeholder">
+    <div class="ce-cta__main">
+      <div class="ce-cta__eyebrow">// permalink pending</div>
+      <div class="ce-cta__title">Click-to-run coming soon</div>
+      <div class="ce-cta__sub">
+        A Compiler Explorer permalink will live here once pinned. Until then, run it locally from the <a href={fallbackHref}>playground repo</a>.
+      </div>
+    </div>
+  </div>
+) : (
+  <a class="ce-cta" href={href} target="_blank" rel="noopener" aria-label={`Run on Compiler Explorer: ${title}`}>
+    <span class="ce-cta__play" aria-hidden="true">▸</span>
+    <span class="ce-cta__main">
+      <span class="ce-cta__eyebrow">Run on Compiler Explorer</span>
+      <span class="ce-cta__title">{title}</span>
+      <span class="ce-cta__sub">{subtitle}</span>
+    </span>
+    <span class="ce-cta__arrow" aria-hidden="true">↗</span>
+  </a>
+)}

@@ -1,0 +1,900 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------- *
+ *  Wrocpp — "Editorial Magnet" design system                        *
+ *  Brand canon: #EA541E (orange) / #3EB5E9 (blue) / #414142 (ink)   *
+ *  Type: Quicksand (display) / Source Serif 4 (body) / JetBrains    *
+ *  Mono (code)                                                      *
+ * ---------------------------------------------------------------- */
+
+:root {
+  color-scheme: light;
+  --paper: #FCFAF5;
+  --paper-2: #F3EFE6;
+  --paper-3: #E8E1D0;
+  --ink: #1B1B1D;
+  --ink-muted: #55555A;
+  --ink-faint: #8A8A90;
+  --rule: #D7D2C4;
+  --orange: #EA541E;
+  --orange-hot: #D6481A;
+  --blue: #3EB5E9;
+  --blue-deep: #2E8FB8;
+  --code-bg: #1B1B1D;
+  --code-text: #F3EFE6;
+  --code-muted: #A8A39B;
+  --shadow: 0 1px 2px rgba(27, 27, 29, 0.04),
+            0 4px 24px -8px rgba(27, 27, 29, 0.06);
+}
+
+/* Reset + base */
+html {
+  font-family: "Source Serif 4", Georgia, serif;
+  font-size: 18px;
+  line-height: 1.65;
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Safety net: overflowing code blocks or wide media must never push
+   * the page wider than the viewport. `clip` (vs `hidden`) preserves
+   * `position: sticky` on the header. */
+  overflow-x: clip;
+}
+body { overflow-x: clip; }
+
+/* Warm paper texture — very faint grain, not AI-slop noise */
+body {
+  background-image:
+    radial-gradient(1200px 800px at 80% -10%, rgba(234, 84, 30, 0.04), transparent 60%),
+    radial-gradient(900px 600px at -10% 110%, rgba(62, 181, 233, 0.04), transparent 60%);
+  background-attachment: fixed;
+}
+
+::selection { background: var(--orange); color: var(--paper); }
+
+/* Links */
+a { color: var(--blue-deep); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+a:hover { color: var(--orange); }
+
+/* Display type (Quicksand) used for headings, wordmark, buttons */
+.font-display { font-family: "Quicksand", system-ui, sans-serif; font-feature-settings: "ss01"; }
+
+/* -------- HEADER -------- */
+.site-header {
+  border-bottom: 1px solid var(--rule);
+  background: rgba(252, 250, 245, 0.85);
+  backdrop-filter: saturate(140%) blur(8px);
+  -webkit-backdrop-filter: saturate(140%) blur(8px);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+.site-header__inner {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1rem 1.5rem;
+  display: flex;
+  flex-wrap: wrap;         /* nav drops to second row on narrow screens */
+  align-items: center;
+  gap: 0.5rem 1.25rem;
+}
+.brand-mark { display: inline-flex; align-items: center; gap: 0.65rem; text-decoration: none; color: var(--ink); }
+.brand-mark:hover { color: var(--ink); }
+.brand-mark__icon { display: block; flex: none; }
+.brand-mark:hover .brand-mark__icon { transform: rotate(-4deg); transition: transform 220ms ease; }
+.brand-mark__icon { transition: transform 220ms ease; }
+.brand-wordmark {
+  font-family: "Quicksand", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 1.35rem;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.brand-wordmark .ext { color: var(--orange); font-weight: 700; }
+
+.site-nav {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  font-family: "Quicksand", system-ui, sans-serif;
+  font-weight: 500;
+  font-size: 0.92rem;
+}
+/* Below ~700px the brand + 6-item nav can't share one row. Drop nav to
+ * its own full-width row below the brand. */
+@media (max-width: 700px) {
+  .site-nav {
+    margin-left: 0;
+    width: 100%;
+    gap: 0.35rem 1rem;
+    font-size: 0.88rem;
+    border-top: 1px solid var(--rule);
+    padding-top: 0.6rem;
+  }
+}
+.site-nav a { color: var(--ink); text-decoration: none; position: relative; padding: 0.25rem 0; }
+.site-nav a::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: -2px;
+  height: 2px;
+  background: var(--orange);
+  transform: scaleX(0);
+  transform-origin: right;
+  transition: transform 180ms ease;
+}
+.site-nav a:hover { color: var(--ink); }
+.site-nav a:hover::after { transform: scaleX(1); transform-origin: left; }
+.site-nav .external { color: var(--blue-deep); }
+
+/* -------- FOOTER -------- */
+.site-footer {
+  border-top: 1px solid var(--rule);
+  margin-top: 5rem;
+  padding: 2rem 0 3rem;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}
+.site-footer__inner { max-width: 72rem; margin: 0 auto; padding: 0 1.5rem; display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; }
+.site-footer a { color: var(--ink-muted); text-decoration: none; }
+.site-footer a:hover { color: var(--orange); }
+.site-footer .rule-before { position: relative; padding-left: 1rem; }
+.site-footer .rule-before::before {
+  content: "//"; color: var(--orange); margin-right: 0.4rem; position: absolute; left: 0;
+}
+
+/* -------- HERO (home) -------- */
+.hero {
+  padding: 5rem 0 4rem;
+  border-bottom: 1px solid var(--rule);
+  position: relative;
+}
+.hero__marker {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.78rem;
+  color: var(--orange);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 1rem;
+}
+.hero__title {
+  font-family: "Quicksand", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: clamp(2.6rem, 6vw, 4.2rem);
+  line-height: 0.98;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  max-width: 22ch;
+}
+.hero__title .accent { color: var(--orange); }
+.hero__title .period { color: var(--blue-deep); }
+.hero__sub {
+  font-family: "Source Serif 4", Georgia, serif;
+  font-size: 1.18rem;
+  line-height: 1.55;
+  max-width: 48ch;
+  margin-top: 1.5rem;
+  color: var(--ink-muted);
+}
+.hero__ctas { margin-top: 2rem; display: flex; flex-wrap: wrap; gap: 0.75rem; }
+
+/* Buttons */
+.btn {
+  font-family: "Quicksand", system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 0.95rem;
+  padding: 0.7rem 1.2rem;
+  border-radius: 2px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: transform 140ms ease, background 140ms ease, color 140ms ease;
+  border: 1px solid transparent;
+}
+.btn-primary { background: var(--orange); color: var(--paper); }
+.btn-primary:hover { background: var(--orange-hot); color: var(--paper); transform: translateY(-1px); }
+.btn-secondary { background: transparent; color: var(--ink); border-color: var(--ink); }
+.btn-secondary:hover { background: var(--ink); color: var(--paper); }
+.btn-ghost { background: transparent; color: var(--ink-muted); border-color: var(--rule); }
+.btn-ghost:hover { color: var(--ink); border-color: var(--ink); }
+.btn__arrow { transition: transform 140ms ease; }
+.btn-primary:hover .btn__arrow { transform: translateX(3px); }
+
+/* Status strip under hero */
+.status-strip {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+}
+.status-strip .k { color: var(--orange); }
+
+/* Section header pattern */
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 3rem 0 1.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--rule);
+}
+.section-head__title {
+  font-family: "Quicksand", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 1.4rem;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+.section-head__num {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.8rem;
+  color: var(--orange);
+  letter-spacing: 0.05em;
+}
+.section-head__link {
+  font-family: "Quicksand", system-ui, sans-serif;
+  font-weight: 500;
+  font-size: 0.9rem;
+  color: var(--blue-deep);
+  text-decoration: none;
+}
+.section-head__link:hover { color: var(--orange); }
+
+/* -------- POST CARDS -------- */
+.post-card {
+  display: block;
+  padding: 1.4rem 1.4rem 1.4rem 1.4rem;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--ink-muted);
+  text-decoration: none;
+  color: var(--ink);
+  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+.post-card:hover {
+  transform: translateY(-2px);
+  background: var(--paper);
+}
+.post-card.is-flagship { border-left-color: var(--orange); }
+.post-card.is-short    { border-left-color: var(--blue); }
+.post-card.is-event    { border-left-color: var(--ink); }
+.post-card.is-flagship:hover { border-color: var(--orange); }
+.post-card.is-short:hover    { border-color: var(--blue); }
+
+.post-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.72rem;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.75rem;
+}
+.post-card__meta .sep { color: var(--rule); }
+.post-card__kind.is-flagship { color: var(--orange); }
+.post-card__kind.is-short    { color: var(--blue-deep); }
+.post-card__title {
+  font-family: "Quicksand", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 1.25rem;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.post-card__summary {
+  font-family: "Source Serif 4", Georgia, serif;
+  font-size: 0.98rem;
+  line-height: 1.5;
+  color: var(--ink-muted);
+  margin-top: 0.5rem;
+}
+.post-card__tags {
+  margin-top: 0.9rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.7rem;
+}
+.post-card__tags li {
+  padding: 0.15rem 0.45rem;
+  color: var(--ink-muted);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+}
+
+/* -------- ARTICLE / PROSE -------- */
+.article-wrap {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 3rem 1.5rem 5rem;
+  display: grid;
+  /* `minmax(0, 1fr)` (not `1fr`) lets the column shrink below the
+   * intrinsic size of its content. Without this, a long unbreakable
+   * code line forces the column wider than the viewport, which in turn
+   * makes the body wider than the viewport and the sticky header's
+   * background no longer covers the scrolled-right area. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2rem;
+}
+.article-wrap > * { min-width: 0; }
+@media (min-width: 960px) {
+  .article-wrap { grid-template-columns: 14rem minmax(0, 1fr); gap: 3rem; padding-top: 4rem; }
+}
+
+.article-rail {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+  line-height: 1.8;
+}
+/* Only stick the rail when the grid has actually split into two columns.
+ * On narrow screens the rail stacks above content; sticky at that width
+ * causes it to overlap the main column as the page scrolls. */
+@media (min-width: 960px) {
+  .article-rail {
+    position: sticky;
+    top: 6rem;
+    align-self: start;
+  }
+}
+.article-rail__label { color: var(--orange); letter-spacing: 0.08em; text-transform: uppercase; font-size: 0.7rem; margin-bottom: 0.4rem; }
+.article-rail__series { color: var(--ink); font-family: "Quicksand", system-ui, sans-serif; font-weight: 600; font-size: 0.95rem; text-decoration: none; }
+.article-rail__series:hover { color: var(--orange); }
+.article-rail__progress { margin-top: 0.8rem; height: 3px; background: var(--rule); position: relative; }
+.article-rail__progress span {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  background: var(--orange);
+}
+.article-rail__meta { margin-top: 1rem; display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.72rem; }
+.article-rail__meta strong { color: var(--ink); font-weight: 500; }
+
+.article-head { margin-bottom: 2.5rem; }
+.article-head__eyebrow {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.75rem;
+  color: var(--orange);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 0.85rem;
+}
+.article-head__title {
+  font-family: "Quicksand", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  max-width: 24ch;
+}
+.article-head__meta {
+  margin-top: 1rem;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.article-head__tags { margin-top: 0.9rem; display: flex; flex-wrap: wrap; gap: 0.35rem; font-family: "JetBrains Mono", monospace; font-size: 0.72rem; }
+.article-head__tags a {
+  color: var(--ink-muted);
+  text-decoration: none;
+  padding: 0.12rem 0.45rem;
+  border: 1px solid var(--rule);
+}
+.article-head__tags a:hover { color: var(--orange); border-color: var(--orange); }
+
+/* Prose — editorial serif long-form.
+ *
+ * Readability-sized text at 68ch, but code blocks and tables use the full
+ * available column width so long C++ lines don't wrap for no reason. */
+.prose {
+  font-family: "Source Serif 4", Georgia, serif;
+  font-size: 1.08rem;
+  line-height: 1.72;
+  color: var(--ink);
+}
+.prose > * + * { margin-top: 1.05em; }
+
+/* Prose text shares the column width with code blocks & tables.
+ * Line length is bounded by the article grid column, not by chars. */
+.prose > *,
+.prose > p,
+.prose > ul,
+.prose > ol,
+.prose > blockquote,
+.prose > h1,
+.prose > h2,
+.prose > h3,
+.prose > h4,
+.prose > .article-lede,
+.prose > pre,
+.prose > table,
+.prose > figure,
+.prose > .ce-cta {
+  max-width: none;
+  width: 100%;
+}
+
+.prose h1, .prose h2, .prose h3, .prose h4 {
+  font-family: "Quicksand", system-ui, sans-serif;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+.prose h2 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin-top: 2.4em;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+  position: relative;
+}
+.prose h2::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: -1px;
+  width: 3rem;
+  height: 2px;
+  background: var(--orange);
+}
+.prose h3 {
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin-top: 2em;
+  color: var(--ink);
+}
+.prose h3::before {
+  content: '▸ ';
+  color: var(--orange);
+  font-family: "JetBrains Mono", monospace;
+}
+.prose p { margin-top: 1em; }
+.prose strong { color: var(--ink); font-weight: 600; }
+.prose em { color: var(--ink-muted); font-style: italic; }
+.prose a { color: var(--blue-deep); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.prose a:hover { color: var(--orange); }
+.prose ul, .prose ol { padding-left: 1.5rem; }
+.prose ul { list-style: none; }
+.prose ul > li { position: relative; padding-left: 0.25rem; }
+.prose ul > li::before {
+  content: '';
+  position: absolute;
+  left: -1.15rem; top: 0.7em;
+  width: 0.4rem; height: 0.4rem;
+  background: var(--orange);
+}
+.prose ol { list-style: decimal; }
+.prose ol > li::marker { color: var(--orange); font-family: "JetBrains Mono", monospace; font-weight: 600; }
+.prose blockquote {
+  border-left: 3px solid var(--orange);
+  padding: 0.5rem 0 0.5rem 1.2rem;
+  margin: 1.5rem 0;
+  color: var(--ink-muted);
+  font-style: italic;
+  background: var(--paper-2);
+}
+
+/* Inline code */
+.prose :not(pre) > code {
+  background: var(--paper-2);
+  color: var(--ink);
+  padding: 0.1rem 0.35rem;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.88em;
+}
+
+/* Code blocks — Shiki injects inline background + token colors; we only
+ * handle the chrome (border, padding, scrollbar, outer shadow). Long lines
+ * scroll horizontally, they never soft-wrap. */
+.prose pre {
+  padding: 1.1rem 1.3rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--orange);
+  box-shadow: var(--shadow);
+  margin: 1.5rem 0;
+  border-radius: 0;
+  tab-size: 4;
+}
+.prose pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  border: none;
+  font-family: inherit;
+  font-size: inherit;
+  display: inline-block;
+  min-width: 100%;  /* so the orange border extends across wide lines */
+}
+/* Custom scrollbar — small, warm, doesn't shout */
+.prose pre::-webkit-scrollbar { height: 10px; }
+.prose pre::-webkit-scrollbar-track { background: transparent; }
+.prose pre::-webkit-scrollbar-thumb {
+  background: var(--rule);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 8px;
+}
+.prose pre::-webkit-scrollbar-thumb:hover { background: var(--orange); background-clip: padding-box; }
+.prose pre {
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
+}
+
+
+/* Tables */
+.prose table {
+  border-collapse: collapse;
+  margin: 1.5rem 0;
+  width: 100%;
+  font-size: 0.95rem;
+  font-family: "Source Serif 4", Georgia, serif;
+}
+.prose th, .prose td {
+  border-bottom: 1px solid var(--rule);
+  padding: 0.55rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+}
+.prose th {
+  font-family: "Quicksand", system-ui, sans-serif;
+  font-weight: 600;
+  background: var(--paper-2);
+  border-bottom: 2px solid var(--ink);
+}
+
+.prose hr {
+  border: none;
+  height: 1px;
+  background: var(--rule);
+  margin: 2.5rem 0;
+  position: relative;
+}
+.prose hr::after {
+  content: "✦";
+  position: absolute;
+  left: 50%;
+  top: -0.7rem;
+  transform: translateX(-50%);
+  background: var(--paper);
+  padding: 0 0.6rem;
+  color: var(--orange);
+  font-size: 0.9rem;
+}
+
+/* Article "lede" — first paragraph after H1 gets special treatment */
+.article-lede {
+  font-family: "Quicksand", system-ui, sans-serif;
+  font-weight: 500;
+  font-size: 1.15rem;
+  line-height: 1.55;
+  color: var(--ink-muted);
+  padding: 1rem 0 1rem 1.2rem;
+  border-left: 3px solid var(--blue);
+  margin-bottom: 2rem;
+  max-width: 68ch;
+}
+.article-lede p { margin: 0; }
+
+/* Page head (events / posts index) */
+.page-head {
+  padding: 3rem 0 2rem;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 2rem;
+}
+.page-head__eyebrow {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.75rem;
+  color: var(--orange);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 0.75rem;
+}
+.page-head__title {
+  font-family: "Quicksand", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: clamp(2rem, 4vw, 2.8rem);
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  color: var(--ink);
+}
+.page-head__sub {
+  margin-top: 0.75rem;
+  font-family: "Source Serif 4", Georgia, serif;
+  color: var(--ink-muted);
+  max-width: 58ch;
+}
+
+/* Reveal animation on load */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.reveal { animation: fadeUp 420ms ease-out both; }
+.reveal-1 { animation-delay: 60ms; }
+.reveal-2 { animation-delay: 140ms; }
+.reveal-3 { animation-delay: 220ms; }
+.reveal-4 { animation-delay: 300ms; }
+
+/* Utility containers */
+.wrap { max-width: 72rem; margin: 0 auto; padding: 0 1.5rem; }
+.wrap-narrow { max-width: 56rem; margin: 0 auto; padding: 0 1.5rem; }
+
+/* Grid helpers */
+.card-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+@media (min-width: 720px) {
+  .card-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* --- YouTube embed --- */
+.yt {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  margin: 1.5rem 0;
+  background: var(--ink);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--orange);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.yt__frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
+/* --- Event cards --- */
+.event-card {
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--ink-muted);
+  background: var(--paper-2);
+  padding: 1.2rem 1.4rem 1.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.event-card.is-online   { border-left-color: var(--blue); }
+.event-card.is-inperson { border-left-color: var(--orange); }
+.event-card__meta {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.72rem;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.event-card__meta .sep { color: var(--rule); }
+.event-card__title {
+  font-family: "Quicksand", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 1.2rem;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  margin: 0.1rem 0 0;
+}
+.event-card__venue {
+  font-family: "Source Serif 4", Georgia, serif;
+  font-style: italic;
+  font-size: 0.95rem;
+  color: var(--ink-muted);
+}
+.event-card__summary {
+  font-family: "Source Serif 4", Georgia, serif;
+  font-size: 0.98rem;
+  line-height: 1.55;
+  color: var(--ink);
+  margin: 0.2rem 0 0;
+}
+.event-card__talks {
+  list-style: none;
+  padding: 0;
+  margin: 0.6rem 0 0;
+  border-top: 1px solid var(--rule);
+  padding-top: 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+.event-card__talks li {
+  font-family: "Source Serif 4", Georgia, serif;
+}
+.event-card__talk-title {
+  font-family: "Quicksand", system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--ink);
+}
+.event-card__talk-speaker {
+  font-size: 0.92rem;
+  color: var(--ink-muted);
+}
+.event-card__talk-links {
+  display: flex;
+  gap: 0.75rem;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.75rem;
+  margin-top: 0.2rem;
+}
+.event-card__talk-links a { color: var(--orange); text-decoration: none; }
+.event-card__talk-links a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.event-card__actions {
+  margin-top: 0.3rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--rule);
+}
+.event-card__action {
+  font-family: "Quicksand", system-ui, sans-serif;
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 0.35rem 0.8rem;
+  text-decoration: none;
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  transition: border-color 140ms ease, color 140ms ease, background 140ms ease;
+}
+.event-card__action:hover { border-color: var(--ink); color: var(--ink); }
+.event-card__action.is-primary { background: var(--orange); color: var(--paper); border-color: var(--orange); }
+.event-card__action.is-primary:hover { background: var(--orange-hot); border-color: var(--orange-hot); color: var(--paper); }
+
+.event-card.is-compact {
+  padding: 0.9rem 1.1rem;
+  gap: 0.3rem;
+}
+.event-card.is-compact .event-card__title { font-size: 1.05rem; }
+
+/* Draft indicators — visible only in dev (production build filters drafts out). */
+.post-card.is-draft {
+  border-style: dashed;
+  opacity: 0.92;
+}
+.post-card__draft {
+  display: inline-block;
+  padding: 0 0.45rem;
+  background: var(--orange);
+  color: var(--paper);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: 2px;
+}
+.draft-banner {
+  max-width: 72rem;
+  margin: 1.2rem auto 0;
+  padding: 0.7rem 1.1rem;
+  border: 1px dashed var(--orange);
+  background: linear-gradient(90deg, rgba(234, 84, 30, 0.1), rgba(234, 84, 30, 0.02));
+  color: var(--ink-muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+}
+.draft-banner strong { color: var(--orange); letter-spacing: 0.1em; margin-right: 0.3rem; }
+.draft-banner code { background: var(--paper-2); padding: 0.1rem 0.3rem; border: 1px solid var(--rule); border-radius: 2px; }
+
+/* Compiler Explorer run-link card.
+ * Not an iframe — one link that opens the real CE in a new tab with the
+ * pinned compiler + flags already loaded. Keeps the page clean and fast. */
+.ce-cta {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 1.5rem 0;
+  padding: 0.9rem 1.1rem;
+  text-decoration: none;
+  color: var(--ink);
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--orange);
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+.ce-cta:hover {
+  background: var(--paper);
+  border-color: var(--orange);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+}
+.ce-cta__play {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: inline-grid;
+  place-items: center;
+  background: var(--orange);
+  color: var(--paper);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 1.1rem;
+  transition: transform 160ms ease, background 160ms ease;
+}
+.ce-cta:hover .ce-cta__play {
+  background: var(--orange-hot);
+  transform: translateX(2px);
+}
+.ce-cta__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+}
+.ce-cta__eyebrow {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.68rem;
+  color: var(--orange);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.ce-cta__title {
+  font-family: "Quicksand", system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 1.02rem;
+  color: var(--ink);
+  line-height: 1.2;
+}
+.ce-cta__sub {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.72rem;
+  color: var(--ink-muted);
+  line-height: 1.4;
+  word-break: break-word;
+}
+.ce-cta__arrow {
+  flex: none;
+  font-family: "Quicksand", system-ui, sans-serif;
+  font-size: 1.3rem;
+  color: var(--ink-muted);
+  transition: color 160ms ease, transform 160ms ease;
+}
+.ce-cta:hover .ce-cta__arrow {
+  color: var(--orange);
+  transform: translate(2px, -2px);
+}
+
+.ce-cta--placeholder {
+  cursor: default;
+}
+.ce-cta--placeholder .ce-cta__eyebrow { color: var(--ink-faint); }
+.ce-cta--placeholder .ce-cta__title { color: var(--ink-muted); font-style: italic; }
+.ce-cta--placeholder .ce-cta__sub { color: var(--ink-muted); font-family: "Source Serif 4", Georgia, serif; font-size: 0.95rem; }
+.ce-cta--placeholder .ce-cta__sub a { color: var(--orange); }
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .reveal { animation: none; }
+  .site-nav a::after { transition: none; }
+  .btn { transition: none; }
+  .post-card { transition: none; }
+}

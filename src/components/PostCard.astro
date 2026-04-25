@@ -1,0 +1,28 @@
+---
+import type { CollectionEntry } from 'astro:content';
+
+interface Props {
+  post: CollectionEntry<'posts'>;
+}
+const { post } = Astro.props;
+const { title, summary, pubDate, language, tags, kind, series, series_order, draft } = post.data;
+const date = pubDate.toISOString().slice(0, 10);
+const kindClass = kind === 'flagship' ? 'is-flagship' : kind === 'short' ? 'is-short' : 'is-event';
+---
+<a href={`/posts/${post.slug}/`} class={`post-card ${kindClass}${draft ? ' is-draft' : ''}`}>
+  <div class="post-card__meta">
+    {draft && <span class="post-card__draft">draft</span>}
+    <time datetime={date}>{date}</time>
+    <span class="sep">/</span>
+    <span class={`post-card__kind ${kindClass}`}>{kind}</span>
+    {language === 'pl' && (<><span class="sep">/</span><span>pl</span></>)}
+    {series && (<><span class="sep">/</span><span>{series}{series_order && ` ${series_order.toString().padStart(2, '0')}/18`}</span></>)}
+  </div>
+  <h3 class="post-card__title">{title}</h3>
+  <p class="post-card__summary">{summary}</p>
+  {tags.length > 0 && (
+    <ul class="post-card__tags" role="list">
+      {tags.slice(0, 4).map((t) => (<li>#{t}</li>))}
+    </ul>
+  )}
+</a>
