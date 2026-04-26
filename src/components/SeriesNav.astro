@@ -1,0 +1,121 @@
+---
+/**
+ * Bottom-of-post prev/next bar within a series. Auto-derived from the
+ * `series` + `series_order` fields on the published posts collection — no
+ * hand-curated `prev`/`next` schema field.
+ *
+ * Renders nothing if the post has no `series`, or if there are no
+ * neighbours yet (i.e. the series only has this one post published).
+ */
+import { getCollection } from 'astro:content';
+import { isPublished } from '../lib/posts';
+
+interface Props {
+  currentSlug: string;
+  series?: string;
+}
+const { currentSlug, series } = Astro.props;
+
+let prev: { slug: string; title: string; order?: number } | null = null;
+let next: { slug: string; title: string; order?: number } | null = null;
+
+if (series) {
+  const all = (await getCollection('posts', isPublished))
+    .filter((p) => p.data.series === series && typeof p.data.series_order === 'number')
+    .sort((a, b) => (a.data.series_order ?? 0) - (b.data.series_order ?? 0));
+  const i = all.findIndex((p) => p.slug === currentSlug);
+  if (i > 0) {
+    const p = all[i - 1];
+    prev = { slug: p.slug, title: p.data.title, order: p.data.series_order };
+  }
+  if (i >= 0 && i < all.length - 1) {
+    const n = all[i + 1];
+    next = { slug: n.slug, title: n.data.title, order: n.data.series_order };
+  }
+}
+---
+{(prev || next) && (
+  <nav class="series-nav" aria-label="Series navigation">
+    {prev ? (
+      <a class="series-nav__link series-nav__link--prev" href={`/posts/${prev.slug}/`}>
+        <span class="series-nav__direction">&larr; previous in series</span>
+        <span class="series-nav__title">
+          {prev.order != null && (
+            <span class="series-nav__num">{String(prev.order).padStart(2, '0')}</span>
+          )}
+          {prev.title}
+        </span>
+      </a>
+    ) : (
+      <span class="series-nav__link series-nav__link--placeholder" aria-hidden="true"></span>
+    )}
+    {next ? (
+      <a class="series-nav__link series-nav__link--next" href={`/posts/${next.slug}/`}>
+        <span class="series-nav__direction">next in series &rarr;</span>
+        <span class="series-nav__title">
+          {next.order != null && (
+            <span class="series-nav__num">{String(next.order).padStart(2, '0')}</span>
+          )}
+          {next.title}
+        </span>
+      </a>
+    ) : (
+      <span class="series-nav__link series-nav__link--placeholder" aria-hidden="true"></span>
+    )}
+  </nav>
+)}
+
+<style>
+  .series-nav {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin: 3rem 0 0;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--rule);
+  }
+  @media (max-width: 640px) {
+    .series-nav { grid-template-columns: 1fr; }
+  }
+  .series-nav__link {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 1rem 1.1rem;
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--orange);
+    text-decoration: none;
+    color: var(--ink);
+    transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+    min-width: 0;
+  }
+  .series-nav__link--placeholder {
+    background: transparent;
+    border: 1px dashed var(--rule);
+    border-left: 3px dashed var(--rule);
+    pointer-events: none;
+  }
+  .series-nav__link--next { text-align: right; align-items: flex-end; }
+  .series-nav__link:hover { transform: translateY(-1px); background: var(--paper); border-color: var(--orange); color: var(--ink); }
+  .series-nav__direction {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--orange);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .series-nav__title {
+    font-family: 'Quicksand', system-ui, sans-serif;
+    font-weight: 600;
+    font-size: 1rem;
+    line-height: 1.25;
+    color: var(--ink);
+  }
+  .series-nav__num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    color: var(--ink-muted);
+    margin-right: 0.4rem;
+  }
+</style>

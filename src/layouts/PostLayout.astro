@@ -1,6 +1,8 @@
 ---
 import BaseLayout from './BaseLayout.astro';
+import { getCollection } from 'astro:content';
 import type { CollectionEntry } from 'astro:content';
+import SeriesNav from '../components/SeriesNav.astro';
 
 interface Props {
   post: CollectionEntry<'posts'>;
@@ -9,7 +11,16 @@ const { post } = Astro.props;
 const { title, summary, pubDate, updatedDate, language, tags, series, series_order, audience, kind, draft } =
   post.data;
 const date = pubDate.toISOString().slice(0, 10);
-const seriesTotal = series === 'cpp26-reflection' ? 18 : undefined;
+
+// Series total is derived from the maximum `series_order` across ALL posts in
+// the collection (drafts included), not from `getCollection(..., isPublished)`
+// — otherwise the "part 02 / 02" indicator would shrink as posts ship and
+// readers would lose the sense of how long the series will eventually be.
+const seriesTotal = series
+  ? (await getCollection('posts'))
+      .filter((p) => p.data.series === series && typeof p.data.series_order === 'number')
+      .reduce((max, p) => Math.max(max, p.data.series_order ?? 0), 0) || undefined
+  : undefined;
 const progressPct =
   seriesTotal && series_order ? Math.round((series_order / seriesTotal) * 100) : 0;
 ---
@@ -76,6 +87,8 @@ const progressPct =
       <div class="prose reveal reveal-2">
         <slot />
       </div>
+
+      <SeriesNav currentSlug={post.slug} series={series} />
     </div>
   </article>
 </BaseLayout>
