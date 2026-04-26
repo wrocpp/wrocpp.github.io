@@ -1,0 +1,43 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PostCard from '../../components/PostCard.astro';
+import { getCollection } from 'astro:content';
+import { isPublished, byDateDesc } from '../../lib/posts';
+import type { GetStaticPaths } from 'astro';
+
+export const getStaticPaths: GetStaticPaths = async () => {
+  // Generate a path per distinct tag across ALL posts (drafts included) so
+  // tag links rendered on draft posts in dev never 404. The page body is
+  // still gated by `isPublished`.
+  const all = await getCollection('posts');
+  const seen = new Set<string>();
+  for (const p of all) for (const t of p.data.tags ?? []) seen.add(t);
+  return Array.from(seen).map((tag) => ({ params: { tag } }));
+};
+
+const { tag } = Astro.params;
+const posts = (await getCollection('posts', isPublished))
+  .filter((p) => (p.data.tags ?? []).includes(tag))
+  .sort(byDateDesc);
+---
+<BaseLayout title={`#${tag} — wro.cpp`} description={`Posts tagged #${tag} on wro.cpp.`} canonicalPath={`/tags/${tag}/`}>
+  <section class="wrap">
+    <header class="page-head">
+      <div class="page-head__eyebrow">// tag</div>
+      <h1 class="page-head__title">#{tag}</h1>
+      <p class="page-head__sub">{posts.length} {posts.length === 1 ? 'post' : 'posts'} tagged <code>#{tag}</code>.</p>
+    </header>
+
+    {posts.length === 0 ? (
+      <p style="font-family:'JetBrains Mono',monospace;color:var(--ink-muted);">
+        Nothing tagged #{tag} has shipped yet.
+      </p>
+    ) : (
+      <ul class="card-grid" role="list" style="list-style:none;padding:0;">
+        {posts.map((p) => (
+          <li><PostCard post={p} /></li>
+        ))}
+      </ul>
+    )}
+  </section>
+</BaseLayout>

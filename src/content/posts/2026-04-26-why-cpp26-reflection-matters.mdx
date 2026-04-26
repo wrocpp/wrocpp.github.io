@@ -1,7 +1,7 @@
 ---
 title: "C++26 Reflection: What changes, and why it matters"
 slug: "why-cpp26-reflection-matters"
-pubDate: 2026-04-27
+pubDate: 2026-04-26
 author: filip-sajdak
 language: en
 kind: flagship
@@ -10,7 +10,7 @@ series_order: 1
 audience: polyglot
 tags: [reflection, cpp26, motivation, p2996]
 summary: "Part 1 of the C++26 reflection series. A 40-line JSON serializer nobody could write in C++ before 2026 — plus the strategic story of why static reflection changes the ecosystem."
-draft: true
+draft: false
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -192,7 +192,7 @@ Among the mainstream languages with large ecosystems — Rust, Java, C#, Go, Pyt
 
 (Languages like D and Zig have had compile-time reflection for a while; the point isn't that C++ is first, but that among the languages C++ shares a developer pool with, it finally catches up — and in doing so gets a design with the benefit of watching everyone else for twenty years.)
 
-And because the reflection walk is just code — not a sealed macro — it composes with everything else the language offers. Annotations (`[[=rserial::json_name("user_name")]]`, `[[=rserial::skip{}]]`, `[[=rserial::rename_all(camel_case)]]`) port the serde / Jackson attribute vocabulary to C++ as plain values queryable at compile time. The format is a pluggable policy: the *same* annotated struct compiles down to JSON, YAML, XML, or anything else you can describe — one policy struct per format, zero shared runtime metadata. Post 9 explores the annotation design in depth; [post 11](/posts/one-codegen-many-formats/) unpacks the format-policy factoring.
+And because the reflection walk is just code — not a sealed macro — it composes with everything else the language offers. Annotations (`[[=rserial::json_name("user_name")]]`, `[[=rserial::skip{}]]`, `[[=rserial::rename_all(camel_case)]]`) port the serde / Jackson attribute vocabulary to C++ as plain values queryable at compile time. The format is a pluggable policy: the *same* annotated struct compiles down to JSON, YAML, XML, or anything else you can describe — one policy struct per format, zero shared runtime metadata. Both threads — annotations as values, formats as policies — get their own deep dive later in the series.
 
 ## Why this matters for the C++ community
 
@@ -224,8 +224,8 @@ The peel-first variant from the sidebar is in the same folder: replace `teaser` 
 
 ## What's next
 
-- **Post 2 — Your first `^^`: reflecting types, walking members** (coming soon) — the hands-on foundations. We take the teaser apart and rebuild it from primitives.
-- **Post 8 — A 40-line JSON serializer** — we revisit the teaser, scale it properly, and turn it into a real `lib/reflect_json`.
-- **[Post 11 — One codegen, many wire formats](/posts/one-codegen-many-formats/)** — JSON, YAML, XML from the same annotated struct.
+This is part 1 of a multi-post series. The next instalments take this teaser apart and rebuild it from primitives — `^^`, splicing, `template for`, then the everyday wins (enum names, `std::formatter`, hashing) and the bigger compositions (a real JSON serializer, annotations, multi-format codegen, a tiny ORM, a DI container, auto-generated mocks).
+
+The full plan, with publication dates, lives on the [`cpp26-reflection` series page](/series/cpp26-reflection/). Each post lands as it ships.
 
 Questions, corrections, or your own reflection war stories: drop them on [Slack](https://wrocpp.slack.com) or in the [GitHub Discussions](https://github.com/wrocpp/wrocpp.github.io/discussions) for this post.
