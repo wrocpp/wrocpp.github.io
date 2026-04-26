@@ -163,7 +163,7 @@ All five emit a per-call-site register entry so the dump step can map key → di
 
 **For a mixed codebase**, `reflect_tracing` ships all of them and documents the trade-offs. Default is Form 1 (`scope_guard<^^Fn>`) because it's the only form that composes with the reflection-driven filter / arg-capture annotations coming in C++29 — but every form produces a valid trace, and picking the right one per function is a legitimate codebase-hygiene decision rather than a library constraint.
 
-The playground [`trace_emit.cpp`](https://github.com/wrocpp/cpp26-playground/blob/main/posts/24-reflect-tracing/examples/trace_emit.cpp) exercises all four forms side-by-side and shows the dump showing each one's resolved name.
+The example [`trace_emit.cpp`](https://github.com/wrocpp/cpp26-reflection-examples/blob/main/posts/24-reflect-tracing/examples/trace_emit.cpp) exercises all four forms side-by-side and shows the dump showing each one's resolved name.
 
 ## The engine (Maciek's technique, recapped)
 
