@@ -1,0 +1,53 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PostCard from '../../components/PostCard.astro';
+import { getCollection } from 'astro:content';
+import { isPublished } from '../../lib/posts';
+import type { GetStaticPaths } from 'astro';
+
+export const getStaticPaths: GetStaticPaths = async () => {
+  // Build a static path per distinct `series` slug. Drafts contribute their
+  // series too — otherwise a brand-new series whose first post hasn't shipped
+  // yet would 404 in dev. The post LIST inside the page is still gated by
+  // `isPublished`, so the production page only renders shipped posts.
+  const all = await getCollection('posts');
+  const seen = new Set<string>();
+  for (const p of all) if (p.data.series) seen.add(p.data.series);
+  return Array.from(seen).map((series) => ({ params: { series } }));
+};
+
+const { series } = Astro.params;
+const all = await getCollection('posts', isPublished);
+const inSeries = all
+  .filter((p) => p.data.series === series && typeof p.data.series_order === 'number')
+  .sort((a, b) => (a.data.series_order ?? 0) - (b.data.series_order ?? 0));
+
+const seriesTotal = (await getCollection('posts'))
+  .filter((p) => p.data.series === series && typeof p.data.series_order === 'number')
+  .reduce((max, p) => Math.max(max, p.data.series_order ?? 0), 0) || inSeries.length;
+
+const title = `series · ${series}`;
+---
+<BaseLayout title={`${title} — wro.cpp`} description={`All posts in the ${series} series.`} canonicalPath={`/series/${series}/`}>
+  <section class="wrap">
+    <header class="page-head">
+      <div class="page-head__eyebrow">// series</div>
+      <h1 class="page-head__title">{series}</h1>
+      <p class="page-head__sub">
+        Part of the wro.cpp <code>{series}</code> series — {inSeries.length} of {seriesTotal} posts published so far.
+      </p>
+    </header>
+
+    {inSeries.length === 0 ? (
+      <p style="font-family:'JetBrains Mono',monospace;color:var(--ink-muted);">
+        No posts published in this series yet. Check back soon.
+      </p>
+    ) : (
+      <ul class="card-grid" role="list" style="list-style:none;padding:0;">
+        {inSeries.map((p) => (
+          <li><PostCard post={p} /></li>
+        ))}
+      </ul>
+    )}
+  </section>
+</BaseLayout>
