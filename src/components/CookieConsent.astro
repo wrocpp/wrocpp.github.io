@@ -27,7 +27,7 @@ const gaId = import.meta.env.PUBLIC_GA_ID;
 )}
 
 {gaId && (
-  <script is:inline>{`
+  <script is:inline>
     (function() {
       var KEY = 'wrocpp:consent';
       var el = document.getElementById('cookie-consent');
@@ -56,7 +56,7 @@ const gaId = import.meta.env.PUBLIC_GA_ID;
       document.getElementById('cookie-accept').addEventListener('click', function(){ set('granted'); });
       document.getElementById('cookie-reject').addEventListener('click', function(){ set('denied'); });
     })();
-  `}</script>
+  </script>
 )}
 
 <style>
