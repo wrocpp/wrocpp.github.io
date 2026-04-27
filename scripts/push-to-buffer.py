@@ -126,6 +126,39 @@ def caption_to_post_text(caption_md: str) -> str:
     return f"{body}\n\n{hashtags}".strip() if hashtags else body
 
 
+def add_utm(text: str, slug: str, platform: str, series_order: int | None) -> str:
+    """Replace bare https://wrocpp.github.io/posts/<slug>/ URLs in `text`
+    with UTM-tagged versions per platform, so GA4 can attribute traffic
+    to LinkedIn vs Facebook vs direct without per-post manual editing.
+
+    Skip URLs that already have `?` or `#` -- author has tagged them
+    explicitly. Other domains are left untouched."""
+    base = f"https://wrocpp.github.io/posts/{slug}/"
+    if base not in text:
+        return text
+    campaign = (
+        f"post-{series_order:02d}" if isinstance(series_order, int) else f"post-{slug}"
+    )
+    tagged = (
+        f"{base}?utm_source={platform}&utm_medium=social&utm_campaign={campaign}"
+    )
+    return text.replace(base, tagged)
+
+
+def series_order_from_post(slug: str) -> int | None:
+    """Read series_order from src/content/posts/*-<slug>.mdx (frontmatter)."""
+    posts = sorted((REPO_ROOT / "src/content/posts").glob(f"*-{slug}.mdx"))
+    if not posts:
+        return None
+    for line in posts[0].read_text().splitlines():
+        if line.startswith("series_order:"):
+            try:
+                return int(line.split(":", 1)[1].strip())
+            except ValueError:
+                return None
+    return None
+
+
 CREATE_POST_MUTATION = """
 mutation CreateDraft($input: CreatePostInput!) {
   createPost(input: $input) {
@@ -193,6 +226,7 @@ def main() -> int:
             print(f"skip {plat}: {cap_path} missing", file=sys.stderr)
             continue
         text = caption_to_post_text(cap_path.read_text())
+        text = add_utm(text, args.slug, plat, series_order_from_post(args.slug))
         print(f"\n--> {plat}: channel={chan['id']} ({chan.get('displayName')})  chars={len(text)}",
               file=sys.stderr)
         if args.dry_run:
