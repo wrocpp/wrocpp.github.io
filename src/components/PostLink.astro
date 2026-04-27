@@ -1,0 +1,50 @@
+---
+/**
+ * Cross-reference to another post in the collection.
+ *
+ * Renders as <a href="/posts/{slug}/"> ONLY if the target post is
+ * publicly visible (per `isPublished`: draft:false AND pubDate <= today
+ * in production; always visible in dev so authors can preview).
+ *
+ * If the target isn't published yet, the children render as plain text
+ * -- no broken link leaks to readers.
+ *
+ * Usage in MDX:
+ *
+ *   import PostLink from '../../components/PostLink.astro';
+ *
+ *   ... and we cover this in <PostLink slug="first-reflection">
+ *   the first-reflection post</PostLink>, which lands on 2026-05-13.
+ *
+ * The slot content is what the reader sees in either state.
+ */
+import { getCollection } from 'astro:content';
+import { isPublished } from '../lib/posts';
+
+interface Props {
+  /** The target post's `slug:` field (frontmatter), not its filename. */
+  slug: string;
+  /** Optional: render even when target is unpublished, but with a marker. */
+  showPending?: boolean;
+}
+const { slug, showPending = false } = Astro.props;
+
+const all = await getCollection('posts');
+const target = all.find((p) => p.slug === slug);
+const live = target ? isPublished(target) : false;
+const href = `/posts/${slug}/`;
+---
+{live ? (
+  <a href={href}><slot /></a>
+) : showPending ? (
+  <span class="post-link-pending" title="Coming soon"><slot /></span>
+) : (
+  <slot />
+)}
+
+<style>
+  .post-link-pending {
+    border-bottom: 1px dotted var(--ink-faint);
+    color: var(--ink-muted);
+  }
+</style>
