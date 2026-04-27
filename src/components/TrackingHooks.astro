@@ -18,7 +18,7 @@ const gaId = import.meta.env.PUBLIC_GA_ID;
 const siteHost = 'wrocpp.github.io';
 ---
 {gaId && (
-  <script is:inline define:vars={{ siteHost }}>{`
+  <script is:inline define:vars={{ siteHost }}>
     (function() {
       function track(name, params) {
         if (typeof window.gtag === 'function') window.gtag('event', name, params || {});
@@ -29,7 +29,7 @@ const siteHost = 'wrocpp.github.io';
         var a = e.target instanceof Element ? e.target.closest('a[href]') : null;
         if (!a) return;
         var href = a.getAttribute('href') || '';
-        if (!/^https?:\\/\\//i.test(href)) return; // skip relative + mailto + tel
+        if (!/^https?:\/\//i.test(href)) return; // skip relative + mailto + tel
         try {
           var u = new URL(href);
           if (u.host === window.location.host || u.host === siteHost) return; // internal absolute
@@ -59,5 +59,5 @@ const siteHost = 'wrocpp.github.io';
       window.addEventListener('scroll', onScroll, { passive: true });
       window.addEventListener('load', onScroll);
     })();
-  `}</script>
+  </script>
 )}
