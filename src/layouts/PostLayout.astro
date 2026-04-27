@@ -8,7 +8,7 @@ interface Props {
   post: CollectionEntry<'posts'>;
 }
 const { post } = Astro.props;
-const { title, summary, pubDate, updatedDate, language, tags, series, series_order, audience, kind, draft } =
+const { title, summary, pubDate, updatedDate, language, tags, series, series_order, audience, kind, draft, discussion } =
   post.data;
 const date = pubDate.toISOString().slice(0, 10);
 
@@ -76,6 +76,7 @@ const progressPct =
           {updatedDate && <span>· upd {updatedDate.toISOString().slice(0, 10)}</span>}
           <span>· {language === 'pl' ? 'polish' : 'english'}</span>
           <span>· audience: {audience}</span>
+          {discussion && <span>· <a href={discussion} rel="external">discuss</a></span>}
         </div>
         {tags.length > 0 && (
           <ul class="article-head__tags" role="list">
