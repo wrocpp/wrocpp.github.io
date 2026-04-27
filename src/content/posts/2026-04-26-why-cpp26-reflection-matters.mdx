@@ -15,6 +15,7 @@ discussion: https://github.com/wrocpp/wrocpp.github.io/discussions/11
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
 
 > If you write C++, you'll recognise the pain. If you come from Rust, Java, C#, TypeScript, Go, or Python, you'll recognise what C++ has been missing.
 
@@ -119,7 +120,7 @@ std::string to_json(T const& obj) {
 
 Five new things are happening:
 
-1. **`^^T`** is the *reflect operator*. It takes an entity — here, a type — and yields a value of type `std::meta::info`, an opaque compile-time handle. You can reflect types, variables, functions, namespaces, templates, expressions, and more.
+1. **`^^T`** is the *reflect operator*. It takes an entity — here, a type — and yields a value of type `std::meta::info`, an opaque compile-time handle. You can reflect types, variables, functions, namespaces, templates, expressions, and more. <PostLink slug="first-reflection">The next post takes `^^` apart in detail</PostLink>.
 
 2. **`std::meta::nonstatic_data_members_of(^^T, ctx)`** asks the compiler for the list of `T`'s fields as a `std::vector<std::meta::info>`. This evaluates at compile time; the vector is `consteval`.
 

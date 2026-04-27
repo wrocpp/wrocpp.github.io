@@ -11,16 +11,21 @@ why-cpp26-reflection-matters:
   teaser:
     id: n4eK93vfv
     url: https://godbolt.org/z/n4eK93vfv
-    title: "40-line JSON serializer with reflection"
+    title: 40-line JSON serializer with reflection
   teaser_peel:
     id: MzM4bh3rj
     url: https://godbolt.org/z/MzM4bh3rj
-    title: "Peel-first variant — first iteration hoisted to compile time"
+    title: "Peel-first variant \u2014 first iteration hoisted to compile time"
   teaser_annotated:
     id: 97WdeKs7v
     url: https://godbolt.org/z/97WdeKs7v
-    title: "Annotated serializer — rename, skip, skip-if-empty, rename_all"
+    title: "Annotated serializer \u2014 rename, skip, skip-if-empty, rename_all"
   teaser_formats:
     id: WKhjGxE7K
     url: https://godbolt.org/z/WKhjGxE7K
-    title: "One reflection walk, three formats: JSON · YAML · XML"
+    title: "One reflection walk, three formats: JSON \xB7 YAML \xB7 XML"
+first-reflection:
+  describe:
+    id: bq9WjeeM5
+    url: https://godbolt.org/z/bq9WjeeM5
+    title: Describe
