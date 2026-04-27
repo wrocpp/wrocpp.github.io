@@ -1,0 +1,26 @@
+{
+  "kit": "wrocpp",
+  "description": "wro.cpp brand overrides on top of the @scudoai/brand-kit base. Drop these files into a brand-gen project's assets/ after `brand-gen init` so the social card uses the wro.cpp palette + magnet logo + Quicksand/Source Serif/JetBrains Mono.",
+  "files": [
+    "wrocpp.css",
+    "logo-symbol.svg"
+  ],
+  "applyOrder": [
+    "scudoai.css",
+    "wrocpp.css"
+  ],
+  "wordmark": "wro.cpp",
+  "palette": {
+    "primary": "#EA541E",
+    "primaryHot": "#D6481A",
+    "secondary": "#3EB5E9",
+    "secondaryDeep": "#2E8FB8",
+    "ink": "#1B1B1D",
+    "paper": "#FCFAF5"
+  },
+  "fonts": {
+    "display": "Quicksand",
+    "body": "Source Serif 4",
+    "mono": "JetBrains Mono"
+  }
+}
