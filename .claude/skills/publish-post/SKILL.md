@@ -86,6 +86,22 @@ Use `AskUserQuestion` to confirm a subset of edits if the proposed list is large
 
 In the new post's mdx, change `draft: true` -> `draft: false`. Leave `pubDate` alone (the daily cron build at 07:00 UTC publishes on its own). Pass `--publish-now` to the skill to also bump pubDate to today and rename the file accordingly.
 
+### 7b. Create the post's GitHub Discussion thread
+
+Spawn a discussion thread for the new post so readers have a per-post place to ask questions. Idempotent (skipped if frontmatter already has `discussion:`).
+
+```
+python3 scripts/create-discussion.py --slug <slug>
+```
+
+The script:
+- Reads the post's frontmatter.
+- Looks up the godbolt id (if any) for a "try the code" link in the discussion body.
+- Calls the `createDiscussion` GraphQL mutation in the `General` category.
+- **Patches the mdx**: adds `discussion: <url>` to the frontmatter and rewrites any generic `https://github.com/wrocpp/wrocpp.github.io/discussions` link in the body to point at the specific thread.
+
+The discussion link surfaces in `PostLayout`'s article meta as `· discuss` and in the post's own CTA paragraph.
+
 ### 8. Build sanity check
 
 ```
