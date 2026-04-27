@@ -45,6 +45,10 @@ jobs:
       - name: Build
         env:
           NODE_ENV: production
+          # Astro inlines vars prefixed with PUBLIC_ at build time. The GA4
+          # measurement ID is non-secret (visible in client HTML) but lives
+          # in repo secrets so forks do not inherit it.
+          PUBLIC_GA_ID: ${{ secrets.PUBLIC_GA_ID }}
         run: npm run build
 
       - name: Upload artifact
