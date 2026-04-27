@@ -1,0 +1,46 @@
+---
+/**
+ * Google Analytics 4 with Consent Mode v2.
+ *
+ * Lands the gtag bootstrap, sets all consent categories to "denied" by
+ * default (EU GDPR + Google's own 2024+ requirement), and exposes the
+ * gtag global so client-side helpers can fire custom events. The
+ * <CookieConsent> component flips consent to granted on Accept.
+ *
+ * Set PUBLIC_GA_ID in .env (or the production env -- the prefix
+ * `PUBLIC_` makes it available at build time on the client). Format:
+ * G-XXXXXXXXXX (a "GA4 measurement ID", not the legacy UA-XXX one).
+ *
+ * If PUBLIC_GA_ID is unset, this component renders nothing -- safe for
+ * dev / forks / preview deploys without an analytics property.
+ */
+const gaId = import.meta.env.PUBLIC_GA_ID;
+---
+{gaId && (
+  <>
+    {/* Consent Mode v2 default: deny everything until the user clicks
+        Accept on the cookie banner. region:[] = applies worldwide; we
+        treat all visitors as EU for safety (no IP geolocation needed). */}
+    <script is:inline>{`
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      window.gtag = gtag;
+      gtag('consent', 'default', {
+        ad_storage: 'denied',
+        ad_user_data: 'denied',
+        ad_personalization: 'denied',
+        analytics_storage: 'denied',
+        functionality_storage: 'denied',
+        personalization_storage: 'denied',
+        security_storage: 'granted',
+        wait_for_update: 500
+      });
+      gtag('js', new Date());
+      gtag('config', '${gaId}', {
+        anonymize_ip: true,
+        send_page_view: true,
+      });
+    `}</script>
+    <script is:inline async src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`}></script>
+  </>
+)}

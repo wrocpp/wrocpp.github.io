@@ -1,0 +1,63 @@
+---
+/**
+ * Client-side tracking hooks (outbound clicks + scroll depth).
+ *
+ * Renders one inline <script> that, after DOM ready:
+ *   1. Attaches a click listener to every <a href> with an external host;
+ *      fires `gtag('event', 'click_outbound', { href, host })` so each
+ *      external destination shows up as its own event in GA4.
+ *   2. Listens for scroll past 25/50/75/100% of document height and fires
+ *      `gtag('event', 'scroll_depth', { percent })` once per threshold.
+ *
+ * Both events also fire when consent is 'denied' but Consent Mode v2
+ * sends them as cookieless pings -- GA4 still gets aggregate signals.
+ *
+ * Includes nothing if PUBLIC_GA_ID is unset.
+ */
+const gaId = import.meta.env.PUBLIC_GA_ID;
+const siteHost = 'wrocpp.github.io';
+---
+{gaId && (
+  <script is:inline define:vars={{ siteHost }}>{`
+    (function() {
+      function track(name, params) {
+        if (typeof window.gtag === 'function') window.gtag('event', name, params || {});
+      }
+
+      // -------- Outbound link tracking --------
+      document.addEventListener('click', function(e) {
+        var a = e.target instanceof Element ? e.target.closest('a[href]') : null;
+        if (!a) return;
+        var href = a.getAttribute('href') || '';
+        if (!/^https?:\\/\\//i.test(href)) return; // skip relative + mailto + tel
+        try {
+          var u = new URL(href);
+          if (u.host === window.location.host || u.host === siteHost) return; // internal absolute
+          track('click_outbound', {
+            link_url: u.href,
+            link_domain: u.host,
+            link_text: (a.textContent || '').trim().slice(0, 80),
+          });
+        } catch (_) {}
+      }, true);
+
+      // -------- Scroll depth (25 / 50 / 75 / 100) --------
+      var fired = {};
+      function onScroll() {
+        var doc = document.documentElement;
+        var scrolled = window.scrollY + window.innerHeight;
+        var height = doc.scrollHeight;
+        if (height <= window.innerHeight) return;
+        var pct = Math.floor((scrolled / height) * 100);
+        [25, 50, 75, 100].forEach(function(t) {
+          if (pct >= t && !fired[t]) {
+            fired[t] = true;
+            track('scroll_depth', { percent: t });
+          }
+        });
+      }
+      window.addEventListener('scroll', onScroll, { passive: true });
+      window.addEventListener('load', onScroll);
+    })();
+  `}</script>
+)}

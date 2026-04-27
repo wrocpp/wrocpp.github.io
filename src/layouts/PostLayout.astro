@@ -91,4 +91,23 @@ const progressPct =
       <SeriesNav currentSlug={post.slug} series={series} />
     </div>
   </article>
+
+  {/* Funnel event: which posts get read, in series order. The
+      `series_order` lets GA4 build a step-by-step funnel report
+      (post 1 -> 2 -> 3 ...) so we can see drop-off between
+      consecutive posts in the series. Fires once per page load. */}
+  <script is:inline define:vars={{ slug: post.slug, seriesName: series ?? null, order: series_order ?? null, kind, language }}>{`
+    (function() {
+      window.addEventListener('load', function() {
+        if (typeof window.gtag !== 'function') return;
+        window.gtag('event', 'post_read', {
+          post_slug: slug,
+          post_series: seriesName,
+          post_series_order: order,
+          post_kind: kind,
+          post_language: language,
+        });
+      });
+    })();
+  `}</script>
 </BaseLayout>
