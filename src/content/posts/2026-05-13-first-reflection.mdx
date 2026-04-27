@@ -10,12 +10,13 @@ series_order: 2
 audience: mixed
 tags: [reflection, cpp26, fundamentals, p2996]
 summary: "Hands-on introduction to C++26 reflection: the ^^ operator, std::meta::info, and walking struct members. We take the post-1 teaser apart and rebuild it from primitives."
-draft: true
+draft: false
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
 
-[Post 1](/posts/why-cpp26-reflection-matters/) showed a 40-line JSON serializer and waved at five new pieces of C++. This post builds three of those pieces from scratch: the reflect operator `^^`, the `std::meta::info` handle, and the queries that let you walk a struct's members.
+<PostLink slug="why-cpp26-reflection-matters">Post 1</PostLink> showed a 40-line JSON serializer and waved at five new pieces of C++. This post builds three of those pieces from scratch: the reflect operator `^^`, the `std::meta::info` handle, and the queries that let you walk a struct's members.
 
 By the end, you'll have a working "print every field of any struct" utility in about twelve lines.
 
@@ -137,12 +138,12 @@ Everything else in the series composes these.
 
 Two obvious gaps:
 
-1. **Actually reading the field values.** `members[i]` reflects `Point::x` the field declaration — it doesn't give you the value of `p.x` for a specific `p`. You need the *splicer* `[: r :]` for that: `obj.[:m:]`. That's [post 3](/posts/splicing/).
-2. **Iterating at compile time without a plain `for`.** The walk above uses a runtime `for` that happens to run during `consteval`. To emit per-member code in a non-`consteval` context, you need an *expansion statement* — `template for`. That's [post 4](/posts/template-for-expansion-statements/).
+1. **Actually reading the field values.** `members[i]` reflects `Point::x` the field declaration — it doesn't give you the value of `p.x` for a specific `p`. You need the *splicer* `[: r :]` for that: `obj.[:m:]`. That's <PostLink slug="splicing">post 3</PostLink>.
+2. **Iterating at compile time without a plain `for`.** The walk above uses a runtime `for` that happens to run during `consteval`. To emit per-member code in a non-`consteval` context, you need an *expansion statement* — `template for`. That's <PostLink slug="template-for-expansion-statements">post 4</PostLink>.
 
 Once we have splicing and expansion statements, the post-1 JSON serializer teaser isn't a teaser anymore — it's the natural composition of these primitives.
 
 ## What's next
 
-- **[Post 3 — Splicing with `[: r :]`](/posts/splicing/)** — turn a reflection back into code.
-- **[Post 4 — `template for`](/posts/template-for-expansion-statements/)** — iterate reflections at compile time.
+- **<PostLink slug="splicing">Post 3 — Splicing with `[: r :]`</PostLink>** — turn a reflection back into code.
+- **<PostLink slug="template-for-expansion-statements">Post 4 — `template for`</PostLink>** — iterate reflections at compile time.
