@@ -1,0 +1,12 @@
+template: social/linkedin-post
+
+size:
+  width: 1200
+  height: 1200
+  dpr: 2
+
+project:
+  name: "why-cpp26-reflection-matters"
+  author: "wro.cpp -- Wroclaw C++ community"
+  email: "office@wro.cpp"
+  date: "2026-04-26"
