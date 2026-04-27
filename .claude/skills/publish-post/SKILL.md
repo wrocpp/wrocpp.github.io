@@ -33,6 +33,17 @@ Read the frontmatter; capture `title`, `summary`, `slug`, `series`, `series_orde
 
 If `draft: false` already, abort with "post is already shipped" -- do not re-publish.
 
+## ! Hard rule: every post must compile in BOTH places before publish
+
+Every post on wro.cpp tells readers the code works in two specific environments. That promise has to be held literally:
+
+1. **Local container** -- `cd /Users/filipsajdak/dev/c++26 && ./verify.sh posts/<NN>-<slug>/` exits 0. The container is `clang-p2996:latest`, built from the pinned Bloomberg fork via `./build.sh` (one-time, ~45-90 min).
+2. **Compiler Explorer** -- the godbolt shortlink generated in step 4 must open + compile + run cleanly with the pinned compiler id `clang_bb_p2996` and flags `-std=c++26 -freflection-latest -stdlib=libc++`. Manually open the URL and click "Run" (or use Chrome's headless screenshot to confirm the output panel says "Program returned: 0" with the expected stdout).
+
+**Never skip either check, even when one is inconvenient.** If the container isn't built locally, build it first (`./build.sh`) -- don't bypass step 3 just to ship faster. If the godbolt link 404s after generation, re-shorten and re-test before merging.
+
+These two checks are the contract with readers; everything else in this skill is plumbing.
+
 ### 2. Branch
 
 Create branch `mr/<NN>-<slug>` from `main` (after `git pull --ff-only`). If the user said to stack on the previous MR's branch, branch from there instead.
