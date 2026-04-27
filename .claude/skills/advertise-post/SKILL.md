@@ -200,6 +200,17 @@ mv social/<platform>/<slug>/<slug>.png social/<platform>/<slug>/image.png
 
 Verify each PNG: `file social/<platform>/<slug>/image.png` should report PNG, ~2400x2400. Open one if the user is at the terminal: `open social/linkedin/<slug>/image.png`.
 
+### 9b. Publish the image at a public URL
+
+Buffer's API needs a publicly fetchable image URL (no base64 / no upload endpoint). The site's `public/` folder ships every file under it to https://wrocpp.github.io/, so:
+
+```bash
+mkdir -p public/og
+cp social/linkedin/<slug>/image.png public/og/<slug>.png
+```
+
+After the next merge + deploy.yml run, the image is live at `https://wrocpp.github.io/og/<slug>.png` and `/push-to-buffer <slug>` can fetch it. (LinkedIn and Facebook share the same image; we only publish one.)
+
 ### 10. Print the result + reminders
 
 Print:
