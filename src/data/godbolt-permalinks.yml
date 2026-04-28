@@ -29,3 +29,8 @@ first-reflection:
     id: bq9WjeeM5
     url: https://godbolt.org/z/bq9WjeeM5
     title: Describe
+splicing:
+  splice_basics:
+    id: TnMx1Ys5b
+    url: https://godbolt.org/z/TnMx1Ys5b
+    title: Splice basics

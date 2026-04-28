@@ -128,7 +128,7 @@ Five new things are happening:
 
 4. **`template for`** is an *expansion statement* (proposal P1306): the compiler unrolls the loop at compile time, instantiating the body once per member. Each iteration gets its own `constexpr auto member`.
 
-5. **`[:member:]`** is the *splicer*. It turns a reflection back into code. `obj.[:member:]` becomes, per iteration, `obj.name`, then `obj.age`, then `obj.admin`, then `obj.home`. The compiler writes the member accesses for you at compile time.
+5. **`[:member:]`** is the *splicer*. It turns a reflection back into code. `obj.[:member:]` becomes, per iteration, `obj.name`, then `obj.age`, then `obj.admin`, then `obj.home`. The compiler writes the member accesses for you at compile time. <PostLink slug="splicing">The next post unpacks splicing in detail</PostLink>.
 
 Look at what this code *isn't*:
 
