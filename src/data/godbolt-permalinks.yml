@@ -34,3 +34,8 @@ splicing:
     id: TnMx1Ys5b
     url: https://godbolt.org/z/TnMx1Ys5b
     title: Splice basics
+template-for-expansion-statements:
+  dump:
+    id: j9vWKaEG6
+    url: https://godbolt.org/z/j9vWKaEG6
+    title: Dump

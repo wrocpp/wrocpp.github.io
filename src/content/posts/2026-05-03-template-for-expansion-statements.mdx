@@ -10,12 +10,13 @@ series_order: 4
 audience: working-cpp
 tags: [reflection, cpp26, expansion-statements, p1306]
 summary: "Expansion statements (proposal P1306) unroll a loop at compile time, instantiating the body once per element. They are the natural partner of reflection — one loop, N specialisations."
-draft: true
+draft: false
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
 
-Reflection gives you a list of members. Splicing puts a single member back into code. What connects them is the *expansion statement* from [P1306](https://wg21.link/P1306):
+<PostLink slug="first-reflection">Reflection</PostLink> gives you a list of members. <PostLink slug="splicing">Splicing</PostLink> puts a single member back into code. What connects them is the *expansion statement* from [P1306](https://wg21.link/P1306):
 
 ```cpp
 template for (constexpr auto m : some_range) {
@@ -128,7 +129,7 @@ template for (constexpr auto e : std::define_static_array(
 }
 ```
 
-This is the seed of [post 5](/posts/enum-to-string/): enum-name/value mappings without `magic_enum`'s compiler tricks.
+This is the seed of <PostLink slug="enum-to-string">post 5</PostLink>: enum-name/value mappings without `magic_enum`'s compiler tricks.
 
 ## What it isn't
 
@@ -174,12 +175,12 @@ Line:
   name = diag
 ```
 
-<GodboltEmbed id="TODOtplfor" title="template for — unroll over members" />
+<GodboltEmbed id="j9vWKaEG6" title="template for — unroll over members" />
 
 ## What's next
 
 Arc 1 is done. Arc 2 builds real tools out of these three primitives:
 
-- **[Post 5 — Goodbye `magic_enum`](/posts/enum-to-string/)** — enum ↔ string without compiler tricks.
-- **[Post 6 — Auto `std::formatter<T>`](/posts/auto-formatter/)** — pretty-printing any aggregate.
-- **[Post 7 — Derive equality, hash, ordering](/posts/derive-eq-hash/)**.
+- **<PostLink slug="enum-to-string">Post 5 — Goodbye `magic_enum`</PostLink>** — enum ↔ string without compiler tricks.
+- **<PostLink slug="auto-formatter">Post 6 — Auto `std::formatter<T>`</PostLink>** — pretty-printing any aggregate.
+- **<PostLink slug="derive-eq-hash">Post 7 — Derive equality, hash, ordering</PostLink>**.
