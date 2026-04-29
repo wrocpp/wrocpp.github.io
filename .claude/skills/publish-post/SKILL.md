@@ -2,10 +2,17 @@
 name: publish-post
 description: Ship a wro.cpp blog post end-to-end. Verifies code in the cpp26-reflection-examples repo, generates Compiler Explorer permalinks, wires them into the MDX, hand-curates cross-references to/from prior posts in the series, flips draft to false, and opens a PR with three atomic conventional commits. Pass the post slug or its series_order (e.g. "first-reflection" or "02").
 argument-hint: <slug-or-NN>
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion
+disable-model-invocation: true
+allowed-tools: Read Write Edit Glob Grep Bash(git *) Bash(gh *) Bash(npm *) Bash(python3 *) Bash(./verify.sh *) Bash(./cpp *) Bash(./run *) Bash(date *) Agent AskUserQuestion ToolSearch CronCreate
 ---
 
 # /publish-post -- ship one wro.cpp blog post
+
+In-flight PRs at invoke time:
+
+```!
+cd /Users/filipsajdak/dev/wrocpp.github.io && gh pr list --state open --json number,title -q '.[] | "PR#\(.number): \(.title)"'
+```
 
 Use this skill to land MR2..MR25 of the C++26 reflection series. Each invocation produces one `mr/<NN>-<slug>` PR ready for review, with all the work the per-MR checklist in `~/.claude/plans/lets-split-all-the-temporal-oasis.md` calls for.
 
