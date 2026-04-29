@@ -1,8 +1,9 @@
 ---
 name: push-to-buffer
-description: Push the LinkedIn + Facebook captions and the social card image for a wro.cpp post to Buffer as DRAFTS via Buffer's GraphQL API. Drafts land in the user's Buffer Drafts tab for manual scheduling. Reads the post artefacts produced by /advertise-post.
+description: Push the LinkedIn + Facebook captions + social card image for a wro.cpp post to Buffer. Default mode schedules at the post's pubDate at 10:00 Europe/Warsaw; --draft pushes to the Drafts tab for manual scheduling instead. Reads the post artefacts produced by /advertise-post.
 argument-hint: <slug>
-allowed-tools: Bash, Read, Edit, AskUserQuestion
+disable-model-invocation: true
+allowed-tools: Read Edit Bash(python3 scripts/push-to-buffer.py *) Bash(curl *) Bash(gh *) AskUserQuestion
 ---
 
 # /push-to-buffer -- create Buffer drafts for one post
