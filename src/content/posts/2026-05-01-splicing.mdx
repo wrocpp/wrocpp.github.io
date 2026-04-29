@@ -1,7 +1,7 @@
 ---
 title: "Splicing: [: r :] and putting reflections back into code"
 slug: "splicing"
-pubDate: 2026-05-27
+pubDate: 2026-05-01
 author: filip-sajdak
 language: en
 kind: flagship
@@ -10,12 +10,14 @@ series_order: 3
 audience: working-cpp
 tags: [reflection, cpp26, splicer, p2996]
 summary: "Splicing is the inverse of ^^: it takes a std::meta::info and drops the referred entity back into your source. Types, expressions, template arguments, member accesses — all round-trippable."
-draft: true
+draft: false
+discussion: https://github.com/wrocpp/wrocpp.github.io/discussions/19
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from "../../components/PostLink.astro";
 
-[Post 2](/posts/first-reflection/) covered reflecting *into* `std::meta::info`. The hard question was: how do we get *out* again — how do we use a reflection as if we'd written the original name?
+<PostLink slug="first-reflection">Post 2</PostLink> covered reflecting *into* `std::meta::info`. The hard question was: how do we get *out* again — how do we use a reflection as if we'd written the original name?
 
 The answer is the splicer, `[: r :]`. It's the inverse of `^^`. Where `^^int` gives you an `info`, `[:r:]` (for a reflection `r` of `int`) gives you back `int` — in a type position, an expression position, or wherever the original entity would fit.
 
@@ -156,7 +158,7 @@ int main() {
 
 `dump_field<m>` — we pass the reflection as a template argument so `M` is a constant expression inside the helper, and `obj.[:M:]` is a real member access the compiler can check.
 
-<GodboltEmbed id="TODOsplicing" title="Splicing — reflections back to code" />
+<GodboltEmbed id="TnMx1Ys5b" title="Splicing — reflections back to code" />
 
 ## What splicing isn't
 
@@ -166,5 +168,5 @@ int main() {
 
 ## What's next
 
-- **[Post 4 — `template for`](/posts/template-for-expansion-statements/)** — loops that unroll at compile time, the natural partner to splicing.
-- **[Post 8 — A 40-line JSON serializer](/posts/json-naive/)** — full payoff: `^^` + `[:r:]` + `template for` fused into a working library.
+- **<PostLink slug="template-for-expansion-statements">Post 4 — `template for`</PostLink>** — loops that unroll at compile time, the natural partner to splicing.
+- **<PostLink slug="json-naive">Post 8 — A 40-line JSON serializer</PostLink>** — full payoff: `^^` + `[:r:]` + `template for` fused into a working library.
