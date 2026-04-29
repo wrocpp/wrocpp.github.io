@@ -67,7 +67,18 @@ def gql(token: str, query: str, variables: dict | None = None) -> dict:
             out = json.loads(resp.read().decode())
     except urllib.error.HTTPError as e:
         body = e.read().decode(errors="replace")
-        sys.exit(f"buffer http {e.code}: {body[:500]}")
+        try:
+            err = json.loads(body)
+            msgs = []
+            for x in err.get("errors", []):
+                # Buffer puts the variable-coercion failure reason at the END
+                # of the message (after a long inline copy of the value).
+                # Show the last 200 chars so the actual reason is visible.
+                m = x.get("message", "")
+                msgs.append(m if len(m) < 400 else m[:200] + " ... " + m[-300:])
+            sys.exit(f"buffer http {e.code}:\n  - " + "\n  - ".join(msgs))
+        except (ValueError, KeyError):
+            sys.exit(f"buffer http {e.code}: {body[:1000]}")
     if out.get("errors"):
         sys.exit(f"buffer graphql error: {json.dumps(out['errors'], indent=2)}")
     return out["data"]
@@ -225,6 +236,7 @@ def create_post(
     *,
     save_to_draft: bool,
     due_at: str | None,
+    service: str,
 ) -> dict:
     """Create a Buffer post. Two modes:
       - drafts (save_to_draft=True): lands in Buffer's Drafts tab, requires
@@ -237,14 +249,29 @@ def create_post(
         "channelId": channel_id,
         "assets": {"images": [{"url": image_url}]},
     }
+    # Per-platform metadata: Facebook requires PostTypeFacebook (post / story
+    # / reel). LinkedIn / Twitter / Instagram have their own optional inputs;
+    # we omit them here since defaults work for our use case (single-image
+    # feed posts on a company page / personal profile).
+    svc = (service or "").lower()
+    if "facebook" in svc:
+        inp["metadata"] = {"facebook": {"type": "post"}}
+
+    # Buffer GraphQL split:
+    #   schedulingType (enum: notification | automatic) -- "automatic" means
+    #     Buffer publishes to the platform itself, not via mobile push. This
+    #     is what we want for an unattended workflow.
+    #   mode (typed ShareMode!: addToQueue | shareNow | shareNext |
+    #     customScheduled | recommendedTime) -- governs WHEN. customScheduled
+    #     requires dueAt.
+    inp["schedulingType"] = "automatic"
     if save_to_draft:
-        inp["schedulingType"] = "automatic"
         inp["mode"] = "addToQueue"
         inp["saveToDraft"] = True
     else:
         if not due_at:
             sys.exit("error: scheduled mode requires --at or a parseable pubDate")
-        inp["schedulingType"] = "customScheduled"
+        inp["mode"] = "customScheduled"
         inp["dueAt"] = due_at
     return gql(token, CREATE_POST_MUTATION, {"input": inp})
 
@@ -330,6 +357,7 @@ def main() -> int:
         result = create_post(
             token, chan["id"], text, args.image_url,
             save_to_draft=args.draft, due_at=due_at,
+            service=chan.get("service") or plat,
         )["createPost"]
         if result.get("__typename") == "PostActionSuccess":
             post = result["post"]
