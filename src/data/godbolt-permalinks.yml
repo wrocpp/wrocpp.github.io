@@ -12,20 +12,56 @@ why-cpp26-reflection-matters:
     id: n4eK93vfv
     url: https://godbolt.org/z/n4eK93vfv
     title: 40-line JSON serializer with reflection
+    expected_output: '{"name":"Filip","age":40,"admin":true,"home":{"city":"Warsaw","postal_code":12345}}'
   teaser_peel:
     id: MzM4bh3rj
     url: https://godbolt.org/z/MzM4bh3rj
     title: "Peel-first variant \u2014 first iteration hoisted to compile time"
+    expected_output: '{"name":"Filip","age":40,"admin":true,"home":{"city":"Warsaw","postal_code":12345}}'
   teaser_annotated:
     id: 97WdeKs7v
     url: https://godbolt.org/z/97WdeKs7v
     title: "Annotated serializer \u2014 rename, skip, skip-if-empty, rename_all"
+    expected_output: '{"userName":"filip","id":42,"email":"filip@example.com","bio":"hello","isAdmin":true}
+
+      {"userName":"anon","id":7,"email":"a@b.c","isAdmin":false}'
   teaser_formats:
     id: WKhjGxE7K
     url: https://godbolt.org/z/WKhjGxE7K
     title: "One reflection walk, three formats: JSON \xB7 YAML \xB7 XML"
+    expected_output: "--- JSON ---\n{\"userName\":\"filip\",\"id\":42,\"email\":\"filip@example.com\",\"isAdmin\":true,\"\
+      homeAddress\":{\"city\":\"Warsaw\",\"postal_code\":12345}}\n\n--- YAML ---\nuserName: filip\nid: 42\nemail: filip@example.com\n\
+      isAdmin: true\nhomeAddress: \n  city: Warsaw\n  postal_code: 12345\n\n--- XML  ---\n<userName>filip</userName><id>42</id><email>filip@example.com</email><isAdmin>true</isAdmin><homeAddress><city>Warsaw</city><postal_code>12345</postal_code></homeAddress>"
 first-reflection:
   describe:
     id: bq9WjeeM5
     url: https://godbolt.org/z/bq9WjeeM5
     title: Describe
+    expected_output: 'Point:
+
+      x: int
+
+      y: int
+
+
+      Line:
+
+      a: Point
+
+      b: Point
+
+      name: basic_string<char, char_traits<char>, allocator<char>>
+
+      '
+splicing:
+  splice_basics:
+    id: TnMx1Ys5b
+    url: https://godbolt.org/z/TnMx1Ys5b
+    title: Splice basics
+    expected_output: "read<Point::x>: 3\nPoint:\n  x = 3\n  y = 4"
+template-for-expansion-statements:
+  dump:
+    id: j9vWKaEG6
+    url: https://godbolt.org/z/j9vWKaEG6
+    title: Dump
+    expected_output: "Point:\n  x = 3\n  y = 4\ntuple element: 1\ntuple element: 2.5\ntuple element: c"

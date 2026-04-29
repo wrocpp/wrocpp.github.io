@@ -33,6 +33,7 @@ CPP26_ROOT = Path("/Users/filipsajdak/dev/c++26")
 COMPILER_ID = "clang_bb_p2996"
 COMPILER_OPTIONS = "-std=c++26 -freflection-latest -stdlib=libc++"
 SHORTENER_URL = "https://godbolt.org/api/shortener"
+COMPILE_URL = f"https://godbolt.org/api/compiler/{COMPILER_ID}/compile"
 
 
 def slug_from_post(post_arg: str) -> tuple[str, str]:
@@ -94,11 +95,56 @@ def shorten(source: str, title: str) -> dict:
     return {"id": short_id, "url": url, "title": title}
 
 
+def compile_and_run(source: str) -> tuple[bool, str, str]:
+    """Compile + execute the source via godbolt's API.
+
+    Returns (ok, stdout, stderr_or_compile_log). `ok` is True only if the
+    compiler exited 0 AND the program exited 0. We use this as a gate
+    BEFORE creating the shortlink: if the code doesn't actually run on
+    Compiler Explorer, the published post would lie to readers.
+
+    The post-2 fire-drill informed this: the local container PASS doesn't
+    catch CE-only failures (different libstdc++ headers, missing -include,
+    etc.) and a working shortlink doesn't imply the code compiles.
+    """
+    payload = {
+        "source": source,
+        "options": {
+            "userArguments": COMPILER_OPTIONS,
+            "filters": {"execute": True},
+        },
+    }
+    req = urllib.request.Request(
+        COMPILE_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        return False, "", f"godbolt http {e.code}: {e.read().decode(errors='replace')[:300]}"
+    compile_code = body.get("code", -1)
+    compile_stderr = "\n".join(x.get("text", "") for x in body.get("stderr", []))
+    if compile_code != 0:
+        return False, "", f"compile failed (code={compile_code}):\n{compile_stderr[:600]}"
+    exec_result = body.get("execResult") or {}
+    exec_code = exec_result.get("code", -1)
+    exec_stdout = "\n".join(x.get("text", "") for x in exec_result.get("stdout", []))
+    exec_stderr = "\n".join(x.get("text", "") for x in exec_result.get("stderr", []))
+    if exec_code != 0:
+        return False, exec_stdout, f"program exited {exec_code}:\n{exec_stderr[:600]}"
+    return True, exec_stdout, ""
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--post", required=True, help="post folder (e.g. 02-first-reflection)")
     p.add_argument("--force", action="store_true", help="overwrite existing entries")
     p.add_argument("--dry-run", action="store_true", help="print what would change")
+    p.add_argument("--no-run-verify", action="store_true",
+                   help="skip the godbolt API compile+execute gate (NOT RECOMMENDED)")
     args = p.parse_args()
 
     nn_slug, slug = slug_from_post(args.post)
@@ -120,17 +166,49 @@ def main() -> int:
     for src in sources:
         variant = src.stem  # e.g. "teaser_peel"
         existing = yaml_data[slug].get(variant) or {}
-        if existing.get("id") and not args.force:
-            print(f"skip  {slug}.{variant}  (id={existing['id']})")
-            continue
         title = existing.get("title") or variant.replace("_", " ").capitalize()
         source_text = src.read_text()
+
+        already_shortened = bool(existing.get("id")) and not args.force
         if args.dry_run:
-            print(f"DRY   {slug}.{variant}  ({src.name}, {len(source_text)} chars)")
+            verb = "VERIFY" if already_shortened else "DRY"
+            print(f"{verb:6} {slug}.{variant}  ({src.name}, {len(source_text)} chars)")
             continue
+
+        # Compile + execute via godbolt API BEFORE shortening (or before
+        # accepting an existing shortlink as still-good). Captures stdout
+        # into `expected_output` for content-drift / regression alerts.
+        # The post-2 fire-drill informed this: a working shortlink ID
+        # doesn't imply the code compiles on CE today.
+        stdout = ""
+        if not args.no_run_verify:
+            print(f"verify  {slug}.{variant}  ->", end=" ", flush=True)
+            ok, stdout, err = compile_and_run(source_text)
+            if not ok:
+                print("FAIL")
+                sys.exit(f"\nCE verification failed for {src.name}:\n{err}")
+            print(f"OK (stdout: {len(stdout)} chars)")
+
+        if already_shortened:
+            # Re-verify path: keep the existing shortlink id, just
+            # refresh expected_output if it's missing or has drifted.
+            old_out = existing.get("expected_output")
+            if old_out == stdout:
+                print(f"skip    {slug}.{variant}  (id={existing['id']}, output unchanged)")
+                continue
+            existing["expected_output"] = stdout
+            yaml_data[slug][variant] = existing
+            kind = "added" if not old_out else "updated"
+            print(f"OK      {slug}.{variant}  ({kind} expected_output for id={existing['id']})")
+            changed = True
+            continue
+
+        # Fresh shortener call (no existing id, or --force).
         result = shorten(source_text, title)
+        if stdout:
+            result["expected_output"] = stdout
         yaml_data[slug][variant] = result
-        print(f"OK    {slug}.{variant}  -> {result['url']}")
+        print(f"OK      {slug}.{variant}  -> {result['url']}")
         changed = True
 
     if changed and not args.dry_run:

@@ -62,13 +62,20 @@ git -C /Users/filipsajdak/dev/c++26 tag posts/<NN>@v1
 git -C /Users/filipsajdak/dev/c++26 push --follow-tags
 ```
 
-### 4. Generate Compiler Explorer permalinks
+### 4. Generate Compiler Explorer permalinks (with API run-verify)
 
 ```
 python3 scripts/shorten-examples.py --post <NN>-<slug-folder>
 ```
 
-This appends `<slug>.<variant>: { id, url, title }` entries to `src/data/godbolt-permalinks.yml` for every `.cpp` example. Idempotent -- variants that already have an `id` are skipped (use `--force` only if you want to re-shorten).
+For every example, the script now:
+1. POSTs the source to godbolt's `/api/compiler/<id>/compile` with `execute: true`. **Aborts** if the compile or program exit code is non-zero.
+2. Captures `stdout` into the YAML as `expected_output:` (used by the post-merge content-drift check).
+3. Shortens via the `/api/shortener` if there's no existing id (or if `--force`). Otherwise re-uses the existing id and just refreshes `expected_output` if it has drifted.
+
+The post-2 fire-drill informed this: the local container PASS doesn't catch CE-only failures, and a working shortlink id doesn't imply the code compiles today.
+
+`--no-run-verify` is available but you should never use it -- it disables the contract with readers.
 
 ### 5. Wire permalinks into the MDX
 
@@ -113,13 +120,16 @@ The script:
 
 The discussion link surfaces in `PostLayout`'s article meta as `· discuss` and in the post's own CTA paragraph.
 
-### 8. Build sanity check
+### 8. Build sanity check + link sweep + drift watch
 
 ```
 NODE_ENV=production npm run build
+python3 scripts/check-post-links.py --slug <slug>
 ```
 
-Abort on warnings or errors. Spot-check the output: `dist/posts/<slug>/index.html` exists, `dist/series/cpp26-reflection/index.html` lists the new post.
+`npm run build` must complete without warnings. `check-post-links.py` greps every `href` in the new post's HTML and verifies internal links resolve in `dist/`, plus HEAD-checks external links. **Abort on any failure** -- this catches forward-refs that escaped PostLink wrapping (the failure mode where a live post has a broken link to an unshipped post).
+
+If any internal link points to a post that hasn't shipped yet, wrap that link in `<PostLink slug="...">label</PostLink>` so it renders as plain text until the target's pubDate, then auto-becomes a live link.
 
 ### 9. Three atomic commits
 
@@ -152,7 +162,7 @@ Co-Authored-By: ..."
 
 If a step has nothing to add (e.g. no cross-refs were warranted), drop that commit.
 
-### 10. Push and open PR
+### 10. Push, open PR, schedule pre-Buffer guard, and queue a post-merge drift check
 
 ```
 git push -u origin mr/<NN>-<slug>
@@ -161,11 +171,20 @@ gh pr create --base main --head mr/<NN>-<slug> \
   --body "..."
 ```
 
-PR body should follow the template in `~/.claude/plans/lets-split-all-the-temporal-oasis.md` (Summary / Verification / Test plan sections).
+PR body follows the template in `~/.claude/plans/lets-split-all-the-temporal-oasis.md`.
 
-Print the PR URL and remind the user that:
+**Mandatory automated safeguards** (don't skip; the post-2 fire-drill happened because these weren't in place):
+
+1. **Pre-Buffer publish guard.** Schedule a one-shot cron via the `CronCreate` tool to fire 15 min before the Buffer schedule time (= post's pubDate at 07:45 UTC). The cron prompt should: (a) `curl -sI` the post URL, (b) on 404, manually trigger `gh workflow run deploy.yml`, watch it to completion, re-verify, (c) on STILL 404, escalate by reading the build log and reporting. Persist with `durable: true` so it survives session restarts.
+
+2. **Post-merge content-drift check.** After the user merges the PR (and the deploy run completes), Claude must run `python3 scripts/check-live-content.py --slug <slug>`. This catches the post-2 failure mode where the godbolt id was wired in on a branch but lost in the merge. If drift is found (TODO id in live HTML, frontmatter title/summary mismatch, missing godbolt link, etc.), open + auto-merge a hotfix PR.
+
+3. **Discussion thread auto-create.** Before opening the PR, run `python3 scripts/create-discussion.py --slug <slug>` (idempotent: skips if frontmatter already has `discussion:`). This patches the mdx so the discussion URL is in the frontmatter + in the body's CTA before the PR opens. Future PostLayout renders show a `· discuss` link in the article meta.
+
+Print the PR URL + the cron job id + the discussion URL. Remind the user that:
 - The post stays invisible in production until `pubDate` (daily cron at 07:00 UTC).
 - After merge, run `/advertise-post <slug>` to generate the LinkedIn + Facebook material.
+- The pre-Buffer cron will auto-fix any cron-vs-Buffer race.
 
 ## Reuse
 
