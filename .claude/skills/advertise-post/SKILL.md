@@ -2,10 +2,16 @@
 name: advertise-post
 description: Generate paste-ready LinkedIn + Facebook captions plus a 2400x2400 wro.cpp-branded social card image for an already-published post. Outputs land under social/<platform>/<slug>/. Posting is manual (matches the scudoai/linkedin-posts/thesis-series workflow exactly).
 argument-hint: <slug>
-allowed-tools: Bash, Read, Write, Edit, Glob, AskUserQuestion
+allowed-tools: Read Write Edit Glob Grep Bash(brand-gen *) Bash(cd *) Bash(cp *) Bash(mv *) Bash(rm *) Bash(mkdir *) Bash(file *) Bash(open *) Bash(.claude/skills/advertise-post/brand-kit/inject.sh *) AskUserQuestion
 ---
 
 # /advertise-post -- generate the LinkedIn + Facebook launch material for a wro.cpp post
+
+Most recently shipped posts (for cross-referencing context):
+
+```!
+ls /Users/filipsajdak/dev/wrocpp.github.io/src/content/posts | tail -3
+```
 
 Use this skill any time after a post has shipped. It produces:
 
