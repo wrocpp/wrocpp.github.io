@@ -178,13 +178,17 @@ def main() -> int:
     p.add_argument("--dry-run", action="store_true", help="print what would change")
     p.add_argument("--no-run-verify", action="store_true",
                    help="skip the godbolt API compile+execute gate (NOT RECOMMENDED)")
-    p.add_argument("--compiler", choices=["clang", "gcc", "both"], default="both",
-                   help="which compiler profile(s) to shorten + verify against (default: both)")
+    p.add_argument("--compiler", choices=["clang", "gcc", "both", "auto"], default="auto",
+                   help="which compiler profile(s) to shorten + verify against. "
+                        "auto (default): for each variant, re-verify only compilers "
+                        "already populated in YAML; default fresh shortens to clang. "
+                        "clang/gcc/both: explicit opt-in.")
     args = p.parse_args()
 
-    profiles_to_run = (
+    explicit_profiles = (
         list(COMPILER_PROFILES.values()) if args.compiler == "both"
-        else [COMPILER_PROFILES[args.compiler]]
+        else [COMPILER_PROFILES[args.compiler]] if args.compiler in COMPILER_PROFILES
+        else None  # auto -- per-variant resolution
     )
 
     nn_slug, slug = slug_from_post(args.post)
@@ -208,6 +212,21 @@ def main() -> int:
         existing = yaml_data[slug].get(variant) or {}
         title = existing.get("title") or variant.replace("_", " ").capitalize()
         source_text = src.read_text()
+
+        # Resolve which compiler profiles apply to THIS variant.
+        # - explicit (--compiler clang|gcc|both): use that set verbatim.
+        # - auto (default): re-verify only compilers whose key is already
+        #   populated in YAML; for fresh entries with no keys yet, default
+        #   to clang only. Prevents the cron from failing on GCC for posts
+        #   that intentionally ship clang-only (post 1, 3, 4 today).
+        if explicit_profiles is not None:
+            profiles_to_run = explicit_profiles
+        else:
+            populated = [
+                prof for prof in COMPILER_PROFILES.values()
+                if existing.get(prof["yaml_id_key"])
+            ]
+            profiles_to_run = populated or [COMPILER_PROFILES["clang"]]
 
         # Loop per compiler profile. clang and gcc each have their own YAML
         # keys (id/url/expected_output vs gcc_id/gcc_url/gcc_expected_output)
