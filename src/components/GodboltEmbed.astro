@@ -12,24 +12,36 @@
  *   <GodboltEmbed id="n4eK93vfv" title="40-line JSON serializer" />
  */
 interface Props {
-  /** Short-link ID from godbolt.org/z/<ID>. Prefix `TODO` → placeholder mode. */
+  /** clang-p2996 short-link ID (godbolt.org/z/<ID>). Prefix `TODO` -> placeholder. */
   id: string;
+  /**
+   * Optional GCC 16.1 short-link ID. When set, a second "Run on GCC 16.1"
+   * button appears below the clang one (blue accent rule instead of orange).
+   * Set when GCC produces equivalent output for the example -- not all
+   * P2996 corners agree across the two implementations as of 2026-05-01.
+   */
+  gcc_id?: string;
   /** Headline for the card. */
   title?: string;
   /** Override the playground repo link shown in placeholder mode. */
   fallbackHref?: string;
-  /** Subtitle line. Defaults to the pinned compiler + flags. */
+  /** Subtitle for the clang button. Defaults to pinned compiler + flags. */
   subtitle?: string;
+  /** Subtitle for the GCC button. */
+  gcc_subtitle?: string;
 }
 const {
   id,
+  gcc_id,
   title = 'Run this example',
   subtitle = 'clang_bb_p2996 · -std=c++26 -freflection-latest -stdlib=libc++',
+  gcc_subtitle = 'g161 (GCC 16.1) · -std=c++26 -freflection',
   fallbackHref = 'https://github.com/wrocpp/cpp26-reflection-examples',
 } = Astro.props;
 
 const isPlaceholder = id.startsWith('TODO') || id === 'placeholder';
 const href = `https://godbolt.org/z/${id}`;
+const gccHref = gcc_id ? `https://godbolt.org/z/${gcc_id}` : null;
 ---
 {isPlaceholder ? (
   <div class="ce-cta ce-cta--placeholder">
@@ -42,13 +54,37 @@ const href = `https://godbolt.org/z/${id}`;
     </div>
   </div>
 ) : (
-  <a class="ce-cta" href={href} target="_blank" rel="noopener" aria-label={`Run on Compiler Explorer: ${title}`}>
-    <span class="ce-cta__play" aria-hidden="true">▸</span>
-    <span class="ce-cta__main">
-      <span class="ce-cta__eyebrow">Run on Compiler Explorer</span>
-      <span class="ce-cta__title">{title}</span>
-      <span class="ce-cta__sub">{subtitle}</span>
-    </span>
-    <span class="ce-cta__arrow" aria-hidden="true">↗</span>
-  </a>
+  <div class="ce-cta-group">
+    <a class="ce-cta" href={href} target="_blank" rel="noopener" aria-label={`Run on Compiler Explorer (clang-p2996): ${title}`}>
+      <span class="ce-cta__play" aria-hidden="true">▸</span>
+      <span class="ce-cta__main">
+        <span class="ce-cta__eyebrow">Run on Compiler Explorer</span>
+        <span class="ce-cta__title">{title}</span>
+        <span class="ce-cta__sub">{subtitle}</span>
+      </span>
+      <span class="ce-cta__arrow" aria-hidden="true">↗</span>
+    </a>
+    {gccHref && (
+      <a class="ce-cta ce-cta--secondary" href={gccHref} target="_blank" rel="noopener" aria-label={`Also run on GCC 16.1: ${title}`}>
+        <span class="ce-cta__play" aria-hidden="true">▸</span>
+        <span class="ce-cta__main">
+          <span class="ce-cta__eyebrow">Also on GCC 16.1</span>
+          <span class="ce-cta__title">{title}</span>
+          <span class="ce-cta__sub">{gcc_subtitle}</span>
+        </span>
+        <span class="ce-cta__arrow" aria-hidden="true">↗</span>
+      </a>
+    )}
+  </div>
 )}
+
+<style>
+  .ce-cta-group { display: flex; flex-direction: column; gap: 0.5rem; margin: 1.5rem 0; }
+  .ce-cta-group .ce-cta { margin: 0; }
+  .ce-cta--secondary { border-left-color: var(--blue-deep) !important; }
+  .ce-cta--secondary:hover { border-color: var(--blue-deep) !important; }
+  .ce-cta--secondary .ce-cta__play { background: var(--blue-deep); }
+  .ce-cta--secondary:hover .ce-cta__play { background: var(--blue); }
+  .ce-cta--secondary .ce-cta__eyebrow { color: var(--blue-deep); }
+  .ce-cta--secondary:hover .ce-cta__arrow { color: var(--blue-deep); }
+</style>
