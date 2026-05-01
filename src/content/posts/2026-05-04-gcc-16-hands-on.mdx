@@ -1,0 +1,86 @@
+---
+title: "GCC 16.1 ships C++26 reflection -- your 30-line hands-on"
+slug: "gcc-16-hands-on"
+pubDate: 2026-05-04
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [reflection, cpp26, gcc, p2996, news]
+summary: "GCC 16.1 dropped on 30 April 2026 with -freflection. C++26 was finalized at Croydon five weeks earlier. Here is a 25-line program you can compile and run today on your laptop."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+GCC 16.1 shipped on 30 April 2026 with `-freflection`. The C++26 working draft was frozen at the Croydon meeting on 28 March 2026. Five weeks from "the standard is done" to "your distro's default compiler builds it."
+
+If you have spent the last decade waiting for reflection to actually land in a stable mainstream compiler -- it's here. This post is the smallest hands-on we could write that proves it.
+
+## The program
+
+Twenty-five lines, one source file, two includes:
+
+```cpp
+// hello_reflect.cpp
+#include <experimental/meta>
+#include <print>
+#include <string>
+
+struct User {
+    std::string name;
+    int age;
+    bool admin;
+};
+
+template <typename T>
+consteval auto field_names() {
+    std::string out;
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    for (auto m : std::meta::nonstatic_data_members_of(^^T, ctx)) {
+        out += std::meta::identifier_of(m);
+        out += '\n';
+    }
+    return out;
+}
+
+int main() {
+    static constexpr auto names = field_names<User>();
+    std::println("{}", names);
+}
+```
+
+Output:
+
+```
+name
+age
+admin
+```
+
+That's reflection: at compile time, ask the compiler "what fields does `User` have?", and get back a list of names. No macros, no Boost.Hana, no codegen step. The `^^T` operator reflects a type into a `std::meta::info` value; `nonstatic_data_members_of` enumerates its fields; `identifier_of` reads each name as a string.
+
+## Run it on your machine
+
+On Ubuntu (or any distro that has packaged GCC 16.1):
+
+```sh
+sudo apt install gcc-16
+g++-16 -std=c++26 -freflection hello_reflect.cpp -o hello
+./hello
+```
+
+GCC 16.1 ships only the canonical `<meta>` header; the `<experimental/meta>` spelling above is the clang-p2996 alias. If you're on GCC, change the include to `<meta>` (the Compiler Explorer link below does this rewrite for you).
+
+If you don't want to install anything, the button below opens the same source pre-loaded on Compiler Explorer -- one click for clang-p2996, one click for GCC 16.1. Identical output on both.
+
+<GodboltEmbed id="e4618nxT1" gcc_id="M8TrGd6b5" title="GCC 16.1 reflection hands-on (25 lines)" />
+
+## Where to next
+
+This is the surface. If you liked the 25-line version and want to understand the primitives that built it -- and what you can compose them into -- we have a 25-post series teaching reflection from the ground up.
+
+Start here: <PostLink slug="why-cpp26-reflection-matters">Why C++26 reflection actually matters</PostLink>. It opens with a 40-line JSON serializer that uses the same `^^` operator you just ran, plus four other reflection primitives, and walks through what each one earns you.
+
+After that, post 2 (<PostLink slug="first-reflection">Your first ^^</PostLink>) takes the program above apart and puts it back together at half-speed.

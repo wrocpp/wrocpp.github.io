@@ -204,3 +204,12 @@ reflect-soa:
     gcc_url: https://godbolt.org/z/cjbasYYGd
     gcc_expected_output: "Particle SoA layout:\n  std::vector<float> x;\n  std::vector<float> y;\n  std::vector<float> z;\n\
       \  std::vector<float> vx;\n  std::vector<float> vy;\n  std::vector<float> vz;\nprocessed 100000 particles in SoA layout"
+gcc-16-hands-on:
+  hello_reflect:
+    id: e4618nxT1
+    url: https://godbolt.org/z/e4618nxT1
+    title: GCC 16.1 reflection hands-on
+    expected_output: "name\nage\nadmin\n"
+    gcc_id: M8TrGd6b5
+    gcc_url: https://godbolt.org/z/M8TrGd6b5
+    gcc_expected_output: "name\nage\nadmin\n"
