@@ -90,7 +90,7 @@ The gap isn't about performance. C++ has always been fast. It's about **ergonomi
 
 C++ has been trying to close this gap for almost twenty years. [N1958 (2006)](https://open-std.org/JTC1/SC22/WG21/docs/papers/2006/n1958.pdf) proposed reflection. N3956 (2014), N4428 (2015), P0194 (2016), the Reflection TS (2019), and P1240 "Scalable Reflection" (2020) all came and went. The committee couldn't agree on API shape: reflections as types or as values? runtime or compile-time? how do they compose with concepts and templates? should there be a separate meta-language? Each proposal had merit; each stalled on a different detail.
 
-After seven major proposals and most of two decades, [P2996 "Reflection for C++26"](https://wg21.link/P2996) (Daveed Vandevoorde, Dan Katz, Barry Revzin, Faisal Vali) converged — value-based, compile-time, splicer-driven, and implementable. Adopted into C++26. Shipping in compilers now.
+After seven major proposals and most of two decades, [P2996 "Reflection for C++26"](https://wg21.link/P2996) (Daveed Vandevoorde, Dan Katz, Barry Revzin, Faisal Vali) converged — value-based, compile-time, splicer-driven, and implementable. Adopted into C++26. Shipping in compilers now: the [Bloomberg/clang-p2996 fork](https://github.com/bloomberg/clang-p2996) this series uses as its reference, and as of April 2026 [GCC 16.1](https://gcc.gnu.org/gcc-16/changes.html#cxx) (released, hosted on Compiler Explorer as `g161`).
 
 ## Act 3 — The answer
 
@@ -208,7 +208,7 @@ Reflection isn't just a feature. It's an inflection point:
 
 - **C++ closes one of its most-cited gaps with modern languages.** "You can't even walk over a struct's fields" stops landing.
 
-None of this is automatic. P2996 is new. The implementations are experimental — the [Bloomberg/clang-p2996 fork](https://github.com/bloomberg/clang-p2996) this series uses explicitly warns against production use. The library ecosystem will take years to catch up. Early adopters will hit compiler bugs, API shifts, and patterns that turn out to be wrong. But the shape of what's possible has changed, and it won't change back.
+None of this is automatic. P2996 is new. The implementations are experimental — the [Bloomberg/clang-p2996 fork](https://github.com/bloomberg/clang-p2996) this series uses explicitly warns against production use. GCC 16.1 ships P2996 in its April 2026 release, but the two implementations don't yet agree on every API surface (e.g. clang's `std::meta::annotation_of_type` vs GCC's `annotations_of_with_type`, plus differences in `consteval` strictness). A dedicated post later in the series compares the two; for now treat the toolchain as still-shifting. The library ecosystem will take years to catch up. Early adopters will hit compiler bugs, API shifts, and patterns that turn out to be wrong. But the shape of what's possible has changed, and it won't change back.
 
 ## Try it
 
