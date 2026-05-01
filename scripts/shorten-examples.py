@@ -30,10 +30,46 @@ except ImportError:
 REPO_ROOT = Path(__file__).resolve().parent.parent
 YAML_PATH = REPO_ROOT / "src" / "data" / "godbolt-permalinks.yml"
 CPP26_ROOT = Path("/Users/filipsajdak/dev/c++26")
-COMPILER_ID = "clang_bb_p2996"
-COMPILER_OPTIONS = "-std=c++26 -freflection-latest -stdlib=libc++"
 SHORTENER_URL = "https://godbolt.org/api/shortener"
-COMPILE_URL = f"https://godbolt.org/api/compiler/{COMPILER_ID}/compile"
+
+# Per-toolchain compile/shorten profile. Two compilers ship C++26 reflection
+# as of 2026-05-01: the Bloomberg clang-p2996 fork (the series's reference
+# container) and GCC 16.1 (released April 2026, hosted on Compiler Explorer
+# as `g161`). Posts gain parallel godbolt links so readers can pick either.
+COMPILER_PROFILES = {
+    "clang": {
+        "id": "clang_bb_p2996",
+        "options": "-std=c++26 -freflection-latest -stdlib=libc++",
+        "yaml_id_key": "id",
+        "yaml_url_key": "url",
+        "yaml_output_key": "expected_output",
+        # No source rewrite needed -- clang-p2996 ships <experimental/meta>.
+        "source_rewrites": [],
+    },
+    "gcc": {
+        "id": "g161",
+        "options": "-std=c++26 -freflection",
+        "yaml_id_key": "gcc_id",
+        "yaml_url_key": "gcc_url",
+        "yaml_output_key": "gcc_expected_output",
+        # GCC 16.1 ships only <meta>, not the <experimental/meta> alias.
+        # Header shim: rewrite the include line on the fly so the same
+        # source compiles against both toolchains. Authoritative .cpp on
+        # disk stays clang-shaped (uses <experimental/meta>).
+        "source_rewrites": [("<experimental/meta>", "<meta>")],
+    },
+}
+
+
+def compile_url(profile: dict) -> str:
+    return f"https://godbolt.org/api/compiler/{profile['id']}/compile"
+
+
+def apply_rewrites(source: str, profile: dict) -> str:
+    out = source
+    for old, new in profile["source_rewrites"]:
+        out = out.replace(old, new)
+    return out
 
 
 def slug_from_post(post_arg: str) -> tuple[str, str]:
@@ -65,9 +101,9 @@ def slug_from_post(post_arg: str) -> tuple[str, str]:
     sys.exit(f"error: no mdx post with series_order={nn} found in {posts_dir}")
 
 
-def shorten(source: str, title: str) -> dict:
-    """Hit godbolt's shortener with one source file. Returns the parsed
-    {id, url, title} we want to write into the YAML."""
+def shorten(source: str, title: str, profile: dict) -> dict:
+    """Hit godbolt's shortener with one source file under the given
+    compiler profile. Returns the parsed {id, url, title}."""
     payload = {
         "sessions": [
             {
@@ -75,7 +111,7 @@ def shorten(source: str, title: str) -> dict:
                 "language": "c++",
                 "source": source,
                 "compilers": [
-                    {"id": COMPILER_ID, "options": COMPILER_OPTIONS}
+                    {"id": profile["id"], "options": profile["options"]}
                 ],
             }
         ]
@@ -95,27 +131,24 @@ def shorten(source: str, title: str) -> dict:
     return {"id": short_id, "url": url, "title": title}
 
 
-def compile_and_run(source: str) -> tuple[bool, str, str]:
-    """Compile + execute the source via godbolt's API.
+def compile_and_run(source: str, profile: dict) -> tuple[bool, str, str]:
+    """Compile + execute the source via godbolt's API under the given
+    compiler profile.
 
     Returns (ok, stdout, stderr_or_compile_log). `ok` is True only if the
-    compiler exited 0 AND the program exited 0. We use this as a gate
-    BEFORE creating the shortlink: if the code doesn't actually run on
-    Compiler Explorer, the published post would lie to readers.
-
-    The post-2 fire-drill informed this: the local container PASS doesn't
-    catch CE-only failures (different libstdc++ headers, missing -include,
-    etc.) and a working shortlink doesn't imply the code compiles.
+    compiler exited 0 AND the program exited 0. Used as a gate BEFORE
+    creating the shortlink: if the code doesn't actually run on Compiler
+    Explorer, the published post would lie to readers.
     """
     payload = {
         "source": source,
         "options": {
-            "userArguments": COMPILER_OPTIONS,
+            "userArguments": profile["options"],
             "filters": {"execute": True},
         },
     }
     req = urllib.request.Request(
-        COMPILE_URL,
+        compile_url(profile),
         data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json", "Accept": "application/json"},
         method="POST",
@@ -145,7 +178,14 @@ def main() -> int:
     p.add_argument("--dry-run", action="store_true", help="print what would change")
     p.add_argument("--no-run-verify", action="store_true",
                    help="skip the godbolt API compile+execute gate (NOT RECOMMENDED)")
+    p.add_argument("--compiler", choices=["clang", "gcc", "both"], default="both",
+                   help="which compiler profile(s) to shorten + verify against (default: both)")
     args = p.parse_args()
+
+    profiles_to_run = (
+        list(COMPILER_PROFILES.values()) if args.compiler == "both"
+        else [COMPILER_PROFILES[args.compiler]]
+    )
 
     nn_slug, slug = slug_from_post(args.post)
     examples_dir = CPP26_ROOT / "posts" / nn_slug / "examples"
@@ -169,47 +209,60 @@ def main() -> int:
         title = existing.get("title") or variant.replace("_", " ").capitalize()
         source_text = src.read_text()
 
-        already_shortened = bool(existing.get("id")) and not args.force
-        if args.dry_run:
-            verb = "VERIFY" if already_shortened else "DRY"
-            print(f"{verb:6} {slug}.{variant}  ({src.name}, {len(source_text)} chars)")
-            continue
+        # Loop per compiler profile. clang and gcc each have their own YAML
+        # keys (id/url/expected_output vs gcc_id/gcc_url/gcc_expected_output)
+        # so the entry can carry both in parallel.
+        for profile in profiles_to_run:
+            id_key = profile["yaml_id_key"]
+            url_key = profile["yaml_url_key"]
+            output_key = profile["yaml_output_key"]
+            label = f"{slug}.{variant} [{profile['id']}]"
+            already_shortened = bool(existing.get(id_key)) and not args.force
 
-        # Compile + execute via godbolt API BEFORE shortening (or before
-        # accepting an existing shortlink as still-good). Captures stdout
-        # into `expected_output` for content-drift / regression alerts.
-        # The post-2 fire-drill informed this: a working shortlink ID
-        # doesn't imply the code compiles on CE today.
-        stdout = ""
-        if not args.no_run_verify:
-            print(f"verify  {slug}.{variant}  ->", end=" ", flush=True)
-            ok, stdout, err = compile_and_run(source_text)
-            if not ok:
-                print("FAIL")
-                sys.exit(f"\nCE verification failed for {src.name}:\n{err}")
-            print(f"OK (stdout: {len(stdout)} chars)")
-
-        if already_shortened:
-            # Re-verify path: keep the existing shortlink id, just
-            # refresh expected_output if it's missing or has drifted.
-            old_out = existing.get("expected_output")
-            if old_out == stdout:
-                print(f"skip    {slug}.{variant}  (id={existing['id']}, output unchanged)")
+            if args.dry_run:
+                verb = "VERIFY" if already_shortened else "DRY"
+                print(f"{verb:6} {label}  ({src.name}, {len(source_text)} chars)")
                 continue
-            existing["expected_output"] = stdout
-            yaml_data[slug][variant] = existing
-            kind = "added" if not old_out else "updated"
-            print(f"OK      {slug}.{variant}  ({kind} expected_output for id={existing['id']})")
-            changed = True
-            continue
 
-        # Fresh shortener call (no existing id, or --force).
-        result = shorten(source_text, title)
-        if stdout:
-            result["expected_output"] = stdout
-        yaml_data[slug][variant] = result
-        print(f"OK      {slug}.{variant}  -> {result['url']}")
-        changed = True
+            # Apply per-profile source rewrites (e.g. <experimental/meta>
+            # -> <meta> for GCC). Authoritative .cpp on disk is unchanged.
+            profile_source = apply_rewrites(source_text, profile)
+
+            stdout = ""
+            if not args.no_run_verify:
+                print(f"verify  {label}  ->", end=" ", flush=True)
+                ok, stdout, err = compile_and_run(profile_source, profile)
+                if not ok:
+                    print("FAIL")
+                    sys.exit(f"\nCE verification failed for {src.name} on {profile['id']}:\n{err}")
+                print(f"OK (stdout: {len(stdout)} chars)")
+
+            if already_shortened:
+                old_out = existing.get(output_key)
+                if old_out == stdout:
+                    print(f"skip    {label}  (id={existing[id_key]}, output unchanged)")
+                    continue
+                existing[output_key] = stdout
+                yaml_data[slug][variant] = existing
+                kind = "added" if not old_out else "updated"
+                print(f"OK      {label}  ({kind} {output_key} for id={existing[id_key]})")
+                changed = True
+                continue
+
+            # Fresh shortener call.
+            result = shorten(profile_source, title, profile)
+            # Re-key the response to per-profile YAML keys, then merge into
+            # the existing entry so clang and gcc fields coexist.
+            entry = dict(existing)
+            entry["title"] = title
+            entry[id_key] = result["id"]
+            entry[url_key] = result["url"]
+            if stdout:
+                entry[output_key] = stdout
+            yaml_data[slug][variant] = entry
+            existing = entry
+            print(f"OK      {label}  -> {result['url']}")
+            changed = True
 
     if changed and not args.dry_run:
         # Preserve the file header by re-reading and only rewriting from the

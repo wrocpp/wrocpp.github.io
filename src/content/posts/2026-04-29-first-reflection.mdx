@@ -28,7 +28,7 @@ Everything reflection-related lives in one header:
 #include <experimental/meta>
 ```
 
-In clang-p2996 this also exists as plain `<meta>`. Both work; stick with `experimental` while the feature is, well, experimental.
+In clang-p2996 this also exists as plain `<meta>`. Both work; stick with `experimental` while the feature is, well, experimental. (GCC 16.1 ships only `<meta>` -- the `experimental` alias is a clang-p2996 thing. The Compiler Explorer link below has both buttons: clang-p2996 runs the source as-is, GCC 16.1 runs the same source with a one-line include rewrite.)
 
 ## The reflect operator
 
@@ -119,7 +119,7 @@ y: int
 
 Twelve meaningful lines. No macros, no external tool, no `#define BOOST_...`.
 
-<GodboltEmbed id="bq9WjeeM5" title="Your first ^^ — walking Point's members" />
+<GodboltEmbed id="bq9WjeeM5" gcc_id="n86cE3aWq" title="Your first ^^ — walking Point's members" />
 
 ## The primitives you just used
 
