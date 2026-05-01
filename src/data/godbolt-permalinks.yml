@@ -53,6 +53,24 @@ first-reflection:
       name: basic_string<char, char_traits<char>, allocator<char>>
 
       '
+    gcc_id: n86cE3aWq
+    gcc_url: https://godbolt.org/z/n86cE3aWq
+    gcc_expected_output: 'Point:
+
+      x: int
+
+      y: int
+
+
+      Line:
+
+      a: Point
+
+      b: Point
+
+      name: std::__cxx11::basic_string<char>
+
+      '
 splicing:
   splice_basics:
     id: TnMx1Ys5b
