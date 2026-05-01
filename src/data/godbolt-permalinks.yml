@@ -13,11 +13,17 @@ why-cpp26-reflection-matters:
     url: https://godbolt.org/z/n4eK93vfv
     title: 40-line JSON serializer with reflection
     expected_output: '{"name":"Filip","age":40,"admin":true,"home":{"city":"Warsaw","postal_code":12345}}'
+    gcc_id: e3346Pxoh
+    gcc_url: https://godbolt.org/z/e3346Pxoh
+    gcc_expected_output: '{"name":"Filip","age":40,"admin":true,"home":{"city":"Warsaw","postal_code":12345}}'
   teaser_peel:
     id: MzM4bh3rj
     url: https://godbolt.org/z/MzM4bh3rj
     title: "Peel-first variant \u2014 first iteration hoisted to compile time"
     expected_output: '{"name":"Filip","age":40,"admin":true,"home":{"city":"Warsaw","postal_code":12345}}'
+    gcc_id: 439ro4sno
+    gcc_url: https://godbolt.org/z/439ro4sno
+    gcc_expected_output: '{"name":"Filip","age":40,"admin":true,"home":{"city":"Warsaw","postal_code":12345}}'
   teaser_annotated:
     id: 97WdeKs7v
     url: https://godbolt.org/z/97WdeKs7v
@@ -83,3 +89,118 @@ template-for-expansion-statements:
     url: https://godbolt.org/z/j9vWKaEG6
     title: Dump
     expected_output: "Point:\n  x = 3\n  y = 4\ntuple element: 1\ntuple element: 2.5\ntuple element: c"
+enum-to-string:
+  renum:
+    title: Renum
+    gcc_id: cTKnshToM
+    gcc_url: https://godbolt.org/z/cTKnshToM
+    gcc_expected_output: 'green
+
+      read|exec'
+auto-formatter:
+  formatter:
+    title: Formatter
+    gcc_id: Y5ohxse9d
+    gcc_url: https://godbolt.org/z/Y5ohxse9d
+    gcc_expected_output: 'User{name: Filip, age: 40, admin: true, home: Address{city: Warsaw, postal_code: 12345}}'
+derive-eq-hash:
+  hash_demo:
+    title: Hash demo
+    gcc_id: Eada5fhx6
+    gcc_url: https://godbolt.org/z/Eada5fhx6
+    gcc_expected_output: '(3,4) -> 3-4-5
+
+      (0,0) -> origin
+
+      hash({0,0}) = 9332004819697274819
+
+      hash({3,4}) = 9332004819697328066'
+json-naive:
+  rjson:
+    title: Rjson
+    gcc_id: PnzTqMPbP
+    gcc_url: https://godbolt.org/z/PnzTqMPbP
+    gcc_expected_output: '{"name":"Filip","age":40,"admin":true,"home":{"city":"Warsaw","postal_code":12345},"aliases":["fsjdk","phi"]}'
+json-deserialize:
+  from_values:
+    title: From values
+    gcc_id: f5dvhjMdP
+    gcc_url: https://godbolt.org/z/f5dvhjMdP
+    gcc_expected_output: "name=Filip age=40 admin=true\nfailure path: at .age \u2014 expected number"
+dependency-injection:
+  di_demo:
+    title: Di demo
+    gcc_id: zqs9vn7vo
+    gcc_url: https://godbolt.org/z/zqs9vn7vo
+    gcc_expected_output: 'Hello @tick=1
+
+      Hello @tick=2'
+auto-mocks:
+  mock_demo:
+    title: Mock demo
+    gcc_id: qW9vYcTTj
+    gcc_url: https://godbolt.org/z/qW9vYcTTj
+    gcc_expected_output: 'now:  42
+
+      zone: Europe/Warsaw
+
+      now:  42
+
+      IClock::now called 2 times
+
+      IClock::zone called 1 times'
+define-aggregate:
+  pick:
+    title: Pick
+    gcc_id: xTxofns9E
+    gcc_url: https://godbolt.org/z/xTxofns9E
+    gcc_expected_output: "Pick<User, \"name\", \"age\", \"admin\"> would contain:\n  name : std::__cxx11::basic_string<char>\n\
+      \  age : int\n  admin : bool\n(Type synthesis via std::meta::define_aggregate is experimental;\n full Pick / Omit /\
+      \ Partial land once the compiler context relaxes.)"
+cross-language-comparison:
+  main:
+    title: Main
+    gcc_id: GYT781eY5
+    gcc_url: https://godbolt.org/z/GYT781eY5
+    gcc_expected_output: '{"name":"Filip","age":40,"admin":true}'
+reflect-arbitrary:
+  arbitrary:
+    title: Arbitrary
+    gcc_id: 8nEcd6zce
+    gcc_url: https://godbolt.org/z/8nEcd6zce
+    gcc_expected_output: 'Generated User #0: name=uy       age=18  admin=true home={city=ppel pc=15}
+
+      Generated User #1: name=b        age=46  admin=true home={city=pd pc=71}
+
+      Generated User #2: name=abzs     age=84  admin=true home={city=ae pc=100}
+
+      Generated User #3: name=q        age=30  admin=true home={city=ala pc=29}
+
+      Generated User #4: name=pkd      age=4   admin=false home={city=jglcu pc=62}'
+reflect-optics:
+  optics:
+    title: Optics
+    gcc_id: bsErWaTex
+    gcc_url: https://godbolt.org/z/bsErWaTex
+    gcc_expected_output: 'view: Wroclaw
+
+      set:  Warsaw
+
+      over: 50002'
+reflect-dx:
+  natvis_emit:
+    title: Natvis emit
+    gcc_id: s3GzrhjvM
+    gcc_url: https://godbolt.org/z/s3GzrhjvM
+    gcc_expected_output: "<Type Name=\"Address\">\n  <DisplayString>{city={city} postal_code={postal_code}}</DisplayString>\n\
+      \  <Expand>\n    <Item Name=\"city\">city</Item>\n    <Item Name=\"postal_code\">postal_code</Item>\n  </Expand>\n</Type>\n\
+      <Type Name=\"User\">\n  <DisplayString>{name={name} age={age} admin={admin} home={home}}</DisplayString>\n  <Expand>\n\
+      \    <Item Name=\"name\">name</Item>\n    <Item Name=\"age\">age</Item>\n    <Item Name=\"admin\">admin</Item>\n   \
+      \ <Item Name=\"home\">home</Item>\n  </Expand>\n</Type>"
+reflect-soa:
+  soa:
+    title: Soa
+    gcc_id: cjbasYYGd
+    gcc_url: https://godbolt.org/z/cjbasYYGd
+    gcc_expected_output: "Particle SoA layout:\n  std::vector<float> x;\n  std::vector<float> y;\n  std::vector<float> z;\n\
+      \  std::vector<float> vx;\n  std::vector<float> vy;\n  std::vector<float> vz;\nprocessed 100000 particles in SoA layout"
