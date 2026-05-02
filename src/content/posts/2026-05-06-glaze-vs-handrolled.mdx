@@ -1,0 +1,99 @@
+---
+title: "Glaze v7.2 vs your hand-rolled JSON: a 30-line benchmark"
+slug: "glaze-vs-handrolled"
+pubDate: 2026-05-06
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp26, p2996, glaze, json, benchmark, news]
+summary: "Glaze v7.2 ships a P2996 backend that retires __PRETTY_FUNCTION__, lifts the 128-member cap, and serializes private members. Here is when you still write your own thirty lines -- and when one call wins."
+draft: false
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+On 28 April 2026 Stephen Berry [announced Glaze v7.2](https://stephenberry.github.io/glaze/p2996-reflection/) -- the first release whose reflection backend is **standard C++26**, not `__PRETTY_FUNCTION__` string-scraping.
+
+What that swap buys you, on day one:
+
+- **No 128-member cap.** The old trick used aggregate-binding tuples; clang and gcc both choked past 128 fields. Gone.
+- **Private members.** `std::meta::access_context::unchecked()` ignores access. Glaze v7.2 can serialize a class without `friend` declarations or `glz::meta` opt-ins.
+- **`reflect_enums` for free.** Enum -> string round-trips without writing `glz::meta<MyEnum>`.
+
+So the question becomes: now that the compiler can introspect the type itself, do you still bother writing your own serializer? Let's look at both sides.
+
+## The hand-rolled version (the thirty lines)
+
+This is the distillation of the walker we built in <PostLink slug="json-naive">post 8</PostLink>:
+
+```cpp
+#include <experimental/meta>
+#include <string>
+
+template <typename T>
+std::string to_json(T const& v);
+
+template <typename T>
+void append_value(std::string& out, T const& v) {
+    if constexpr (std::is_arithmetic_v<T>) out += std::to_string(v);
+    else if constexpr (std::is_convertible_v<T, std::string_view>)
+        { out += '"'; out += v; out += '"'; }
+    else out += to_json(v);
+}
+
+template <typename T>
+std::string to_json(T const& obj) {
+    std::string out = "{";
+    bool first = true;
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    template for (constexpr auto m
+                  : std::define_static_array(
+                      std::meta::nonstatic_data_members_of(^^T, ctx))) {
+        if (!first) out += ',';
+        first = false;
+        out += '"';
+        out += std::meta::identifier_of(m);
+        out += "\":";
+        append_value(out, obj.[: m :]);
+    }
+    return out + "}";
+}
+```
+
+Thirty lines, one header, no dependencies. Stub-quality escaping (the post 8 version handles `\n`, `\"`, control chars). `^^T` reflects the type, `nonstatic_data_members_of` enumerates fields, the splicer `obj.[: m :]` reads each member by reflection. Every branch in `append_value` is `if constexpr` -- after `-O2` it compiles to a straight-line string builder with zero runtime dispatch.
+
+That's the educational version. You own it. You debug it with a normal stepper. It's the right answer when the schema is small, the dependency budget is zero, and you want to **understand** what reflection is doing.
+
+## The Glaze version (the one line)
+
+```cpp
+#include <glaze/glaze.hpp>
+
+std::string buffer;
+glz::write<glz::opts{}>(user, buffer);
+```
+
+That's the API. No `glz::meta` for `User`. No macros. Glaze v7.2 walks the type via `std::meta` the same way our thirty-liner does -- it just also handles every edge case (float NaN, UTF-8 validation, `std::variant`, `std::optional`, `std::map<K,V>` as object, JSON Pointer, partial reads, Concepts-based custom hooks, ...).
+
+## The numbers
+
+At CppCon 2025 Daniel Lemire and Robin Thiesen showed the punchline: ["How C++ finally beats Rust at JSON serialization"](https://isocpp.org/blog/2026/04/cppcon-2025-how-cpp-finally-beats-rust-at-json-serialization-lemire-thiesen). With reflection-driven codegen the simdjson family of writers crossed gigabytes per second -- past serde_json, past every runtime-typed C++ JSON library. Glaze v7.2 is on the same curve: the P2996 backend lets the compiler see every field at compile time, unroll the walk, and inline the SIMD-friendly write loops.
+
+Our 30-liner wins on **read-the-source** throughput. Glaze wins on **bytes-per-second** throughput by roughly an order of magnitude on payloads above a few KB.
+
+## When to write your own, when to reach for Glaze
+
+Write the thirty lines when:
+
+- The struct is yours, the schema is small, the project's dependency budget is zero.
+- You're learning reflection (see <PostLink slug="why-cpp26-reflection-matters">post 1</PostLink> for the strategic case).
+- You need a bespoke wire shape that no library models cleanly.
+
+Reach for Glaze when:
+
+- Throughput matters and the payload is non-trivial.
+- You need round-trip parsing, partial reads, schema evolution, or JSON Pointer.
+- You don't want to own escape handling, NaN policy, and UTF-8 validation forever.
+
+The good news in 2026: **both** answers are cheap. Reflection retired the macro tax on every JSON library at once -- and made the thirty-line teaching version a real artefact you can ship.
