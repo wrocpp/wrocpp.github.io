@@ -99,6 +99,12 @@ const toolset = defineCollection({
     licence: z.string().optional(),
     cost: z.string().optional(),
     draft: z.boolean().default(false),
+    /**
+     * Concise instructions an AI agent can fetch and act on. Rendered as
+     * /toolset/<slug>/llms.txt and indexed in /llms.txt at the site root
+     * (per https://llmstxt.org/).
+     */
+    agentInstructions: z.string().optional(),
   }),
 });
 
