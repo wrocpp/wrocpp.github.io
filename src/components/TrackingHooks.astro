@@ -1,18 +1,23 @@
 ---
-/**
- * Client-side tracking hooks (outbound clicks + scroll depth).
- *
- * Renders one inline <script> that, after DOM ready:
- *   1. Attaches a click listener to every <a href> with an external host;
- *      fires `gtag('event', 'click_outbound', { href, host })` so each
- *      external destination shows up as its own event in GA4.
- *   2. Listens for scroll past 25/50/75/100% of document height and fires
- *      `gtag('event', 'scroll_depth', { percent })` once per threshold.
- *
- * Both events also fire when consent is 'denied' but Consent Mode v2
- * sends them as cookieless pings -- GA4 still gets aggregate signals.
- *
- * Includes nothing if PUBLIC_GA_ID is unset.
+/*
+   Client-side tracking hooks (outbound clicks + scroll depth).
+
+   Renders one inline script tag that, after the DOM is ready:
+     1. Attaches a click listener to every anchor with an external host
+        and fires gtag('event', 'click_outbound', { href, host }) so each
+        external destination shows up as its own event in GA4.
+     2. Listens for scroll past 25/50/75/100% of document height and fires
+        gtag('event', 'scroll_depth', { percent }) once per threshold.
+
+   Both events also fire when consent is 'denied' but Consent Mode v2
+   sends them as cookieless pings -- GA4 still gets aggregate signals.
+
+   Includes nothing if PUBLIC_GA_ID is unset.
+
+   Note: avoid JSDoc-style block comments here -- Astro's dev-mode
+   esbuild parser misreads literal HTML tags inside frontmatter JSDoc
+   and crashes with "Expected ';'" errors. Plain block comments
+   without nested comment-terminator sequences are safe.
  */
 const gaId = import.meta.env.PUBLIC_GA_ID;
 const siteHost = 'wrocpp.github.io';
