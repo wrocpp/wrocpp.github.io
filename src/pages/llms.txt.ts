@@ -16,7 +16,7 @@ export const GET: APIRoute = async () => {
     '',
     '## Toolset (machine-readable)',
     '',
-    '- [C++26 compiler support](https://wrocpp.github.io/toolset/compiler-support/): per-feature, per-compiler matrix derived from godbolt examples we re-verify on every publish.',
+    '- [C++26 compiler support](https://wrocpp.github.io/toolset/compiler-support/llms.txt): per-feature, per-compiler matrix derived from godbolt examples we re-verify on every publish.',
   ];
 
   for (const e of toolset) {
