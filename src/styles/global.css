@@ -891,6 +891,54 @@ a:hover { color: var(--orange); }
 .ce-cta--placeholder .ce-cta__sub { color: var(--ink-muted); font-family: "Source Serif 4", Georgia, serif; font-size: 0.95rem; }
 .ce-cta--placeholder .ce-cta__sub a { color: var(--orange); }
 
+/* -------- TOOLSET: local-llm tier table + runtime cards -------- */
+.local-llm-tiers, .local-llm-runtimes { margin: 1.4rem 0; }
+.tier-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.78rem;
+}
+.tier-table th, .tier-table td {
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid var(--rule);
+  border-right: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: top;
+}
+.tier-table thead th {
+  background: var(--paper-3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.7rem;
+}
+.tier-table th:last-child, .tier-table td:last-child { border-right: none; }
+.licence-chip {
+  background: #E8F5E0;
+  color: #2F5C1A;
+  padding: 0.05rem 0.4rem;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+.licence-chip--inline { font-size: 0.62rem; vertical-align: middle; margin-left: 0.4rem; }
+.runtime-card {
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--orange);
+  padding: 0.9rem 1.1rem;
+  margin: 0.8rem 0;
+}
+.runtime-card h3 {
+  font-family: "Quicksand", system-ui, sans-serif;
+  font-size: 1rem;
+  margin: 0 0 0.4rem;
+}
+.runtime-card p { margin: 0.2rem 0; font-size: 0.92rem; line-height: 1.5; }
+
 /* Respect reduced motion */
 @media (prefers-reduced-motion: reduce) {
   .reveal { animation: none; }

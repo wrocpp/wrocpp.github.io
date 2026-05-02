@@ -4,11 +4,10 @@ import ReviewedBadge from '../../../components/ReviewedBadge.astro';
 import MatrixTable from '../../../components/MatrixTable.astro';
 import yaml from 'js-yaml';
 import { readFileSync, statSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
 
-const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url));
-const godboltPath = `${repoRoot}src/data/godbolt-permalinks.yml`;
-const featuresPath = `${repoRoot}src/data/compatibility-features.yml`;
+const godboltPath = resolve(process.cwd(), 'src/data/godbolt-permalinks.yml');
+const featuresPath = resolve(process.cwd(), 'src/data/compatibility-features.yml');
 
 type Variant = {
   id?: string;

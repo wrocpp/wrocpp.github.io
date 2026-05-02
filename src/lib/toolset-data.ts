@@ -1,11 +1,9 @@
 import yaml from 'js-yaml';
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-
-const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
+import { resolve } from 'node:path';
 
 function loadYaml<T>(rel: string): T {
-  return yaml.load(readFileSync(`${repoRoot}${rel}`, 'utf-8')) as T;
+  return yaml.load(readFileSync(resolve(process.cwd(), rel), 'utf-8')) as T;
 }
 
 export interface AiAgent {
