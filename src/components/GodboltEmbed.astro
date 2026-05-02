@@ -42,6 +42,14 @@ const {
 const isPlaceholder = id.startsWith('TODO') || id === 'placeholder';
 const href = `https://godbolt.org/z/${id}`;
 const gccHref = gcc_id ? `https://godbolt.org/z/${gcc_id}` : null;
+// Compiler-support badge: only meaningful for real (non-placeholder) ids.
+// "+ GCC 16.1" when a gcc_id was wired; otherwise the example is currently
+// known to run on clang-p2996 only (per docs/gcc-16-1-compatibility.md).
+const badgeLabel = !isPlaceholder
+  ? gcc_id
+    ? 'Tested: clang-p2996 + GCC 16.1'
+    : 'Tested: clang-p2996 only'
+  : null;
 ---
 {isPlaceholder ? (
   <div class="ce-cta ce-cta--placeholder">
@@ -55,6 +63,11 @@ const gccHref = gcc_id ? `https://godbolt.org/z/${gcc_id}` : null;
   </div>
 ) : (
   <div class="ce-cta-group">
+    {badgeLabel && (
+      <div class="ce-compiler-badge" aria-label={badgeLabel}>
+        <span aria-hidden="true">&#9642;</span> {badgeLabel}
+      </div>
+    )}
     <a class="ce-cta" href={href} target="_blank" rel="noopener" aria-label={`Run on Compiler Explorer (clang-p2996): ${title}`}>
       <span class="ce-cta__play" aria-hidden="true">▸</span>
       <span class="ce-cta__main">
@@ -87,4 +100,12 @@ const gccHref = gcc_id ? `https://godbolt.org/z/${gcc_id}` : null;
   .ce-cta--secondary:hover .ce-cta__play { background: var(--blue); }
   .ce-cta--secondary .ce-cta__eyebrow { color: var(--blue-deep); }
   .ce-cta--secondary:hover .ce-cta__arrow { color: var(--blue-deep); }
+  .ce-compiler-badge {
+    font-size: 0.7rem;
+    font-style: italic;
+    color: var(--ink-faint);
+    line-height: 1;
+    margin: 0 0 0.1rem 0.1rem;
+    letter-spacing: 0.01em;
+  }
 </style>
