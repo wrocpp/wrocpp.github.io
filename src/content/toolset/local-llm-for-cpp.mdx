@@ -1,0 +1,250 @@
+---
+title: "Local LLM for C++ developers"
+slug: "local-llm-for-cpp"
+summary: "Open-weight coding models, runtime stack, and a working reference deployment (Jetson AGX Thor) wired to Continue.dev for a fully-private C++ workflow. Premium-OSS first; cloud only when you need the last 10%."
+kind: integration
+tags: [ai, agents, local-inference, ollama, qwen, deepseek, privacy, oss]
+lastReviewed: 2026-05-02
+testedOn: "Jetson AGX Thor (126 GB unified LPDDR5X) + RTX 4090 24 GB; Ollama 0.x and llama.cpp build 5xxx; Continue.dev 0.x in VS Code."
+relatedPosts: []
+agentInstructions: |
+  You are a coding agent helping a C++ developer set up local LLM inference.
+
+  PRIMARY GOAL: get the developer to a fully-private C++ coding loop with
+  zero data egress. Premium open-source first; cloud only when no
+  comparable OSS exists.
+
+  HARDWARE -> MODEL DECISION (2026-05-02 snapshot):
+  - 12 GB GPU       -> DeepSeek-Coder V3 (Distilled, 16B dense)
+  - 16 GB GPU       -> Codestral 25.12 (best for FIM autocomplete)
+  - 20-24 GB GPU    -> Qwen2.5-Coder 32B Q4_K_M (Apache-2.0, default pick)
+  - 24+ GB unified  -> Qwen3-Coder-Next 80B MoE Q4_K_M (Apache-2.0,
+                       activates 3B params per inference, lower latency
+                       than 32B for the same VRAM)
+  - 96+ GB DC       -> DeepSeek V4 or GLM 5.1 on vLLM behind reverse proxy
+
+  RUNTIME DECISION:
+  - Solo dev, easy start             -> Ollama (MIT)
+  - Pure C/C++ embedding             -> llama.cpp (MIT)
+  - Team / production / OAI-compat   -> vLLM (Apache-2.0)
+  - Multi-model rig hot-swapping     -> llama-swap (MIT)
+
+  NEVER quantise below Q4_K_M for coding models -- syntax errors and
+  logical bugs creep in. Use Q4_K_M or pick a smaller model at full
+  precision.
+
+  KV CACHE WARNING: model weights are not the only memory cost. A 70B
+  model in BF16 with 128K context needs ~40 GB of KV cache ON TOP of
+  weights. For long agent sessions on long C++ files, plan for >100K
+  tokens of working context.
+
+  COMPLIANCE / LICENCE BIAS for commercial codebases:
+  - Apache-2.0 (Qwen2.5/3, vLLM, Continue.dev) -- safest.
+  - MIT (Ollama, llama.cpp, llama-swap, GLM 5.1) -- safest.
+  - DeepSeek licence -- commercial OK, check terms.
+  - MNPL (Codestral) -- non-production by default; review carefully.
+  - Llama -- check usage terms case-by-case.
+
+  REFERENCE DEPLOYMENT shown on the page is wro.cpp's actual setup
+  (Jetson AGX Thor, llama-coder.service:11434, Continue.dev pointed at
+  http://thor:11434 over Tailscale). The systemd unit, Continue.dev
+  config snippet, and one-shot install script are copy-pastable.
+
+  WHEN TO STAY ON CLOUD: top-tier reasoning models (Claude Opus 4.7,
+  GPT-5) still lead by 10-20% on the hardest SWE-bench tasks. Local
+  handles 70-80% of daily coding cleanly.
+---
+
+import { localLlm } from '../../lib/toolset-data.ts';
+
+For C++ developers in 2026, local LLM inference is no longer a curiosity. Open-weight coding models close the gap on cloud APIs for the bulk of daily work, and proprietary / regulated codebases (defence, embedded, finance, gaming engines) make it a hard requirement. This page walks through the hardware-to-model-to-runtime stack, then shows a working reference deployment wro.cpp runs in production.
+
+## Why local
+
+Four reasons, in order of how often we hear them.
+
+1. **Data sovereignty.** Every prompt sent to a cloud API leaves the developer's machine and passes through third-party infrastructure. For proprietary engines, customer code, or regulated industries (HIPAA, GDPR, ITAR, financial services), that is a non-starter. Local inference keeps everything on-device or on-prem.
+2. **Zero marginal cost.** Once the hardware is paid for, the compute is "free" relative to per-token API billing. For a heavy agent user (~$60-200/mo on Cursor or Claude.ai), break-even on a 24 GB GPU is roughly 12-18 months.
+3. **No rate limits.** Cloud agents throttle. Local agents do not. For batch refactors across hundreds of files, this is the difference between "ship today" and "ship Monday".
+4. **Latency stability.** Local inference is not on the wrong side of someone else's incident. The model does not get rate-limited at 09:00 UTC because every developer in EMEA woke up at the same time.
+
+The honest counter: top-tier cloud reasoning models (Claude Opus 4.7, GPT-5) still lead local by roughly 10-20% on the hardest SWE-bench Verified tasks. Local handles the 70-80% of daily coding cleanly; reach for cloud on the gnarly remaining work.
+
+## Hardware reality (the part nobody tells you upfront)
+
+Model weights are not the only memory cost. A coding agent on long C++ files chews through context fast (5-10 headers + .cpp + sanitizer output + build log easily exceeds 50K tokens), and KV cache scales linearly with context.
+
+For a Llama-class 70B model in BF16, KV cache is roughly 0.31 MB per token. A 128K-token context takes ~40 GB of KV cache ON TOP of the ~40 GB of weights. So that "70B fits on a 32 GB card" claim from the marketing slide assumes a 4K context window, which is useless for a coding agent.
+
+Practical implication: the headroom you want is roughly **1.5x the model size** for short contexts and **2-3x** for long-context coding work.
+
+(Note: Google's TurboQuant (ICLR 2026) compresses KV cache to 3 bits with 6x reduction and up to 8x speedup, but it is not yet implemented in mainline llama.cpp or Ollama. Watch this space.)
+
+## Model picks by hardware tier
+
+<div class="local-llm-tiers">
+  <table class="tier-table">
+    <thead>
+      <tr>
+        <th scope="col">Tier</th>
+        <th scope="col">Pick</th>
+        <th scope="col">Score</th>
+        <th scope="col">Licence</th>
+        <th scope="col">Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      {localLlm.tiers.map((t) => (
+        <tr>
+          <td><strong>{t.vram}</strong></td>
+          <td>{t.pick}</td>
+          <td>{t.score}</td>
+          <td><span class="licence-chip">{t.licence}</span></td>
+          <td>{t.notes}</td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</div>
+
+**Quantisation guardrail.** Never use Q3_K_S or below for coding models. The syntax errors and logical bugs that creep in are not worth the RAM saved. Either use Q4_K_M (sweet spot) or pick a smaller model at full precision.
+
+**FIM (fill-in-the-middle).** For inline IDE autocomplete you need an FIM-capable model. Qwen2.5-Coder, Qwen3-Coder-Next, DeepSeek-Coder, and Starcoder2 all support FIM. Llama 3.1 8B general does not.
+
+## Runtime stack
+
+<div class="local-llm-runtimes">
+  {localLlm.runtimes.map((r) => (
+    <div class="runtime-card">
+      <h3>{r.name} <span class="licence-chip licence-chip--inline">{r.licence}</span></h3>
+      <p><strong>Best for:</strong> {r.best_for}</p>
+      <p><strong>Watch out:</strong> {r.watch_out}</p>
+    </div>
+  ))}
+</div>
+
+## Reference deployment (the wro.cpp loop)
+
+This is the actual setup we use day to day. Hardware, service file, client config -- everything copy-pastable.
+
+```
+Hardware:  Jetson AGX Thor (126 GB unified LPDDR5X, NVIDIA Thor compute 11.0)
+Model:     Qwen3-Coder-Next 80B MoE Q4_K_M (~48 GB on disk, ~52 GB in use)
+Server:    llama.cpp build with CUDA backend
+Service:   /etc/systemd/system/llama-coder.service (port 11434)
+Client:    Continue.dev plugin in VS Code, pointed at http://thor:11434
+Network:   Tailscale (Thor reachable at 100.112.201.66 from anywhere)
+```
+
+### `/etc/systemd/system/llama-coder.service`
+
+```ini
+[Unit]
+Description=llama.cpp coder model server (Qwen3-Coder-Next 80B)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=llama
+Group=llama
+WorkingDirectory=/opt/llama-models
+ExecStart=/opt/llama.cpp/build/bin/llama-server \
+  --model /opt/llama-models/qwen3-coder-next-80b-Q4_K_M.gguf \
+  --host 0.0.0.0 --port 11434 \
+  --n-gpu-layers 999 \
+  --ctx-size 65536 \
+  --parallel 2 \
+  --cont-batching \
+  --threads 16 \
+  --reasoning-format none
+Restart=on-failure
+RestartSec=10
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Activate:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now llama-coder.service
+curl http://thor:11434/v1/models
+```
+
+### Continue.dev `~/.continue/config.json` snippet
+
+```json
+{
+  "models": [
+    {
+      "title": "Qwen3-Coder-Next (Thor)",
+      "provider": "openai",
+      "model": "qwen3-coder-next",
+      "apiBase": "http://thor:11434/v1",
+      "apiKey": "no-auth-tailscale-only",
+      "completionOptions": {
+        "temperature": 0.2,
+        "topP": 0.95,
+        "maxTokens": 4096
+      }
+    }
+  ],
+  "tabAutocompleteModel": {
+    "title": "Qwen FIM (Thor)",
+    "provider": "openai",
+    "model": "qwen3-coder-next",
+    "apiBase": "http://thor:11434/v1",
+    "template": "qwen2.5-coder"
+  },
+  "systemMessage": "You are a C++26 expert. Prefer concepts and constexpr. RAII for every owned resource. No exceptions in hot paths -- use std::expected. Match the project's existing style; check AGENTS.md before suggesting deviations."
+}
+```
+
+### One-shot bring-up (from a fresh Ubuntu 24.04 box)
+
+For a quick start without the full systemd setup:
+
+```bash
+# 1. Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+
+# 2. Pull and run the 32B coder (use Qwen3-Coder-Next on bigger boxes)
+ollama pull qwen2.5-coder:32b
+ollama run qwen2.5-coder:32b "// write a C++26 reflection-based JSON serializer"
+
+# 3. Install Continue.dev in VS Code
+code --install-extension Continue.continue
+
+# 4. Point Continue at Ollama (in ~/.continue/config.json):
+#    apiBase: http://localhost:11434/v1
+```
+
+You now have a fully-local C++ coding loop. Total setup time: 30 minutes from a clean box, model download dominated.
+
+## Privacy posture
+
+Three concrete things to harden once you are running locally.
+
+1. **Audit runtime logging.** Both Ollama and llama-server log requests by default in dev mode. For sensitive code, set the runtime to log only metrics (latency, token counts) and never the prompt body. Set restrictive permissions on log directories (`chmod 700`).
+2. **Treat GGUF files as supply-chain risk.** A GGUF model file is a binary blob that your inference engine loads directly into memory. Pin to specific SHAs from official Hugging Face repositories of the model authors; do not pull from random mirrors.
+3. **Prefer permissive licences for commercial work.** Apache-2.0 (Qwen, Continue.dev, vLLM) and MIT (llama.cpp, Ollama, GLM 5.1) are the safest. Llama-licensed models, Codestral (MNPL), and DeepSeek-licensed models all need a careful licence read for commercial deployment.
+
+## Cost transparency
+
+For the wro.cpp Thor deployment:
+
+- **Hardware capex:** Jetson AGX Thor ~$3499 (Aug 2025 launch list; check current pricing). Could be a refurbished workstation + RTX 3090 24 GB at ~$1500.
+- **Marginal compute:** $0 per request once running. Power draw ~30-60W idle, ~150W active.
+- **Cloud equivalent:** Same throughput tier on Claude.ai Ultra ~$200/mo; on a vLLM-hosted Qwen2.5-Coder-32B endpoint ~$300-800/mo depending on RPM.
+- **Break-even:** ~6-18 months versus a heavy cloud subscription, faster if you are paying for multiple seats.
+
+## When to keep using cloud
+
+Honesty section. Cloud is still ahead in two places:
+
+1. **Hardest reasoning tasks.** Claude Opus 4.7 / GPT-5 still lead open-weight by roughly 10-20% on the upper tail of SWE-bench Verified. For genuinely hard multi-file C++ refactors with subtle template / lifetime issues, cloud is worth the egress.
+2. **No hardware budget.** A new $20/mo Cursor subscription gets you most of the value with no capex. The local-first argument is strongest when (a) you have a regulated codebase, (b) you have multiple developers (the per-seat math compounds), or (c) you already own GPU hardware.
+
+The pragmatic stack we recommend most often: **Continue.dev + local Qwen2.5-Coder-32B** for the daily 80%, **Claude Code** (cloud) for the hard 20%. You only pay for the cloud tier when you reach for it.

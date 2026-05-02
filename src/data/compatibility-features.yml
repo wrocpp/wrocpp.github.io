@@ -1,0 +1,96 @@
+# Paper-level C++26 (and adjacent) feature support, for the
+# /toolset/compiler-support/ matrix. Per-example rows live in
+# godbolt-permalinks.yml; this file covers features without (or in
+# addition to) a wro.cpp-authored example.
+#
+# Status values: works | partial | planned | experimental | none
+#
+# Update cadence: ~quarterly, or on major compiler release.
+
+P2996:
+  title: Reflection
+  paper_url: https://wg21.link/P2996
+  status:
+    clang-p2996: works
+    gcc-16.1: works
+    msvc: planned
+    edg: experimental
+  notes: "GCC 16.1 ships <meta>; clang-p2996 ships <experimental/meta> (alias for <meta>)."
+  examples:
+    - why-cpp26-reflection-matters.teaser
+    - first-reflection.describe
+  last_reviewed: 2026-05-02
+
+P3394:
+  title: Annotations for reflection
+  paper_url: https://wg21.link/P3394
+  status:
+    clang-p2996: works
+    gcc-16.1: partial
+    msvc: planned
+    edg: none
+  notes: "GCC 16.1 spells the query `annotations_of_with_type`; clang-p2996 spells it `annotation_of_type`. Source-level divergence."
+  examples:
+    - why-cpp26-reflection-matters.teaser_annotated
+  last_reviewed: 2026-05-02
+
+P3096:
+  title: Function parameter reflection
+  paper_url: https://wg21.link/P3096
+  status:
+    clang-p2996: works
+    gcc-16.1: works
+    msvc: planned
+    edg: none
+  notes: "Both compilers expose parameter info via parameters_of()."
+  examples: []
+  last_reviewed: 2026-05-02
+
+P1306:
+  title: "Expansion statements (`template for`)"
+  paper_url: https://wg21.link/P1306
+  status:
+    clang-p2996: works
+    gcc-16.1: works
+    msvc: planned
+    edg: none
+  notes: "First-class `template for` shipped with the reflection cluster."
+  examples:
+    - template-for-expansion-statements.dump
+  last_reviewed: 2026-05-02
+
+P3560:
+  title: Reflection error handling
+  paper_url: https://wg21.link/P3560
+  status:
+    clang-p2996: works
+    gcc-16.1: works
+    msvc: planned
+    edg: none
+  notes: "Standardised exception type for failed reflection queries."
+  examples: []
+  last_reviewed: 2026-05-02
+
+P2900:
+  title: Contracts
+  paper_url: https://wg21.link/P2900
+  status:
+    clang-p2996: experimental
+    gcc-16.1: experimental
+    msvc: planned
+    edg: none
+  notes: "Politically hot. Brno (June 2026) and Helsinki (November 2026) likely to refine. No production use."
+  examples: []
+  last_reviewed: 2026-05-02
+
+P2300:
+  title: "std::execution (senders/receivers)"
+  paper_url: https://wg21.link/P2300
+  status:
+    clang-p2996: partial
+    gcc-16.1: partial
+    msvc: experimental
+    edg: none
+  notes: "Reference impl is libstdexec; mainline standard-library support still landing."
+  examples: []
+  last_reviewed: 2026-05-02

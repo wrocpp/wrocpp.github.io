@@ -1,0 +1,139 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import ToolsetCard from '../../components/ToolsetCard.astro';
+import RepoFile from '../../components/RepoFile.astro';
+import { getCollection } from 'astro:content';
+
+const all = await getCollection('toolset', ({ data }) => !data.draft);
+const entries = all.sort(
+  (a, b) => b.data.lastReviewed.getTime() - a.data.lastReviewed.getTime(),
+);
+
+// The compiler-support matrix lives at /toolset/compiler-support/ as a
+// special page (data-driven, not in the collection), but we surface it
+// in the hub TOC alongside the collection entries.
+const matrixCard = {
+  href: '/toolset/compiler-support/',
+  title: 'C++26 compiler support',
+  summary:
+    'Per-feature, per-compiler support matrix derived from godbolt examples we actually run. Cells link to runnable Compiler Explorer URLs.',
+  kind: 'matrix' as const,
+  lastReviewed: new Date(),
+  tags: ['cpp26', 'compilers', 'p2996', 'reflection'],
+};
+---
+<BaseLayout
+  title="Toolset — wro.cpp"
+  description="A curated reference for working C++ developers in 2026. Premium open-source first. Hard OSS made easier. Runnable claims, freshness bar, methodology you can audit."
+>
+  <div class="wrap">
+    <header class="page-head reveal">
+      <div class="page-head__eyebrow">// reference</div>
+      <h1 class="page-head__title">Toolset</h1>
+      <p class="page-head__sub">
+        A curated reference for working C++ developers in 2026. Premium open-source first.
+        Hard OSS made easier. Runnable claims, freshness bar, methodology you can audit.
+      </p>
+    </header>
+
+    <section class="toolset-principles reveal reveal-1" aria-label="Editorial principles">
+      <ol>
+        <li><strong>Premium open-source / free first.</strong> Commercial only when no comparable OSS exists, with a one-line "why".</li>
+        <li><strong>Hard OSS made easier.</strong> Integration recipes turn 4-hour setups into 30 minutes.</li>
+        <li><strong>Cost transparency.</strong> Every entry shows "$0 self-hosted; $X/mo cloud-equivalent".</li>
+        <li><strong>Runnable claims.</strong> Compiler-support links to godbolt URLs we run; local-LLM recipes target hardware we own.</li>
+        <li><strong>Freshness bar.</strong> Every page shows when it was last reviewed and when the next review is due.</li>
+      </ol>
+    </section>
+
+    <div class="card-grid reveal reveal-2">
+      <ToolsetCard
+        href={matrixCard.href}
+        title={matrixCard.title}
+        summary={matrixCard.summary}
+        kind={matrixCard.kind}
+        lastReviewed={matrixCard.lastReviewed}
+        tags={matrixCard.tags}
+      />
+      {entries.map((e) => (
+        <ToolsetCard
+          href={`/toolset/${e.slug}/`}
+          title={e.data.title}
+          summary={e.data.summary}
+          kind={e.data.kind}
+          lastReviewed={e.data.lastReviewed}
+          tags={e.data.tags}
+          draft={e.data.draft}
+        />
+      ))}
+    </div>
+
+    <article id="how-we-test" class="prose reveal reveal-3 toolset-methodology">
+      <h2>How we test</h2>
+      <p>
+        Every claim on this site is either auto-generated from data we keep fresh, or
+        based on hands-on use we can describe. Here is what that means per section
+        kind:
+      </p>
+      <ul>
+        <li>
+          <strong>Matrix sections</strong> read from <RepoFile path="src/data/godbolt-permalinks.yml" />,
+          which the publish pipeline regenerates per post via the
+          <RepoFile path="scripts/shorten-examples.py" /> godbolt-API gate. A green cell
+          means the example compiles AND runs cleanly under that compiler today.
+        </li>
+        <li>
+          <strong>Curated sections</strong> are opinionated link directories. Each tool
+          we recommend has a one-line "why" and a verdict for C++ work specifically.
+          Editorial bias: premium open-source first.
+        </li>
+        <li>
+          <strong>Recipe sections</strong> are scenario-driven walkthroughs by us
+          (toolchain choices, project setup, sanitiser flags, decision trees).
+          Working snippets, no marketing.
+        </li>
+        <li>
+          <strong>Integration sections</strong> are "hard OSS made easier" guides:
+          install scripts, systemd units, config snippets pre-tuned for C++.
+          When applicable, our reference hardware is a Jetson AGX Thor (126 GB
+          unified LPDDR5X) running open-weight models behind Tailscale.
+        </li>
+      </ul>
+      <p>
+        Every non-matrix page surfaces a <em>Reviewed YYYY-MM-DD</em> badge at the top,
+        plus a <em>Next review by</em> date 90 days out. If a page is past its review
+        date and still on the site, that is a bug &mdash; please open an issue.
+      </p>
+      <h3>For AI agents</h3>
+      <p>
+        Every toolset page also exposes a machine-readable companion at
+        <code>/toolset/&lt;slug&gt;/llms.txt</code>, indexed at the site-root
+        <a href="/llms.txt"><code>/llms.txt</code></a> per the
+        <a href="https://llmstxt.org/">llmstxt.org</a> convention.
+        Point your coding agent at that path and it can fetch concise, actionable
+        guidance directly &mdash; without scraping HTML.
+      </p>
+    </article>
+  </div>
+</BaseLayout>
+
+<style>
+  .toolset-principles {
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--orange);
+    padding: 1.4rem 1.6rem;
+    margin: 0 0 2rem;
+  }
+  .toolset-principles ol {
+    margin: 0;
+    padding-left: 1.2rem;
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 0.98rem;
+    line-height: 1.55;
+  }
+  .toolset-principles li + li { margin-top: 0.45rem; }
+  .toolset-methodology {
+    margin-top: 3rem;
+  }
+</style>

@@ -1,0 +1,57 @@
+# Local-inference picks for C++ developers, by VRAM / unified-memory
+# tier. Powers the table on /toolset/local-llm-for-cpp/. Refresh
+# cadence: quarterly, or when a new open-weight coder model lands.
+#
+# Last refresh: 2026-05-02.
+
+tiers:
+  - vram: "12 GB"
+    pick: "DeepSeek-Coder V3 (Distilled, 16B dense)"
+    score: "40.5% SWE-bench Verified"
+    licence: "DeepSeek licence (commercial use OK with attribution)"
+    notes: "Highest reasoning per GB. Runs on RTX 4070 Ti / 4080 Mobile / 12 GB laptop GPUs. Q4_K_M only -- never below."
+
+  - vram: "16 GB"
+    pick: "Codestral 25.12"
+    score: "FIM-optimised; fast inline completions"
+    licence: "MNPL (Mistral Non-Production License) -- check terms for commercial use"
+    notes: "Best for IDE autocomplete loops in VS Code. Pair with Continue.dev FIM mode."
+
+  - vram: "20-24 GB"
+    pick: "Qwen2.5-Coder 32B (Q4_K_M)"
+    score: "87% HumanEval, 79% MBPP, 40+ languages, 128K context, FIM"
+    licence: "Apache-2.0"
+    notes: "Strongest single-GPU all-rounder. RTX 3090 / 4090 / 5090 class. Recommended default for most C++ shops."
+
+  - vram: "24+ GB / unified memory"
+    pick: "Qwen3-Coder-Next 80B MoE (Q4_K_M, ~48 GB)"
+    score: "Leading open-weight on agentic SWE-bench"
+    licence: "Apache-2.0"
+    notes: "wro.cpp reference: Jetson AGX Thor (126 GB unified LPDDR5X) running llama-coder.service on port 11434. Activates only 3B params per inference (MoE), so latency is closer to the 32B all-rounder."
+
+  - vram: "96+ GB / data centre"
+    pick: "DeepSeek V4 / GLM 5.1"
+    score: "Frontier open-weight; closes the gap on cloud Tier-A models"
+    licence: "DeepSeek licence / MIT (GLM 5.1)"
+    notes: "vLLM behind a reverse proxy. Team-scale serving (continuous batching, OpenAI-compatible endpoint). RTX PRO 6000 (96 GB) or A100/H100."
+
+runtimes:
+  - name: Ollama
+    licence: MIT
+    best_for: "Solo developer, fastest start (`ollama run qwen2.5-coder:32b`), zero config."
+    watch_out: "Lifecycle bugs in long agent sessions (mid-session unloads, context drift, broken bf16). Migrate to llama-swap if you hit them."
+
+  - name: llama.cpp
+    licence: MIT
+    best_for: "Pure-C/C++ runtime, no Python. Embeddable. Apple Metal / NVIDIA CUDA / AMD ROCm / AVX2/512. Raspberry Pi to H100 with one binary."
+    watch_out: "Per-model flag tuning (e.g. Qwen 3.x reasoning models need `--reasoning-format none`)."
+
+  - name: vLLM
+    licence: Apache-2.0
+    best_for: "Team deployment. Continuous batching, OpenAI-compatible endpoint, production throughput."
+    watch_out: "Heavier setup; expects dedicated GPU server hardware (A100 / H100)."
+
+  - name: llama-swap
+    licence: MIT
+    best_for: "Multi-model lifecycle wrapper around llama-server. Hot-swap between coder + chat + embedding models on demand."
+    watch_out: "Each model needs specific flags wired into the config. Worth the effort for multi-model rigs."

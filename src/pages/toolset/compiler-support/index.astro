@@ -1,0 +1,149 @@
+---
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import ReviewedBadge from '../../../components/ReviewedBadge.astro';
+import MatrixTable from '../../../components/MatrixTable.astro';
+import RepoFile from '../../../components/RepoFile.astro';
+import yaml from 'js-yaml';
+import { readFileSync, statSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const godboltPath = resolve(process.cwd(), 'src/data/godbolt-permalinks.yml');
+const featuresPath = resolve(process.cwd(), 'src/data/compatibility-features.yml');
+
+type Variant = {
+  id?: string;
+  url?: string;
+  title?: string;
+  expected_output?: string;
+  gcc_id?: string;
+  gcc_url?: string;
+  gcc_expected_output?: string;
+};
+type GodboltData = Record<string, Record<string, Variant>>;
+
+type FeatureStatus = 'works' | 'partial' | 'planned' | 'experimental' | 'none';
+type Feature = {
+  title: string;
+  paper_url: string;
+  status: Record<string, FeatureStatus>;
+  notes?: string;
+  examples?: string[];
+  last_reviewed?: string;
+};
+type FeatureData = Record<string, Feature>;
+
+const godbolt = yaml.load(readFileSync(godboltPath, 'utf-8')) as GodboltData;
+const features = yaml.load(readFileSync(featuresPath, 'utf-8')) as FeatureData;
+const lastRegen = statSync(godboltPath).mtime;
+
+const compilers = [
+  { id: 'clang-p2996', label: 'clang-p2996' },
+  { id: 'gcc-16.1', label: 'GCC 16.1' },
+];
+
+// Group 1: per-example rows, grouped by post slug.
+const exampleGroups = Object.entries(godbolt).map(([slug, variants]) => ({
+  title: slug,
+  href: `/posts/${slug}/`,
+  rows: Object.entries(variants).map(([variantName, v]) => ({
+    label: v.title || variantName,
+    cells: {
+      'clang-p2996': v.id
+        ? { status: 'works' as const, url: v.url, title: `id=${v.id}` }
+        : { status: 'untested' as const },
+      'gcc-16.1': v.gcc_id
+        ? { status: 'works' as const, url: v.gcc_url, title: `id=${v.gcc_id}` }
+        : { status: 'untested' as const },
+    },
+  })),
+}));
+
+// Group 2: paper-level rows from compatibility-features.yml.
+const featureGroup = {
+  title: 'Standard features (paper-level)',
+  rows: Object.entries(features).map(([key, f]) => ({
+    label: `${key} — ${f.title}`,
+    href: f.paper_url,
+    notes: f.notes,
+    cells: Object.fromEntries(
+      compilers.map((c) => {
+        const status = f.status[c.id] ?? 'untested';
+        return [c.id, { status }];
+      }),
+    ),
+  })),
+};
+
+const groups = [featureGroup, ...exampleGroups];
+const lastReviewed = new Date(2026, 4, 2); // 2026-05-02
+---
+<BaseLayout
+  title="C++26 compiler support — wro.cpp Toolset"
+  description="Per-feature, per-compiler support matrix for C++26 reflection and friends. Cells link to runnable Compiler Explorer URLs we actually run."
+>
+  <div class="wrap">
+    <header class="page-head reveal">
+      <div class="page-head__eyebrow">// toolset / matrix</div>
+      <h1 class="page-head__title">C++26 compiler support</h1>
+      <p class="page-head__sub">
+        Per-feature, per-compiler support for C++26 reflection and adjacent papers.
+        Cells in the per-example groups link to runnable Compiler Explorer URLs we
+        re-verify on every publish.
+      </p>
+    </header>
+
+    <ReviewedBadge
+      lastReviewed={lastReviewed}
+      testedOn={`godbolt API, last regenerated ${lastRegen.toISOString().slice(0, 10)}`}
+    />
+
+    <article class="prose reveal reveal-1">
+      <p>
+        <strong>Reading the matrix.</strong> The first table is paper-level
+        feature status across compilers we test. The remaining tables are
+        per-post: each row is one example file from a wro.cpp post, each cell
+        is a runnable Compiler Explorer link under that compiler. Green cells
+        compile <em>and</em> run cleanly today; greyed-out cells were not
+        attempted yet under that compiler.
+      </p>
+      <p>
+        <strong>Compilers we track.</strong>
+        <code>clang-p2996</code> = the Bloomberg fork (the C++26 reflection
+        reference implementation), invoked with
+        <code>-std=c++26 -freflection-latest -stdlib=libc++</code>.
+        <code>GCC 16.1</code> = mainline GCC 16.1 (released April 2026),
+        invoked with <code>-std=c++26 -freflection</code>. MSVC and EDG are
+        listed in the paper-level table for reference but we do not yet run
+        examples against them.
+      </p>
+    </article>
+
+    <div class="reveal reveal-2 matrix-host">
+      <MatrixTable compilers={compilers} groups={groups} />
+    </div>
+
+    <article class="prose reveal reveal-3 matrix-methodology">
+      <h2>Methodology</h2>
+      <p>
+        Per-example cells are auto-derived from
+        <RepoFile path="scripts/shorten-examples.py" /> runs against the godbolt API.
+        Each successful site build reflects the latest verified state; the
+        "last regenerated" date in the badge above is the modification time
+        of <RepoFile path="src/data/godbolt-permalinks.yml" />.
+      </p>
+      <p>
+        Paper-level cells in the top table are hand-curated from
+        <RepoFile path="src/data/compatibility-features.yml" /> and refreshed
+        quarterly (or on major compiler releases). When a new ISO C++ paper
+        ships across compilers, it lands here first, then radiates into the
+        per-example tables once a wro.cpp post covers it.
+      </p>
+      <p>See also: <a href="/toolset/#how-we-test">how we test, in general</a>.</p>
+    </article>
+  </div>
+</BaseLayout>
+
+<style>
+  .matrix-host { margin: 1.5rem 0 2.5rem; overflow-x: auto; }
+  .matrix-methodology { margin-top: 2rem; }
+</style>

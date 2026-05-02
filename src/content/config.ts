@@ -84,4 +84,28 @@ const speakers = defineCollection({
   }),
 });
 
-export const collections = { posts, events, speakers };
+const toolset = defineCollection({
+  type: 'content',
+  schema: z.object({
+    title: z.string(),
+    slug: z.string().optional(),
+    summary: z.string(),
+    kind: z.enum(['matrix', 'curated', 'recipe', 'integration']),
+    tags: z.array(z.string()).default([]),
+    lastReviewed: z.coerce.date(),
+    nextReviewBy: z.coerce.date().optional(),
+    testedOn: z.string().optional(),
+    relatedPosts: z.array(z.string()).default([]),
+    licence: z.string().optional(),
+    cost: z.string().optional(),
+    draft: z.boolean().default(false),
+    /**
+     * Concise instructions an AI agent can fetch and act on. Rendered as
+     * /toolset/<slug>/llms.txt and indexed in /llms.txt at the site root
+     * (per https://llmstxt.org/).
+     */
+    agentInstructions: z.string().optional(),
+  }),
+});
+
+export const collections = { posts, events, speakers, toolset };
