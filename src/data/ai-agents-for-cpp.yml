@@ -1,0 +1,100 @@
+# AI coding agents evaluated for C++ work, surfaced on
+# /toolset/ai-coding-agents-for-cpp/. Editorial bias: premium
+# open-source first; premium picks live in the "Premium-OSS picks"
+# sub-section. Last refresh: 2026-05-02.
+
+claude-code:
+  title: Claude Code
+  url: https://docs.claude.com/en/docs/claude-code
+  licence: proprietary (Anthropic)
+  cost_self: "free CLI; usage billed via Claude.ai or API"
+  cost_cloud: "$20-200/mo Claude.ai or pay-per-token API"
+  mcp: yes
+  open_weights: no
+  cpp_verdict: "Best for hard multi-file C++ refactors, template debugging, ABI work, and undefined-behaviour hunts. Reaches for the right context (200K window + auto-compaction). Token-efficient (5.5x less than Cursor on identical tasks)."
+  best_when: "team works in the terminal, MCP servers wired, supervised review is the norm"
+  skip_if: "you need an inline IDE flow or a fully-local stack"
+
+cursor:
+  title: Cursor
+  url: https://cursor.com
+  licence: proprietary
+  cost_self: "n/a"
+  cost_cloud: "$20 Pro / $60 Pro+ / $200 Ultra (heavy agent users typically need Pro+)"
+  mcp: yes
+  open_weights: no
+  cpp_verdict: "Best for inline pair-programming on routine C++ edits. Multi-provider routing (Claude / GPT / Gemini) is convenient. Watch the credit pool on agent mode -- $20 burns fast."
+  best_when: "IDE-first workflow, solo or small team"
+  skip_if: "compliance forbids cloud egress or you need terminal automation"
+
+aider:
+  title: Aider
+  url: https://aider.chat
+  licence: Apache-2.0
+  cost_self: "free + token cost (BYOK or local)"
+  cost_cloud: "n/a"
+  mcp: no
+  open_weights: works with any (incl. local Ollama / vLLM)
+  cpp_verdict: "Premium OSS pick. Git-native (auto-commits per change), terminal-only, fully transparent. Pair with local Qwen3-Coder-Next on Ollama for a fully-private C++ workflow. No MCP yet -- bring your own scripts."
+  best_when: "you want every edit auto-committed, transparent context, and a local-only loop"
+  skip_if: "you need MCP-driven tool use or autonomous task execution"
+
+continue:
+  title: Continue.dev
+  url: https://continue.dev
+  licence: Apache-2.0
+  cost_self: "free"
+  cost_cloud: "free (or BYO model API)"
+  mcp: yes
+  open_weights: works with any (Ollama / llama.cpp / vLLM endpoints)
+  cpp_verdict: "Premium OSS pick. The compliance-grade local stack: VS Code / JetBrains plugin pointed at a local model. Continue + Qwen3-Coder-Next on a 24 GB GPU runs FIM autocomplete with zero data egress."
+  best_when: "compliance-locked C++ shop, defence / embedded / proprietary engine work"
+  skip_if: "you have no local hardware and prefer hosted Tab completion"
+
+cline:
+  title: Cline (formerly Claude Dev)
+  url: https://github.com/cline/cline
+  licence: Apache-2.0
+  cost_self: "free + token cost"
+  cost_cloud: "n/a (BYOK)"
+  mcp: yes
+  open_weights: works with any (model-agnostic)
+  cpp_verdict: "VS Code-native autonomous agent. Lightweight alternative to Cursor's agent mode, with full transparency. C++ users like it for header / source dual-edit flows."
+  best_when: "VS Code first, BYOK, want to see every diff before approving"
+  skip_if: "you prefer a terminal flow"
+
+codex-cli:
+  title: OpenAI Codex CLI
+  url: https://github.com/openai/codex
+  licence: MIT
+  cost_self: "free CLI; OpenAI API costs"
+  cost_cloud: "n/a"
+  mcp: yes
+  open_weights: no (OpenAI models only)
+  cpp_verdict: "Open-source CLI from OpenAI. Strong on routine refactors and documented APIs; weaker than Claude Code on long-context template metaprogramming."
+  best_when: "you already pay for OpenAI API and want a free terminal harness"
+  skip_if: "you need top-tier reasoning for hard C++ template / lifetime issues"
+
+windsurf:
+  title: Windsurf
+  url: https://windsurf.com
+  licence: proprietary
+  cost_self: "n/a"
+  cost_cloud: "$15/mo Pro and up"
+  mcp: yes
+  open_weights: no
+  cpp_verdict: "Multi-agent IDE (5 parallel agents on different parts of the codebase). Useful for monorepo work where modules can be edited in parallel; less interesting for single-package libraries."
+  best_when: "large monorepo, parallel agents per module"
+  skip_if: "small library, single TU edits"
+
+devin:
+  title: Devin
+  url: https://devin.ai
+  licence: proprietary
+  cost_self: "n/a"
+  cost_cloud: "$500/mo team and up"
+  mcp: yes
+  open_weights: no
+  cpp_verdict: "Async task delegation -- you submit, it runs end-to-end, you review the PR. C++ tolerance varies by task; do NOT use unsupervised on ABI-sensitive code."
+  best_when: "well-scoped tasks with strong eval and rollback discipline"
+  skip_if: "any safety-critical or undefined-behaviour-adjacent work"

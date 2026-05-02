@@ -1,0 +1,102 @@
+---
+import { getCollection, type CollectionEntry } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import ReviewedBadge from '../../components/ReviewedBadge.astro';
+
+export async function getStaticPaths() {
+  const entries = await getCollection('toolset', ({ data }) => !data.draft);
+  return entries.map((entry) => ({
+    params: { slug: entry.slug },
+    props: { entry },
+  }));
+}
+
+interface Props { entry: CollectionEntry<'toolset'>; }
+const { entry } = Astro.props;
+const { Content } = await entry.render();
+const { title, summary, kind, lastReviewed, nextReviewBy, testedOn, tags, licence, cost } = entry.data;
+---
+<BaseLayout title={`${title} — wro.cpp Toolset`} description={summary}>
+  <div class="wrap">
+    <header class="page-head reveal">
+      <div class="page-head__eyebrow">// toolset / {kind}</div>
+      <h1 class="page-head__title">{title}</h1>
+      <p class="page-head__sub">{summary}</p>
+      {(licence || cost) && (
+        <p class="page-head__chips">
+          {licence && <span class="chip chip--licence">{licence}</span>}
+          {cost && <span class="chip chip--cost">{cost}</span>}
+        </p>
+      )}
+    </header>
+
+    <ReviewedBadge
+      lastReviewed={lastReviewed}
+      nextReviewBy={nextReviewBy}
+      testedOn={testedOn}
+    />
+
+    <article class="prose reveal reveal-1">
+      <Content />
+    </article>
+
+    <footer class="toolset-footer reveal reveal-2">
+      <p>
+        For AI agents: a machine-readable companion of this page is at
+        <code><a href={`/toolset/${entry.slug}/llms.txt`}>/toolset/{entry.slug}/llms.txt</a></code>.
+        See <a href="/llms.txt">/llms.txt</a> for the full toolset index.
+      </p>
+      {tags.length > 0 && (
+        <ul class="toolset-footer__tags" role="list">
+          {tags.map((t) => <li>#{t}</li>)}
+        </ul>
+      )}
+      <p class="toolset-footer__back">
+        <a href="/toolset/">&larr; Back to Toolset</a>
+      </p>
+    </footer>
+  </div>
+</BaseLayout>
+
+<style>
+  .page-head__chips {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .chip {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.72rem;
+    padding: 0.2rem 0.55rem;
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    color: var(--ink-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .toolset-footer {
+    margin-top: 2.4rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid var(--rule);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.78rem;
+    color: var(--ink-muted);
+  }
+  .toolset-footer code a { color: var(--blue-deep); text-decoration: none; }
+  .toolset-footer code a:hover { color: var(--orange); }
+  .toolset-footer__tags {
+    margin: 0.6rem 0 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+  .toolset-footer__tags li {
+    padding: 0.15rem 0.45rem;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+  }
+  .toolset-footer__back { margin-top: 1rem; }
+</style>

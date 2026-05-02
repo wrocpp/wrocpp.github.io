@@ -1,0 +1,148 @@
+---
+interface Props {
+  title: string;
+  url?: string;
+  licence?: string;
+  cost_self?: string;
+  cost_cloud?: string;
+  mcp?: boolean | string;
+  open_weights?: boolean | string;
+  verdict?: string;
+  best_when?: string;
+  skip_if?: string;
+}
+const {
+  title,
+  url,
+  licence,
+  cost_self,
+  cost_cloud,
+  mcp,
+  open_weights,
+  verdict,
+  best_when,
+  skip_if,
+} = Astro.props;
+
+const licenceShort = licence?.split(' ')[0] ?? '';
+const isOss = /^(MIT|Apache|GPL|BSD|MPL|LGPL)/i.test(licenceShort);
+
+function fmtBool(v: boolean | string | undefined): string {
+  if (v === undefined) return '';
+  if (typeof v === 'boolean') return v ? 'yes' : 'no';
+  return String(v);
+}
+---
+<section class="tool-entry">
+  <header class="tool-entry__head">
+    <h3 class="tool-entry__title">
+      {url ? <a href={url} rel="external">{title}</a> : title}
+    </h3>
+    {licence && (
+      <span class={`tool-entry__licence ${isOss ? 'is-oss' : 'is-prop'}`}>{licence}</span>
+    )}
+  </header>
+
+  <dl class="tool-entry__facts">
+    {cost_self && (
+      <>
+        <dt>Cost (self)</dt>
+        <dd>{cost_self}</dd>
+      </>
+    )}
+    {cost_cloud && cost_cloud !== 'n/a' && (
+      <>
+        <dt>Cost (cloud)</dt>
+        <dd>{cost_cloud}</dd>
+      </>
+    )}
+    {mcp !== undefined && (
+      <>
+        <dt>MCP</dt>
+        <dd>{fmtBool(mcp)}</dd>
+      </>
+    )}
+    {open_weights !== undefined && (
+      <>
+        <dt>Open weights</dt>
+        <dd>{fmtBool(open_weights)}</dd>
+      </>
+    )}
+  </dl>
+
+  {verdict && <p class="tool-entry__verdict">{verdict}</p>}
+
+  {(best_when || skip_if) && (
+    <ul class="tool-entry__hints">
+      {best_when && <li><strong>Best when:</strong> {best_when}.</li>}
+      {skip_if && <li><strong>Skip if:</strong> {skip_if}.</li>}
+    </ul>
+  )}
+</section>
+
+<style>
+  .tool-entry {
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--ink-muted);
+    padding: 1.1rem 1.3rem;
+    margin: 1.2rem 0;
+  }
+  .tool-entry__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.6rem;
+  }
+  .tool-entry__title {
+    font-family: "Quicksand", system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 1.15rem;
+    margin: 0;
+    color: var(--ink);
+  }
+  .tool-entry__title a { color: var(--ink); text-decoration: none; }
+  .tool-entry__title a:hover { color: var(--orange); text-decoration: underline; }
+
+  .tool-entry__licence {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.7rem;
+    padding: 0.15rem 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .tool-entry__licence.is-oss  { background: #E8F5E0; color: #2F5C1A; }
+  .tool-entry__licence.is-prop { background: var(--paper-3); color: var(--ink-muted); }
+
+  .tool-entry__facts {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.2rem 0.9rem;
+    margin: 0.7rem 0;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.78rem;
+  }
+  .tool-entry__facts dt {
+    color: var(--ink-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .tool-entry__facts dd { margin: 0; color: var(--ink); }
+
+  .tool-entry__verdict {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 0.98rem;
+    line-height: 1.55;
+    color: var(--ink);
+    margin: 0.6rem 0;
+  }
+  .tool-entry__hints {
+    margin: 0.4rem 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.92rem;
+    color: var(--ink-muted);
+  }
+  .tool-entry__hints li + li { margin-top: 0.2rem; }
+</style>
