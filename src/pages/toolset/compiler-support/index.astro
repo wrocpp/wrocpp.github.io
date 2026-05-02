@@ -2,6 +2,7 @@
 import BaseLayout from '../../../layouts/BaseLayout.astro';
 import ReviewedBadge from '../../../components/ReviewedBadge.astro';
 import MatrixTable from '../../../components/MatrixTable.astro';
+import RepoFile from '../../../components/RepoFile.astro';
 import yaml from 'js-yaml';
 import { readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -125,14 +126,14 @@ const lastReviewed = new Date(2026, 4, 2); // 2026-05-02
       <h2>Methodology</h2>
       <p>
         Per-example cells are auto-derived from
-        <code>scripts/shorten-examples.py</code> runs against the godbolt API.
+        <RepoFile path="scripts/shorten-examples.py" /> runs against the godbolt API.
         Each successful site build reflects the latest verified state; the
         "last regenerated" date in the badge above is the modification time
-        of <code>src/data/godbolt-permalinks.yml</code>.
+        of <RepoFile path="src/data/godbolt-permalinks.yml" />.
       </p>
       <p>
         Paper-level cells in the top table are hand-curated from
-        <code>src/data/compatibility-features.yml</code> and refreshed
+        <RepoFile path="src/data/compatibility-features.yml" /> and refreshed
         quarterly (or on major compiler releases). When a new ISO C++ paper
         ships across compilers, it lands here first, then radiates into the
         per-example tables once a wro.cpp post covers it.

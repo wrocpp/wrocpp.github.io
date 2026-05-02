@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import ToolsetCard from '../../components/ToolsetCard.astro';
+import RepoFile from '../../components/RepoFile.astro';
 import { getCollection } from 'astro:content';
 
 const all = await getCollection('toolset', ({ data }) => !data.draft);
@@ -76,10 +77,10 @@ const matrixCard = {
       </p>
       <ul>
         <li>
-          <strong>Matrix sections</strong> read from <code>src/data/godbolt-permalinks.yml</code>,
+          <strong>Matrix sections</strong> read from <RepoFile path="src/data/godbolt-permalinks.yml" />,
           which the publish pipeline regenerates per post via the
-          <code>scripts/shorten-examples.py</code> godbolt-API gate. A green cell means
-          the example compiles AND runs cleanly under that compiler today.
+          <RepoFile path="scripts/shorten-examples.py" /> godbolt-API gate. A green cell
+          means the example compiles AND runs cleanly under that compiler today.
         </li>
         <li>
           <strong>Curated sections</strong> are opinionated link directories. Each tool

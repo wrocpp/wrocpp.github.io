@@ -1,0 +1,41 @@
+---
+/*
+ * Renders a repo-relative path as a monospace inline link to the
+ * GitHub blob view. Single source of truth for the repo URL so a
+ * future move (rename, mirror, etc.) is a one-line change.
+ *
+ * Usage:
+ *   <RepoFile path="src/data/godbolt-permalinks.yml" />
+ *   <RepoFile path="scripts/shorten-examples.py" branch="feat/foo" />
+ *   <RepoFile path="src/components/MatrixTable.astro" line={42} />
+ */
+const REPO_BASE = 'https://github.com/wrocpp/wrocpp.github.io';
+
+interface Props {
+  path: string;
+  branch?: string;
+  line?: number;
+}
+const { path, branch = 'main', line } = Astro.props;
+const href = `${REPO_BASE}/blob/${branch}/${path}${line ? `#L${line}` : ''}`;
+---
+<a href={href} rel="external" class="repo-file"><code>{path}</code></a>
+
+<style>
+  .repo-file { text-decoration: none; }
+  .repo-file code {
+    background: var(--paper-3);
+    color: var(--ink);
+    padding: 0.05rem 0.35rem;
+    border-radius: 2px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.92em;
+    border: 1px solid var(--rule);
+    transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  }
+  .repo-file:hover code {
+    background: var(--paper-2);
+    border-color: var(--orange);
+    color: var(--orange);
+  }
+</style>
