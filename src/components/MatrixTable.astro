@@ -1,0 +1,129 @@
+---
+type Status = 'works' | 'partial' | 'planned' | 'experimental' | 'none' | 'untested';
+
+interface Cell {
+  status: Status;
+  url?: string;        // godbolt link or paper link
+  title?: string;      // hover text
+}
+
+interface Row {
+  label: string;
+  href?: string;       // optional row-label link (e.g., to paper)
+  cells: Record<string, Cell>;   // keyed by compiler id
+  notes?: string;
+}
+
+interface Group {
+  title: string;
+  href?: string;
+  rows: Row[];
+}
+
+interface Props {
+  compilers: { id: string; label: string }[];
+  groups: Group[];
+}
+const { compilers, groups } = Astro.props;
+---
+<div class="matrix-wrap">
+  {groups.map((g) => (
+    <section class="matrix-group">
+      <h3 class="matrix-group__title">
+        {g.href ? <a href={g.href}>{g.title}</a> : g.title}
+      </h3>
+      <table class="matrix-table">
+        <thead>
+          <tr>
+            <th scope="col" class="matrix-table__rowhead">Example / feature</th>
+            {compilers.map((c) => (
+              <th scope="col">{c.label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {g.rows.map((r) => (
+            <tr>
+              <th scope="row" class="matrix-table__rowhead">
+                {r.href ? <a href={r.href}>{r.label}</a> : r.label}
+                {r.notes && <span class="matrix-table__notes">{r.notes}</span>}
+              </th>
+              {compilers.map((c) => {
+                const cell = r.cells[c.id] ?? { status: 'untested' as Status };
+                const inner = cell.url
+                  ? <a href={cell.url} title={cell.title} rel="external">{cell.status}</a>
+                  : <span title={cell.title}>{cell.status}</span>;
+                return (
+                  <td class={`matrix-cell is-${cell.status}`}>{inner}</td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  ))}
+</div>
+
+<style>
+  .matrix-wrap { display: grid; gap: 2.4rem; }
+  .matrix-group__title {
+    font-family: "Quicksand", system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 1.1rem;
+    margin: 0 0 0.6rem;
+    color: var(--ink);
+  }
+  .matrix-group__title a { color: var(--ink); text-decoration: none; }
+  .matrix-group__title a:hover { color: var(--orange); }
+
+  .matrix-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.82rem;
+  }
+  .matrix-table th, .matrix-table td {
+    padding: 0.55rem 0.75rem;
+    border-bottom: 1px solid var(--rule);
+    border-right: 1px solid var(--rule);
+    text-align: left;
+    vertical-align: top;
+  }
+  .matrix-table th:last-child, .matrix-table td:last-child { border-right: none; }
+  .matrix-table thead th {
+    background: var(--paper-3);
+    color: var(--ink);
+    text-transform: uppercase;
+    font-size: 0.72rem;
+    letter-spacing: 0.05em;
+  }
+  .matrix-table__rowhead {
+    background: var(--paper);
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .matrix-table__rowhead a { color: var(--ink); text-decoration: none; }
+  .matrix-table__rowhead a:hover { color: var(--orange); text-decoration: underline; }
+  .matrix-table__notes {
+    display: block;
+    color: var(--ink-faint);
+    font-size: 0.7rem;
+    margin-top: 0.2rem;
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 400;
+  }
+
+  .matrix-cell { text-align: center; text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.72rem; }
+  .matrix-cell a { color: inherit; text-decoration: none; }
+  .matrix-cell a:hover { text-decoration: underline; }
+  .matrix-cell.is-works        { background: #E8F5E0; color: #2F5C1A; }
+  .matrix-cell.is-partial      { background: #FBE9D7; color: #8A4A12; }
+  .matrix-cell.is-planned      { background: var(--paper-2); color: var(--ink-muted); }
+  .matrix-cell.is-experimental { background: #FCE2D8; color: var(--orange-hot); }
+  .matrix-cell.is-none         { background: var(--paper-3); color: var(--ink-faint); }
+  .matrix-cell.is-untested     { background: var(--paper-3); color: var(--ink-faint); }
+</style>
