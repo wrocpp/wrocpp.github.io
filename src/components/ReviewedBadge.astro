@@ -1,0 +1,69 @@
+---
+interface Props {
+  lastReviewed: Date;
+  nextReviewBy?: Date;
+  testedOn?: string;
+}
+const { lastReviewed, nextReviewBy, testedOn } = Astro.props;
+
+const fmt = (d: Date) => d.toISOString().slice(0, 10);
+const next = nextReviewBy
+  ?? new Date(lastReviewed.getTime() + 90 * 24 * 60 * 60 * 1000);
+---
+<aside class="reviewed-badge" aria-label="Page freshness signals">
+  <div class="reviewed-badge__row">
+    <span class="reviewed-badge__label">Reviewed</span>
+    <time datetime={fmt(lastReviewed)}>{fmt(lastReviewed)}</time>
+  </div>
+  <div class="reviewed-badge__row">
+    <span class="reviewed-badge__label">Next review by</span>
+    <time datetime={fmt(next)}>{fmt(next)}</time>
+  </div>
+  {testedOn && (
+    <div class="reviewed-badge__row reviewed-badge__row--tested">
+      <span class="reviewed-badge__label">Tested on</span>
+      <span>{testedOn}</span>
+    </div>
+  )}
+  <div class="reviewed-badge__methodology">
+    <a href="/toolset/#how-we-test">How we test &rarr;</a>
+  </div>
+</aside>
+
+<style>
+  .reviewed-badge {
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--blue);
+    padding: 0.85rem 1rem;
+    margin: 0 0 1.5rem;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.78rem;
+    color: var(--ink-muted);
+    display: grid;
+    gap: 0.3rem;
+  }
+  .reviewed-badge__row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+  .reviewed-badge__label {
+    color: var(--ink-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    min-width: 8.5rem;
+  }
+  .reviewed-badge__row--tested span:not(.reviewed-badge__label) {
+    color: var(--ink);
+  }
+  .reviewed-badge__methodology {
+    margin-top: 0.3rem;
+    font-size: 0.72rem;
+  }
+  .reviewed-badge__methodology a {
+    color: var(--blue-deep);
+    text-decoration: none;
+  }
+  .reviewed-badge__methodology a:hover { color: var(--orange); }
+</style>
