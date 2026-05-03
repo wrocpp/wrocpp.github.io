@@ -346,10 +346,6 @@ safety-profiles-2026:
       Try uncommenting BadSession* in the source to see the
 
       static_assert fire with the profile-violation reason.'
-testing-for-safety-2026:
-  reflect_tests:
-    title: Reflection-driven test case generation (clang-p2996)
-    id: Tabe9Y18b
-    url: https://godbolt.org/z/Tabe9Y18b
-    expected_output: "== generated tests for SensorReading ==\n  field sensor_id     : PASS\n  field raw_value     : PASS\n\
-      \  field status_flags  : PASS\n--\noverall: PASS"
+# testing-for-safety-2026: entries pending shorten-examples.py run for
+# reflect-roundtrip-tests.cpp + reflect-mock-verifier.cpp (replacing the
+# retired reflect-tests.cpp tautology).
