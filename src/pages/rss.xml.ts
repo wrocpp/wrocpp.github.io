@@ -11,7 +11,7 @@ export async function GET(context: APIContext) {
     (p) => !p.data.draft && p.data.pubDate.toISOString().slice(0, 10) <= today,
   );
   return rss({
-    title: 'wro.cpp — Modern C++ for production',
+    title: 'wro.cpp — Wrocław C++ community',
     description:
       'Modern C++ for production: safety, performance, security, compliance, and the tooling that ships C++ in cars, trading systems, and hospitals. Flagship posts, news short-form, and community content from the Wroclaw C++ scene.',
     site: context.site!,
