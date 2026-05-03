@@ -128,7 +128,6 @@ The annotation taxonomy borrows from established property-based testing librarie
 | `[[=test_examples{{...}, n}]]` on field | `@example(value)` | `@ValueSource(ints={...})` | `prop_oneof![Just(a), Just(b)]` | `Exhaustive.of(...)` |
 | `[[=test_round_trip{}]]` struct marker | `@settings(...)` + property body | `@Tag("round_trip")` on class | `#[proptest]` fn attribute | `@Property` (jqwik) |
 | `[[=test_reject_short{}]]` struct marker | (separate test fn) | `@Tag` | (separate fn) | (separate spec) |
-| `[[=mock_max_calls{N}]]` on field | `unittest.mock.call_count` assertion | GoogleMock `EXPECT_CALL(...).Times(N)` | mockall `expect_call().times(N)` | mockk `verify(exactly = N)` |
 
 Field-level annotations describe the valid-input domain the generator should exercise; struct-level markers dispatch which properties to assert. Same shape as `@derive(Arbitrary)` in proptest -- the type IS the test specification.
 
@@ -192,72 +191,16 @@ Full file: <RepoFile path="posts/toolset/testing-for-safety-2026/examples/reflec
   title="Round-trip tests, locally on cpp-reflection"
 />
 
-### Annotation-driven mock + call verifier
+The pattern slots under any test framework: the per-member loop becomes a Catch2 `SECTION`, a GoogleTest `TEST_P`, or a doctest `SUBCASE`. The reflection-driven runner doesn't replace the framework -- it replaces the per-target boilerplate that's required to write structural property tests by hand.
 
-GoogleMock-style testing requires a `MOCK_METHOD` line per virtual function plus an `EXPECT_CALL` per assertion -- mechanical boilerplate that follows from the interface shape. Reflection writes it. Model the interface as a struct of `std::function` members marked `[[=mock_interface{}]]`; per-method `[[=mock_max_calls{N}]]` adds an upper-bound assertion the verifier checks at scope exit:
+### Where reflection-alone falls short
 
-```cpp
-struct mock_interface {};
-struct mock_max_calls { unsigned n; };
+Reflection in C++26 is **structural traversal** -- walk the members, read their types, read their annotations, generate code per member. That is exactly the right shape for the round-trip property test: every claim is "for each field, do X" and reflection writes the loop.
 
-struct [[=mock_interface{}]] Logger {
-    std::function<void(std::string_view)> info;
-    std::function<void(std::string_view)> warn;
-    [[=mock_max_calls{0}]]                          // happy path: no errors
-    std::function<void(std::string_view)> error;
-};
-```
+It is the wrong shape for **behavior synthesis**. Tools like GoogleMock generate per-method intercepting wrappers that match arguments, sequence expectations, and dispatch actions. You can simulate a thin slice of that today by walking a struct of `std::function` members and replacing each with a recording stub -- but the result is strictly weaker than what GMock already does well, and lacks per-call argument matchers, cardinality matchers, sequenced expectations, and action customization. The reason is structural: today's reflection lets you *read* the interface but not *generate new code* alongside it. The full mock-synthesis story wants C++29 token injection (P3294); it is sketched in "Where this is heading" below, not pretended into existence here.
 
-`ReflectMock<T>` walks `T`'s members and replaces each function with a recording stub keyed by `std::meta::identifier_of(m)`:
-
-```cpp
-template <typename T>
-class ReflectMock {
-    static_assert(has_annotation<mock_interface>(^^T));
-public:
-    T iface;
-    std::unordered_map<std::string, unsigned> calls;
-
-    ReflectMock() {
-        constexpr auto ctx = std::meta::access_context::unchecked();
-        template for (constexpr auto m
-                      : std::define_static_array(
-                          std::meta::nonstatic_data_members_of(^^T, ctx))) {
-            std::string name(std::meta::identifier_of(m));
-            iface.[:m:] = [this, name = name](auto&&...) { ++calls[name]; };
-        }
-    }
-    auto verify_max_calls() const -> bool;   // walks T again, asserts caps
-};
-```
-
-`verify_max_calls()` walks `T`'s members a second time; for each member with `[[=mock_max_calls{N}]]`, it asserts `calls[name] <= N`. Add an `error` call to a code path that should never hit it, the cap fires. Add a method to `Logger`, the mock grows to include it; rename one, the production call site fails to compile (loud) instead of silently logging through the old name (quiet). For `process_request(log, 200)` (happy path) followed by `process_request(log, 503)` (cap intentionally violated):
-
-```
-== reflect-driven mock verifier ==
-  case 200:
-    info  = 1
-    warn  = 0
-    error = 0
-    error called 0 times, cap 0 (ok)
-  verify_max_calls: PASS
-  case 503 (cap intentionally violated):
-    error called 1 times, cap is 0 (FAIL)
-  verify_max_calls: FAIL (expected FAIL)
-```
-
-Full file: <RepoFile path="posts/toolset/testing-for-safety-2026/examples/reflect-mock-verifier.cpp" branch="main" />.
-
-<DockerRun
-  image="ghcr.io/wrocpp/cpp-reflection:2026-05"
-  command="bash -c 'clang++ -std=c++26 -freflection-latest -stdlib=libc++ posts/toolset/testing-for-safety-2026/examples/reflect-mock-verifier.cpp -o /tmp/mock && LD_LIBRARY_PATH=/opt/p2996/clang/lib/aarch64-unknown-linux-gnu /tmp/mock'"
-  expected="verify_max_calls: FAIL (expected FAIL)"
-  title="Mock verifier, locally on cpp-reflection"
-/>
-
-Both patterns slot under any test framework: the per-member loop becomes a Catch2 `SECTION`, a GoogleTest `TEST_P`, or a doctest `SUBCASE`. The reflection-driven runner doesn't replace the framework -- it replaces the per-target boilerplate the framework requires you to write by hand.
-
-What the reflection harness does NOT handle:
+What reflection-alone today is NOT a substitute for:
+- **GoogleMock / Trompeloeil for behavior mocks** -- argument matchers, sequenced calls, action wiring stay better in those frameworks. Reflection earns its keep on schema-driven property tests, not on call-mocking.
 - **Behavioural tests** -- "this function returns the median of its inputs" is a logical property, not a structural one. Reflection sees the signature; the property is the developer's contract.
 - **Test scheduling / parallelism** -- run order, fixture lifetime, parallel execution stay the framework's job.
 - **Coverage measurement** -- reflection generates the test, the framework runs it, but `gcov` / `llvm-cov` measure what actually executed. Three separate concerns.
@@ -278,26 +221,35 @@ The contract IS a partial test specification. Once contracts ship, a test runner
 
 Status as of 2026-05-04: P2900 is in C++26. Compiler implementations are partial; clang-p2996 honors the syntax but enforcement is opt-in via `-fcontracts=enforce`. GCC 16.1 emits warnings only.
 
-**C++29 token injection ([P3294](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3294r2.pdf)) makes the test harness ALSO injected.** Today the developer writes the per-field round-trip test loop (above) and the reflection harness expands it. Once injection ships, an annotation can also INJECT the test harness alongside the implementation:
+**C++29 token injection ([P3294](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3294r2.pdf)) is the unlock for behavior synthesis.** Reflection in C++26 lets a generic harness *traverse* an interface; injection lets it *generate code* alongside the interface. That is the gap between today's structural property tests (which work) and today's reflection-driven mocks (which are strictly worse than GoogleMock). With injection, the same `[[=mock_interface{}]]` annotation could trigger generation of a mock class whose methods carry argument matchers, sequenced expectations, and recorded actions -- the things that actually let GMock-style behavior testing work in production. Today that pattern is sketched but not competitive; injection moves it into the same league. Two illustrative shapes:
 
 ```cpp
 // Pseudo-syntax (P3294 token injection, C++29 target).
-[[ wire_format(version=1, endian=little), inject(round_trip_tests) ]]
+// 1. Round-trip harness injected alongside the schema:
+[[ =wire_format{version=1, endian=little}, =inject_tests{round_trip} ]]
 struct SensorReading {
     std::uint16_t sensor_id;
     std::int32_t  raw_value;
     std::uint8_t  status_flags;
 };
-
-// The annotation triggers a generator that injects:
-//   - parse() / serialize() (see safety-profiles-2026)
-//   - operator== (default)
-//   - test_round_trip() that exercises every field, every wire-encoding
-//     edge case, and the truncated-input failure path
-// Adding a new field to SensorReading auto-extends the test set without
+// Compiler injects parse() / serialize() / operator== /
+// test_round_trip() that exercises every field and the truncated-input
+// failure path. Adding a new field auto-extends the test set without
 // the developer touching the test file.
+
+// 2. Mock class injected from an interface, on par with what GoogleMock
+//    generates from MOCK_METHOD today:
+[[ =mock_interface{}, =inject_mock{strict} ]]
+struct ILogger {
+    virtual void info(std::string_view) = 0;
+    virtual void warn(std::string_view) = 0;
+    virtual void error(std::string_view) = 0;
+};
+// Compiler injects MockILogger : ILogger with per-method recorders,
+// argument matchers, EXPECT_CALL-equivalent setup and action wiring.
+// No MOCK_METHOD lines; the interface IS the mock spec.
 ```
 
-The state of the codebase one decade out: contracts carry the spec on the function; reflection generates the per-field tests; injection synthesises the harness alongside the implementation; sanitizers stay in CI to catch the corners reflection hasn't reached. The "we wrote tests but forgot to update them when the schema changed" failure mode -- the most common cause of regression bugs in production -- becomes mechanically impossible.
+The state of the codebase one decade out: contracts carry the spec on the function; reflection generates the per-field structural tests today; injection synthesises the harness and the mocks alongside the implementation tomorrow; sanitizers stay in CI to catch the corners none of the above reach. The "we wrote tests but forgot to update them when the schema changed" failure mode -- the most common cause of regression bugs in production -- becomes mechanically impossible.
 
 Cross-references: <PostLink slug="sanitizers-2026">sanitizers-2026</PostLink> covers the runtime safety net these tests feed; <PostLink slug="safety-profiles-2026">safety-profiles-2026</PostLink> covers the compile-time enforcement that handles what tests can't (function-body checks, cross-TU rules).
