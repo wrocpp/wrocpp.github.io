@@ -100,6 +100,36 @@ const toolset = defineCollection({
     cost: z.string().optional(),
     draft: z.boolean().default(false),
     /**
+     * Topical cluster shown as a section header on /toolset/. URLs stay
+     * flat (/toolset/<slug>/); cluster only drives hub grouping.
+     */
+    cluster: z
+      .enum([
+        'safety',
+        'performance',
+        'security',
+        'compliance',
+        'ai-tooling',
+        'reflection',
+        'general',
+      ])
+      .default('general'),
+    /**
+     * Pre-built Docker image readers can pull to reproduce every claim
+     * on the page locally. e.g. "ghcr.io/wrocpp/cpp-safety:2026-05".
+     */
+    containerImage: z.string().optional(),
+    /**
+     * Entry-point script inside the container, relative to the working
+     * directory the reader mounts. e.g. "scripts/run-asan.sh".
+     */
+    containerEntry: z.string().optional(),
+    /**
+     * Pinned commit URL in the C++ examples repo so readers can clone
+     * the source the container runs against.
+     */
+    exampleRepo: z.string().url().optional(),
+    /**
      * Concise instructions an AI agent can fetch and act on. Rendered as
      * /toolset/<slug>/llms.txt and indexed in /llms.txt at the site root
      * (per https://llmstxt.org/).
