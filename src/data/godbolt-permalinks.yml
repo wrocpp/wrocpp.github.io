@@ -225,3 +225,40 @@ gcc-16-hands-on:
       admin
 
       '
+vector-consteval-or-constexpr:
+  promote:
+    title: Promote a consteval vector to a constexpr span
+    id: rEPa66a9r
+    url: https://godbolt.org/z/rEPa66a9r
+    expected_output: 'fib = 0
+
+      fib = 1
+
+      fib = 1
+
+      fib = 2
+
+      fib = 3
+
+      fib = 5
+
+      fib = 8
+
+      fib = 13'
+    gcc_id: 46fY1j1vq
+    gcc_url: https://godbolt.org/z/46fY1j1vq
+    gcc_expected_output: 'fib = 0
+
+      fib = 1
+
+      fib = 1
+
+      fib = 2
+
+      fib = 3
+
+      fib = 5
+
+      fib = 8
+
+      fib = 13'
