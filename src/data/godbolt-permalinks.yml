@@ -9,39 +9,39 @@
 
 why-cpp26-reflection-matters:
   teaser:
-    id: n4eK93vfv
-    url: https://godbolt.org/z/n4eK93vfv
+    id: 3bjshh58z
+    url: https://godbolt.org/z/3bjshh58z
     title: 40-line JSON serializer with reflection
     expected_output: '{"name":"Filip","age":40,"admin":true,"home":{"city":"Warsaw","postal_code":12345}}'
-    gcc_id: e3346Pxoh
-    gcc_url: https://godbolt.org/z/e3346Pxoh
+    gcc_id: fKfr3fs33
+    gcc_url: https://godbolt.org/z/fKfr3fs33
     gcc_expected_output: '{"name":"Filip","age":40,"admin":true,"home":{"city":"Warsaw","postal_code":12345}}'
   teaser_peel:
-    id: MzM4bh3rj
-    url: https://godbolt.org/z/MzM4bh3rj
+    id: xTqP948nc
+    url: https://godbolt.org/z/xTqP948nc
     title: "Peel-first variant \u2014 first iteration hoisted to compile time"
     expected_output: '{"name":"Filip","age":40,"admin":true,"home":{"city":"Warsaw","postal_code":12345}}'
-    gcc_id: 439ro4sno
-    gcc_url: https://godbolt.org/z/439ro4sno
+    gcc_id: 6bbMhnTW7
+    gcc_url: https://godbolt.org/z/6bbMhnTW7
     gcc_expected_output: '{"name":"Filip","age":40,"admin":true,"home":{"city":"Warsaw","postal_code":12345}}'
   teaser_annotated:
-    id: 97WdeKs7v
-    url: https://godbolt.org/z/97WdeKs7v
+    id: jG7cr9zab
+    url: https://godbolt.org/z/jG7cr9zab
     title: "Annotated serializer \u2014 rename, skip, skip-if-empty, rename_all"
     expected_output: '{"userName":"filip","id":42,"email":"filip@example.com","bio":"hello","isAdmin":true}
 
       {"userName":"anon","id":7,"email":"a@b.c","isAdmin":false}'
   teaser_formats:
-    id: WKhjGxE7K
-    url: https://godbolt.org/z/WKhjGxE7K
+    id: vPrq7n3on
+    url: https://godbolt.org/z/vPrq7n3on
     title: "One reflection walk, three formats: JSON \xB7 YAML \xB7 XML"
     expected_output: "--- JSON ---\n{\"userName\":\"filip\",\"id\":42,\"email\":\"filip@example.com\",\"isAdmin\":true,\"\
       homeAddress\":{\"city\":\"Warsaw\",\"postal_code\":12345}}\n\n--- YAML ---\nuserName: filip\nid: 42\nemail: filip@example.com\n\
       isAdmin: true\nhomeAddress: \n  city: Warsaw\n  postal_code: 12345\n\n--- XML  ---\n<userName>filip</userName><id>42</id><email>filip@example.com</email><isAdmin>true</isAdmin><homeAddress><city>Warsaw</city><postal_code>12345</postal_code></homeAddress>"
 first-reflection:
   describe:
-    id: bq9WjeeM5
-    url: https://godbolt.org/z/bq9WjeeM5
+    id: 3nbdxxW91
+    url: https://godbolt.org/z/3nbdxxW91
     title: Describe
     expected_output: 'Point:
 
@@ -59,8 +59,8 @@ first-reflection:
       name: basic_string<char, char_traits<char>, allocator<char>>
 
       '
-    gcc_id: n86cE3aWq
-    gcc_url: https://godbolt.org/z/n86cE3aWq
+    gcc_id: 1dGWqr35z
+    gcc_url: https://godbolt.org/z/1dGWqr35z
     gcc_expected_output: 'Point:
 
       x: int
@@ -79,35 +79,35 @@ first-reflection:
       '
 splicing:
   splice_basics:
-    id: TnMx1Ys5b
-    url: https://godbolt.org/z/TnMx1Ys5b
+    id: bhdq9We19
+    url: https://godbolt.org/z/bhdq9We19
     title: Splice basics
     expected_output: "read<Point::x>: 3\nPoint:\n  x = 3\n  y = 4"
 template-for-expansion-statements:
   dump:
-    id: ascPs55jK
-    url: https://godbolt.org/z/ascPs55jK
+    id: asx7hs1qz
+    url: https://godbolt.org/z/asx7hs1qz
     title: Dump
     expected_output: "Line:\n  a = Point{x=0, y=0}\n  b = Point{x=3, y=4}\n  name = diag"
 enum-to-string:
   renum:
     title: Renum
-    gcc_id: cTKnshToM
-    gcc_url: https://godbolt.org/z/cTKnshToM
+    gcc_id: o6njP4GeE
+    gcc_url: https://godbolt.org/z/o6njP4GeE
     gcc_expected_output: 'green
 
       read|exec'
 auto-formatter:
   formatter:
     title: Formatter
-    gcc_id: Y5ohxse9d
-    gcc_url: https://godbolt.org/z/Y5ohxse9d
+    gcc_id: Wbeq4oEP5
+    gcc_url: https://godbolt.org/z/Wbeq4oEP5
     gcc_expected_output: 'User{name: Filip, age: 40, admin: true, home: Address{city: Warsaw, postal_code: 12345}}'
 derive-eq-hash:
   hash_demo:
     title: Hash demo
-    gcc_id: Eada5fhx6
-    gcc_url: https://godbolt.org/z/Eada5fhx6
+    gcc_id: 43WMPKPMq
+    gcc_url: https://godbolt.org/z/43WMPKPMq
     gcc_expected_output: '(3,4) -> 3-4-5
 
       (0,0) -> origin
@@ -118,28 +118,28 @@ derive-eq-hash:
 json-naive:
   rjson:
     title: Rjson
-    gcc_id: PnzTqMPbP
-    gcc_url: https://godbolt.org/z/PnzTqMPbP
+    gcc_id: GTo4hMn56
+    gcc_url: https://godbolt.org/z/GTo4hMn56
     gcc_expected_output: '{"name":"Filip","age":40,"admin":true,"home":{"city":"Warsaw","postal_code":12345},"aliases":["fsjdk","phi"]}'
 json-deserialize:
   from_values:
     title: From values
-    gcc_id: f5dvhjMdP
-    gcc_url: https://godbolt.org/z/f5dvhjMdP
+    gcc_id: qKK7v4vdE
+    gcc_url: https://godbolt.org/z/qKK7v4vdE
     gcc_expected_output: "name=Filip age=40 admin=true\nfailure path: at .age \u2014 expected number"
 dependency-injection:
   di_demo:
     title: Di demo
-    gcc_id: zqs9vn7vo
-    gcc_url: https://godbolt.org/z/zqs9vn7vo
+    gcc_id: Wb6zPa1Ex
+    gcc_url: https://godbolt.org/z/Wb6zPa1Ex
     gcc_expected_output: 'Hello @tick=1
 
       Hello @tick=2'
 auto-mocks:
   mock_demo:
     title: Mock demo
-    gcc_id: qW9vYcTTj
-    gcc_url: https://godbolt.org/z/qW9vYcTTj
+    gcc_id: jbeWEa3ex
+    gcc_url: https://godbolt.org/z/jbeWEa3ex
     gcc_expected_output: 'now:  42
 
       zone: Europe/Warsaw
@@ -152,22 +152,22 @@ auto-mocks:
 define-aggregate:
   pick:
     title: Pick
-    gcc_id: xTxofns9E
-    gcc_url: https://godbolt.org/z/xTxofns9E
+    gcc_id: 3o8T5h1od
+    gcc_url: https://godbolt.org/z/3o8T5h1od
     gcc_expected_output: "Pick<User, \"name\", \"age\", \"admin\"> would contain:\n  name : std::__cxx11::basic_string<char>\n\
       \  age : int\n  admin : bool\n(Type synthesis via std::meta::define_aggregate is experimental;\n full Pick / Omit /\
       \ Partial land once the compiler context relaxes.)"
 cross-language-comparison:
   main:
     title: Main
-    gcc_id: GYT781eY5
-    gcc_url: https://godbolt.org/z/GYT781eY5
+    gcc_id: hrhqnT8x7
+    gcc_url: https://godbolt.org/z/hrhqnT8x7
     gcc_expected_output: '{"name":"Filip","age":40,"admin":true}'
 reflect-arbitrary:
   arbitrary:
     title: Arbitrary
-    gcc_id: 8nEcd6zce
-    gcc_url: https://godbolt.org/z/8nEcd6zce
+    gcc_id: hddrxnPK9
+    gcc_url: https://godbolt.org/z/hddrxnPK9
     gcc_expected_output: 'Generated User #0: name=uy       age=18  admin=true home={city=ppel pc=15}
 
       Generated User #1: name=b        age=46  admin=true home={city=pd pc=71}
@@ -180,8 +180,8 @@ reflect-arbitrary:
 reflect-optics:
   optics:
     title: Optics
-    gcc_id: bsErWaTex
-    gcc_url: https://godbolt.org/z/bsErWaTex
+    gcc_id: qx6Ksesa7
+    gcc_url: https://godbolt.org/z/qx6Ksesa7
     gcc_expected_output: 'view: Wroclaw
 
       set:  Warsaw
@@ -190,8 +190,8 @@ reflect-optics:
 reflect-dx:
   natvis_emit:
     title: Natvis emit
-    gcc_id: s3GzrhjvM
-    gcc_url: https://godbolt.org/z/s3GzrhjvM
+    gcc_id: 6oWoT8ac7
+    gcc_url: https://godbolt.org/z/6oWoT8ac7
     gcc_expected_output: "<Type Name=\"Address\">\n  <DisplayString>{city={city} postal_code={postal_code}}</DisplayString>\n\
       \  <Expand>\n    <Item Name=\"city\">city</Item>\n    <Item Name=\"postal_code\">postal_code</Item>\n  </Expand>\n</Type>\n\
       <Type Name=\"User\">\n  <DisplayString>{name={name} age={age} admin={admin} home={home}}</DisplayString>\n  <Expand>\n\
@@ -200,14 +200,14 @@ reflect-dx:
 reflect-soa:
   soa:
     title: Soa
-    gcc_id: cjbasYYGd
-    gcc_url: https://godbolt.org/z/cjbasYYGd
+    gcc_id: nj7GEEEzY
+    gcc_url: https://godbolt.org/z/nj7GEEEzY
     gcc_expected_output: "Particle SoA layout:\n  std::vector<float> x;\n  std::vector<float> y;\n  std::vector<float> z;\n\
       \  std::vector<float> vx;\n  std::vector<float> vy;\n  std::vector<float> vz;\nprocessed 100000 particles in SoA layout"
 gcc-16-hands-on:
   hello_reflect:
-    id: e4618nxT1
-    url: https://godbolt.org/z/e4618nxT1
+    id: qfcrrYT3d
+    url: https://godbolt.org/z/qfcrrYT3d
     title: GCC 16.1 reflection hands-on
     expected_output: 'name
 
@@ -216,8 +216,8 @@ gcc-16-hands-on:
       admin
 
       '
-    gcc_id: M8TrGd6b5
-    gcc_url: https://godbolt.org/z/M8TrGd6b5
+    gcc_id: 6fbT9azrY
+    gcc_url: https://godbolt.org/z/6fbT9azrY
     gcc_expected_output: 'name
 
       age
