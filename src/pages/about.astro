@@ -5,20 +5,23 @@ import BaseLayout from '../layouts/BaseLayout.astro';
   <div class="wrap">
     <header class="page-head reveal">
       <div class="page-head__eyebrow">// about</div>
-      <h1 class="page-head__title">The wro.cpp community</h1>
+      <h1 class="page-head__title">Modern C++ for production</h1>
       <p class="page-head__sub">
-        A hub for C++ developers in and around Wrocław. Posts, events, and the people who ship
-        serious C++.
+        A Wrocław-based community for C++ developers building production systems where
+        safety, performance, security, and resource discipline all matter at once.
       </p>
     </header>
 
     <article class="prose reveal reveal-1">
-      <p class="article-lede"><strong>wro.cpp</strong> has existed as a Slack workspace since 2021. This site is the public-facing hub — a place where posts live, events get announced, and anyone curious about serious C++ can find a door in.</p>
+      <p class="article-lede"><strong>wro.cpp</strong> is a Wrocław-based community for C++ developers building production systems where safety, performance, and resource discipline matter. We cover modern C++ end-to-end: from C++26 reflection through lifetime safety, low-latency patterns, and the tooling that makes C++ ship in regulated industries.</p>
+
+      <p>Two front doors: the <a href="/posts/"><strong>blog</strong></a> is the timeline (deep-dive series + news short-form), the <a href="/toolset/"><strong>Toolset</strong></a> is the evergreen reference. Posts feed the toolset; the toolset feeds posts. Both default to premium open source and runnable claims (every example links to a Compiler Explorer URL we re-verify on every publish).</p>
 
       <h2>What you'll find here</h2>
       <ul>
-        <li><strong>Flagship technical posts</strong> (English) — hands-on deep dives into modern C++: C++26 reflection, language features, patterns, case studies.</li>
-        <li><strong>Short-form posts</strong> — "C++ This Fortnight" roundups, tool spotlights, problem-solutions.</li>
+        <li><strong>Flagship technical posts</strong> (English) — hands-on deep dives into modern C++: the C++26 reflection series, the upcoming Production C++ series (safety, performance, security, compliance), language features, patterns, case studies.</li>
+        <li><strong>Short-form posts</strong> — news roundups ("C++ This Fortnight"), tool spotlights, problem-solutions, conference recaps.</li>
+        <li><strong>Toolset reference</strong> — opinionated picks across compilers, sanitizers, profilers, AI agents, local LLMs, hardened stdlib, qualified compilers, coding standards. Each section has a freshness badge, a "Reproduce locally" container, and a machine-readable companion at <code>/toolset/&lt;slug&gt;/llms.txt</code> for AI agents.</li>
         <li><strong>Events</strong> — monthly online meetups and quarterly in-person gatherings in Wrocław, often in Polish.</li>
       </ul>
 

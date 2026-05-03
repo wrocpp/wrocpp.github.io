@@ -147,6 +147,7 @@ a:hover { color: var(--orange); }
 .site-footer .rule-before::before {
   content: "//"; color: var(--orange); margin-right: 0.4rem; position: absolute; left: 0;
 }
+.site-footer__tagline { color: var(--orange); margin-left: 0.6rem; font-style: italic; }
 
 /* -------- HERO (home) -------- */
 .hero {
