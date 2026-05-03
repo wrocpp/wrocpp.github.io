@@ -2,25 +2,104 @@
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import ToolsetCard from '../../components/ToolsetCard.astro';
 import RepoFile from '../../components/RepoFile.astro';
-import { getCollection } from 'astro:content';
+import { getCollection, type CollectionEntry } from 'astro:content';
+
+type Cluster =
+  | 'safety'
+  | 'performance'
+  | 'security'
+  | 'compliance'
+  | 'ai-tooling'
+  | 'reflection'
+  | 'general';
+
+interface ClusterDef {
+  id: Cluster;
+  title: string;
+  tagline: string;
+  comingSoon: string;
+}
+
+// Display order on the hub. Empty clusters render with a "Coming soon"
+// note so the broader scope is visible before content lands.
+const CLUSTERS: ClusterDef[] = [
+  {
+    id: 'safety',
+    title: 'Safety',
+    tagline: 'Memory, lifetime, bounds, type.',
+    comingSoon: 'Sanitizers + memory-safety sections incoming next week.',
+  },
+  {
+    id: 'performance',
+    title: 'Performance',
+    tagline: 'Cache, SIMD, allocators, profiling.',
+    comingSoon: 'Profiling + SIMD sections incoming next week.',
+  },
+  {
+    id: 'security',
+    title: 'Security',
+    tagline: 'Hardened stdlib, supply chain, secure coding.',
+    comingSoon: 'Hardened-stdlib + supply-chain sections incoming.',
+  },
+  {
+    id: 'compliance',
+    title: 'Compliance',
+    tagline: 'Functional safety, qualified tools, coding standards.',
+    comingSoon: 'Compiler-qualification matrix + coding-standards comparison incoming.',
+  },
+  {
+    id: 'ai-tooling',
+    title: 'AI tooling',
+    tagline: 'AI agents + local LLMs for C++ work.',
+    comingSoon: '',
+  },
+  {
+    id: 'reflection',
+    title: 'Reflection',
+    tagline: 'C++26 reflection: compiler support + library backends.',
+    comingSoon: '',
+  },
+];
 
 const all = await getCollection('toolset', ({ data }) => !data.draft);
-const entries = all.sort(
-  (a, b) => b.data.lastReviewed.getTime() - a.data.lastReviewed.getTime(),
-);
 
 // The compiler-support matrix lives at /toolset/compiler-support/ as a
-// special page (data-driven, not in the collection), but we surface it
-// in the hub TOC alongside the collection entries.
+// special page (data-driven, not in the collection). Render it as if it
+// were a collection entry under the reflection cluster.
 const matrixCard = {
   href: '/toolset/compiler-support/',
   title: 'C++26 compiler support',
   summary:
     'Per-feature, per-compiler support matrix derived from godbolt examples we actually run. Cells link to runnable Compiler Explorer URLs.',
   kind: 'matrix' as const,
+  cluster: 'reflection' as const,
   lastReviewed: new Date(),
   tags: ['cpp26', 'compilers', 'p2996', 'reflection'],
 };
+
+type CardEntry =
+  | { kind: 'collection'; entry: CollectionEntry<'toolset'> }
+  | { kind: 'special'; card: typeof matrixCard };
+
+const grouped = new Map<Cluster, CardEntry[]>();
+for (const c of CLUSTERS) grouped.set(c.id, []);
+
+grouped.get(matrixCard.cluster)!.push({ kind: 'special', card: matrixCard });
+
+for (const entry of all) {
+  const cluster = (entry.data.cluster ?? 'general') as Cluster;
+  const bucket = grouped.get(cluster) ?? grouped.get('general')!;
+  bucket.push({ kind: 'collection', entry });
+}
+
+// Sort each cluster by lastReviewed desc.
+for (const [, bucket] of grouped) {
+  bucket.sort((a, b) => {
+    const ad = a.kind === 'collection' ? a.entry.data.lastReviewed : a.card.lastReviewed;
+    const bd = b.kind === 'collection' ? b.entry.data.lastReviewed : b.card.lastReviewed;
+    return bd.getTime() - ad.getTime();
+  });
+}
 ---
 <BaseLayout
   title="Toolset — wro.cpp"
@@ -46,27 +125,45 @@ const matrixCard = {
       </ol>
     </section>
 
-    <div class="card-grid reveal reveal-2">
-      <ToolsetCard
-        href={matrixCard.href}
-        title={matrixCard.title}
-        summary={matrixCard.summary}
-        kind={matrixCard.kind}
-        lastReviewed={matrixCard.lastReviewed}
-        tags={matrixCard.tags}
-      />
-      {entries.map((e) => (
-        <ToolsetCard
-          href={`/toolset/${e.slug}/`}
-          title={e.data.title}
-          summary={e.data.summary}
-          kind={e.data.kind}
-          lastReviewed={e.data.lastReviewed}
-          tags={e.data.tags}
-          draft={e.data.draft}
-        />
-      ))}
-    </div>
+    {CLUSTERS.map((cluster) => {
+      const bucket = grouped.get(cluster.id) ?? [];
+      return (
+        <section class="toolset-cluster reveal reveal-2" id={`cluster-${cluster.id}`}>
+          <header class="toolset-cluster__head">
+            <h2 class="toolset-cluster__title">{cluster.title}</h2>
+            <p class="toolset-cluster__tagline">{cluster.tagline}</p>
+          </header>
+          {bucket.length === 0 ? (
+            <p class="toolset-cluster__coming-soon">{cluster.comingSoon || 'Coming soon.'}</p>
+          ) : (
+            <div class="card-grid">
+              {bucket.map((card) =>
+                card.kind === 'special' ? (
+                  <ToolsetCard
+                    href={card.card.href}
+                    title={card.card.title}
+                    summary={card.card.summary}
+                    kind={card.card.kind}
+                    lastReviewed={card.card.lastReviewed}
+                    tags={card.card.tags}
+                  />
+                ) : (
+                  <ToolsetCard
+                    href={`/toolset/${card.entry.slug}/`}
+                    title={card.entry.data.title}
+                    summary={card.entry.data.summary}
+                    kind={card.entry.data.kind}
+                    lastReviewed={card.entry.data.lastReviewed}
+                    tags={card.entry.data.tags}
+                    draft={card.entry.data.draft}
+                  />
+                ),
+              )}
+            </div>
+          )}
+        </section>
+      );
+    })}
 
     <article id="how-we-test" class="prose reveal reveal-3 toolset-methodology">
       <h2>How we test</h2>
@@ -133,6 +230,41 @@ const matrixCard = {
     line-height: 1.55;
   }
   .toolset-principles li + li { margin-top: 0.45rem; }
+
+  .toolset-cluster {
+    margin: 2.2rem 0 0;
+  }
+  .toolset-cluster__head {
+    margin: 0 0 0.9rem;
+    padding: 0 0 0.5rem;
+    border-bottom: 1px solid var(--rule);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.6rem 1rem;
+  }
+  .toolset-cluster__title {
+    font-family: "Quicksand", system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 1.4rem;
+    margin: 0;
+    color: var(--ink);
+  }
+  .toolset-cluster__tagline {
+    margin: 0;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.78rem;
+    color: var(--ink-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .toolset-cluster__coming-soon {
+    margin: 0.6rem 0 0;
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 0.95rem;
+    color: var(--ink-faint);
+    font-style: italic;
+  }
   .toolset-methodology {
     margin-top: 3rem;
   }
