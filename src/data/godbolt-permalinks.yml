@@ -228,37 +228,101 @@ gcc-16-hands-on:
 vector-consteval-or-constexpr:
   promote:
     title: Promote a consteval vector to a constexpr span
-    id: rEPa66a9r
-    url: https://godbolt.org/z/rEPa66a9r
-    expected_output: 'fib = 0
+    id: 5qTnzc11h
+    url: https://godbolt.org/z/5qTnzc11h
+    expected_output: '(1) template for      fib = 0
 
-      fib = 1
+      (1) template for      fib = 1
 
-      fib = 1
+      (1) template for      fib = 1
 
-      fib = 2
+      (1) template for      fib = 2
 
-      fib = 3
+      (1) template for      fib = 3
 
-      fib = 5
+      (1) template for      fib = 5
 
-      fib = 8
+      (1) template for      fib = 8
 
-      fib = 13'
-    gcc_id: 46fY1j1vq
-    gcc_url: https://godbolt.org/z/46fY1j1vq
-    gcc_expected_output: 'fib = 0
+      (1) template for      fib = 13
 
-      fib = 1
+      (2) constexpr span    fib = 0
 
-      fib = 1
+      (2) constexpr span    fib = 1
 
-      fib = 2
+      (2) constexpr span    fib = 1
 
-      fib = 3
+      (2) constexpr span    fib = 2
 
-      fib = 5
+      (2) constexpr span    fib = 3
 
-      fib = 8
+      (2) constexpr span    fib = 5
 
-      fib = 13'
+      (2) constexpr span    fib = 8
+
+      (2) constexpr span    fib = 13
+
+      (3) runtime vector    fib = 0
+
+      (3) runtime vector    fib = 1
+
+      (3) runtime vector    fib = 1
+
+      (3) runtime vector    fib = 2
+
+      (3) runtime vector    fib = 3
+
+      (3) runtime vector    fib = 5
+
+      (3) runtime vector    fib = 8
+
+      (3) runtime vector    fib = 13'
+    gcc_id: 9rec7xzE9
+    gcc_url: https://godbolt.org/z/9rec7xzE9
+    gcc_expected_output: '(1) template for      fib = 0
+
+      (1) template for      fib = 1
+
+      (1) template for      fib = 1
+
+      (1) template for      fib = 2
+
+      (1) template for      fib = 3
+
+      (1) template for      fib = 5
+
+      (1) template for      fib = 8
+
+      (1) template for      fib = 13
+
+      (2) constexpr span    fib = 0
+
+      (2) constexpr span    fib = 1
+
+      (2) constexpr span    fib = 1
+
+      (2) constexpr span    fib = 2
+
+      (2) constexpr span    fib = 3
+
+      (2) constexpr span    fib = 5
+
+      (2) constexpr span    fib = 8
+
+      (2) constexpr span    fib = 13
+
+      (3) runtime vector    fib = 0
+
+      (3) runtime vector    fib = 1
+
+      (3) runtime vector    fib = 1
+
+      (3) runtime vector    fib = 2
+
+      (3) runtime vector    fib = 3
+
+      (3) runtime vector    fib = 5
+
+      (3) runtime vector    fib = 8
+
+      (3) runtime vector    fib = 13'

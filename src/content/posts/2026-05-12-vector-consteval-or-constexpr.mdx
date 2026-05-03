@@ -50,25 +50,40 @@ Where `std::vector` *does* shine in compile-time code: as a local variable insid
 C++26 ships a small library function that solves the "I have a transient vector and I need its values to live in static storage" problem in one line: `std::define_static_array`. Given a range whose elements are *structural* (loosely: usable as non-type template arguments), it materialises a static-storage const array holding the values, and returns a `std::span<range_value_t<R> const>` over it.
 
 ```cpp
-consteval auto fibs(int n) {
+// fibs is `constexpr` (not `consteval`) -- see (3) below for why.
+constexpr auto fibs(int n) {
     std::vector<int> out;
     int a = 0, b = 1;
     for (int i = 0; i < n; ++i) { out.push_back(a); int t = a + b; a = b; b = t; }
     return out;
 }
 
-template for (constexpr int x : std::define_static_array(fibs(8))) {
-    std::println("fib = {}", x);
+int main() {
+    // (1) template for over a static-storage span
+    template for (constexpr int x : std::define_static_array(fibs(8)))
+        std::println("(1) fib = {}", x);
+
+    // (2) constexpr local span: literal pointer to static storage
+    constexpr auto f2 = std::define_static_array(fibs(8));
+    for (auto x : f2) std::println("(2) fib = {}", x);
+
+    // (3) runtime call: real heap-allocated vector
+    auto f3 = fibs(8);
+    for (auto x : f3) std::println("(3) fib = {}", x);
 }
 ```
 
-`fibs(8)` runs at compile time and returns a transient `std::vector<int>`. `std::define_static_array(...)` consumes that vector during the same constant evaluation, materialises a static const array of 8 `int`s, and returns a `std::span<const int>` whose `.data()` points into the binary. The span is a constant expression at template-instantiation time -- which is exactly what `template for` requires of its range.
+Three patterns, one function. Each one teaches a different rule:
 
-> **Why `consteval` here, when `constexpr` would also work?** Try it: change `consteval auto fibs(int n)` to `constexpr auto fibs(int n)` and the program still compiles and prints the same eight Fibonacci numbers. The reason it works is that `define_static_array` is itself `consteval`, so the whole expression `define_static_array(fibs(8))` is evaluated in an *immediate-function context* -- and that context forces `fibs(8)` to run at compile time regardless of whether `fibs` is marked `constexpr` or `consteval`. The choice is about *intent and surface area*: a `constexpr` function is callable from runtime code too (the compiler must emit a runtime symbol), while a `consteval` function is a hard guarantee that no runtime call site exists. I used `consteval` here because "this never runs at runtime" is the honest contract for a Fibonacci factory whose result we always pipe straight into `define_static_array`. If you also wanted to call `fibs(n)` at runtime with a runtime `n`, mark it `constexpr` -- the demo above still works.
+**(1) `template for` over `define_static_array(fibs(8))`.** This is the post-4 pattern. `define_static_array` is `consteval`, so the whole expression is evaluated in *immediate-function context* and `fibs(8)` runs at compile time regardless of whether `fibs` is marked `constexpr` or `consteval`. `define_static_array` consumes the transient vector during that same evaluation, materialises a static-storage const array of 8 `int`s, and returns a `std::span<const int>` whose `.data()` points into the binary. The span is a constant expression at template-instantiation time -- which is exactly what `template for` requires.
 
-That's the same pattern <PostLink slug="template-for-expansion-statements">post 4 (template for)</PostLink> uses to walk reflections (`std::define_static_array(std::meta::nonstatic_data_members_of(^^T, ctx))`): `nonstatic_data_members_of` returns a `std::vector<std::meta::info>` -- transient -- and the `define_static_array` line promotes it into a static-storage span the expansion statement can iterate.
+**(2) `constexpr auto f2 = std::define_static_array(fibs(8));`.** This is the pattern you actually want most of the time. `std::span` is itself a literal type (just a pointer + size), so the span value is a valid `constexpr` initializer; the pointer it holds points to *static* storage (allocated by `define_static_array`), so it freely escapes into runtime. You get a constexpr handle you can iterate as many times as you like with zero runtime allocation. If a future translation unit consumes the same span, the linker deduplicates the storage. This is the cheap-and-honest way to ship "compile-time-known data, used at runtime."
 
-<GodboltEmbed id="rEPa66a9r" gcc_id="46fY1j1vq" title="Promote a consteval std::vector to a constexpr std::span" />
+**(3) `auto f3 = fibs(8);`.** This compiles **only because `fibs` is `constexpr`, not `consteval`**. The call happens at runtime, allocates a real heap-backed `std::vector<int>`, runs the same loop, returns the vector. This is the practical difference between the two specifiers: `constexpr` says "I can run at compile time *or* at runtime"; `consteval` says "compile time only -- if you try to call me at runtime, the program is ill-formed." Change line one of the example to `consteval auto fibs(int n)` and patterns (1) and (2) still work, but pattern (3) becomes a compile error: "call to consteval function 'fibs' is not a constant expression."
+
+That same `define_static_array` step appears in <PostLink slug="template-for-expansion-statements">post 4 (template for)</PostLink>, where it promotes the `std::vector<std::meta::info>` returned by `nonstatic_data_members_of` into a static-storage span the expansion statement can iterate. Same mechanism, different range type.
+
+<GodboltEmbed id="5qTnzc11h" gcc_id="9rec7xzE9" title="Three ways to consume a constant-time std::vector" />
 
 ## Limits, and where this is heading
 
