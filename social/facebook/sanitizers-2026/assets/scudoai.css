@@ -1,0 +1,1189 @@
+/*!
+ * ScudoAI brand kit - built bundle
+ * Generated from src/*.css - do not edit dist/ directly.
+ * See: gitlab.com/scudoai/branding/brand-kit
+ */
+
+/* ==== src/tokens.css ==== */
+/* ============================================================
+   ScudoAI design tokens
+   Source of truth for colors, typography, spacing, and radii
+   across all ScudoAI-branded documents and presentations.
+
+   Importable on its own (e.g. if a consumer wants to use the
+   tokens with their own components), or via the bundled
+   scudoai.css which concatenates tokens + base + components
+   + print.
+   ============================================================ */
+
+:root {
+  /* ----- Brand palette (blue-indigo, 260 hue) ----- */
+  --color-brand-50:  oklch(0.97 0.02 260);
+  --color-brand-100: oklch(0.93 0.04 260);
+  --color-brand-200: oklch(0.88 0.07 260);
+  --color-brand-400: oklch(0.68 0.15 260);
+  --color-brand-500: oklch(0.59 0.16 260); /* primary */
+  --color-brand-600: oklch(0.52 0.17 260); /* hover */
+  --color-brand-700: oklch(0.45 0.16 260);
+  --color-brand-800: oklch(0.38 0.13 260);
+
+  /* ----- Dark palette (matching hue, very low chroma) ----- */
+  --color-dark-950: oklch(0.13 0.02 260);
+  --color-dark-900: oklch(0.16 0.03 260);
+  --color-dark-800: oklch(0.20 0.03 258);
+  --color-dark-700: oklch(0.25 0.03 256);
+  --color-dark-600: oklch(0.30 0.02 255);
+  --color-dark-400: oklch(0.55 0.01 260);
+  --color-dark-300: oklch(0.65 0.01 260);
+  --color-dark-200: oklch(0.80 0.01 260);
+
+  /* ----- Accent (warm amber) ----- */
+  --color-accent-400: oklch(0.82 0.15 85);
+  --color-accent-500: oklch(0.75 0.15 75);
+  --color-accent-600: oklch(0.68 0.14 70);
+
+  /* ----- Neutral (slightly blue-tinted grays) ----- */
+  --color-neutral-50:  oklch(0.985 0 0);
+  --color-neutral-100: oklch(0.96 0 0);
+  --color-neutral-200: oklch(0.92 0.005 260);
+  --color-neutral-300: oklch(0.85 0.005 260);
+  --color-neutral-400: oklch(0.70 0.01 260);
+  --color-neutral-500: oklch(0.55 0.01 260);
+  --color-neutral-600: oklch(0.45 0.01 260);
+  --color-neutral-700: oklch(0.35 0.02 260);
+  --color-neutral-900: oklch(0.15 0.02 260);
+
+  /* ----- Industry accents (for domain badges) ----- */
+  --color-industry-healthcare: oklch(0.60 0.15 180);
+  --color-industry-agri:       oklch(0.65 0.15 140);
+  --color-industry-legal:      oklch(0.72 0.14 75);
+  --color-industry-public:     oklch(0.59 0.16 260);
+
+  /* ----- Semantic ----- */
+  --color-success: oklch(0.64 0.17 160);
+  --color-error:   oklch(0.58 0.22 25);
+
+  /* ----- Ecosystem partners ----- */
+  --color-nvidia: oklch(0.72 0.18 120);
+
+  /* ----- Typography ----- */
+  --font-display: 'Outfit', system-ui, -apple-system, sans-serif;
+  --font-sans:    'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-mono:    ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* ----- Spacing (4px grid) ----- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ----- Radii ----- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 999px;
+
+  /* ----- Shadows ----- */
+  --shadow-card:  0 2px 6px oklch(0 0 0 / 0.03);
+  --shadow-panel: 0 12px 48px oklch(0 0 0 / 0.18), 0 2px 8px oklch(0 0 0 / 0.08);
+}
+
+
+/* ==== src/base.css ==== */
+/* ============================================================
+   ScudoAI base styles
+   Reset, typography scale, and document foundations.
+   Depends on tokens.css.
+   ============================================================ */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  color: var(--color-neutral-900);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* ----- Headings (display font, tight tracking) ----- */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  margin: 0;
+  color: var(--color-neutral-900);
+  letter-spacing: -0.01em;
+}
+
+h1 { font-size: 34pt; line-height: 1.05; letter-spacing: -0.02em;  }
+h2 { font-size: 28pt; line-height: 1.10; letter-spacing: -0.015em; }
+h3 { font-size: 16pt; line-height: 1.20; }
+h4 { font-size: 12.5pt; line-height: 1.25; }
+h5 { font-size: 11pt; line-height: 1.25; text-transform: uppercase; letter-spacing: 0.08em; }
+h6 { font-size: 10pt; line-height: 1.25; text-transform: uppercase; letter-spacing: 0.12em; }
+
+/* ----- Body copy ----- */
+p {
+  margin: 0;
+  font-size: 11.5pt;
+  line-height: 1.55;
+  color: var(--color-neutral-700);
+}
+
+/* ----- Size utility classes ----- */
+.small { font-size: 9.5pt; color: var(--color-neutral-500); line-height: 1.55; }
+.micro { font-size: 8pt;   color: var(--color-neutral-500); }
+
+/* ----- Fonts ----- */
+.font-display { font-family: var(--font-display); }
+.font-sans    { font-family: var(--font-sans); }
+.font-mono    { font-family: var(--font-mono); }
+
+/* ----- Eyebrow label (above section titles) ----- */
+.eyebrow {
+  font-family: var(--font-sans);
+  font-size: 10pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--color-brand-500);
+}
+
+/* ----- Reduced motion ----- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+
+/* ==== src/components.css ==== */
+/* ============================================================
+   ScudoAI shared components
+   Reusable atoms and molecules used across all templates.
+   Depends on tokens.css + base.css.
+   ============================================================ */
+
+/* =====================================================
+   PILLS / BADGES
+   ===================================================== */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: var(--radius-full);
+  font-size: 8pt;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  background: var(--color-brand-50);
+  color: var(--color-brand-700);
+  border: 1px solid var(--color-brand-200);
+}
+
+.pill.green {
+  background: color-mix(in oklch, var(--color-success) 12%, white);
+  color: color-mix(in oklch, var(--color-success) 80%, black);
+  border-color: color-mix(in oklch, var(--color-success) 30%, white);
+}
+
+.pill.amber {
+  background: color-mix(in oklch, var(--color-accent-500) 18%, white);
+  color: color-mix(in oklch, var(--color-accent-600) 80%, black);
+  border-color: color-mix(in oklch, var(--color-accent-500) 35%, white);
+}
+
+.pill.nv {
+  background: color-mix(in oklch, var(--color-nvidia) 15%, white);
+  color: color-mix(in oklch, var(--color-nvidia) 45%, black);
+  border-color: color-mix(in oklch, var(--color-nvidia) 40%, white);
+}
+
+.pill.dark {
+  background: oklch(0.25 0.03 260 / 0.7);
+  color: #fff;
+  border-color: oklch(0.40 0.05 260 / 0.6);
+}
+
+/* =====================================================
+   CARDS
+   ===================================================== */
+.card {
+  background: #fff;
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-lg);
+  padding: 22px 28px 20px;
+  box-shadow: var(--shadow-card);
+}
+
+.card.tight { padding: 16px 20px; }
+.card.loose { padding: 26px 32px 24px; }
+
+.card.accent-top        { border-top: 4px solid var(--color-brand-500); padding-top: 18px; }
+.card.accent-top.amber  { border-top-color: var(--color-accent-500); }
+.card.accent-top.nv     { border-top-color: var(--color-nvidia); }
+.card.accent-top.green  { border-top-color: var(--color-success); }
+
+/* =====================================================
+   ICON BOX
+   ===================================================== */
+.icon-box {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: var(--color-brand-50);
+  color: var(--color-brand-600);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.icon-box svg { width: 20px; height: 20px; }
+
+.icon-box.amber { background: color-mix(in oklch, var(--color-accent-500) 18%, white); color: var(--color-accent-600); }
+.icon-box.green { background: color-mix(in oklch, var(--color-success) 14%, white); color: color-mix(in oklch, var(--color-success) 70%, black); }
+.icon-box.nv    { background: color-mix(in oklch, var(--color-nvidia) 14%, white); color: color-mix(in oklch, var(--color-nvidia) 40%, black); }
+.icon-box.dark  { background: oklch(0.25 0.03 260 / 0.6); color: #fff; }
+
+.icon-box.brand-logo {
+  color: var(--color-brand-600);
+  background: #fff;
+  padding: 6px;
+}
+.icon-box.brand-logo svg { width: 100%; height: 100%; }
+
+/* =====================================================
+   DIVIDER
+   ===================================================== */
+.divider {
+  height: 1px;
+  background: var(--color-neutral-200);
+  margin: 14px 0;
+}
+
+/* =====================================================
+   CORNER BRAND / PAGE / META (page chrome)
+   ===================================================== */
+.corner-brand {
+  position: absolute;
+  top: 12mm;
+  left: 18mm;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display);
+  font-size: 12pt;
+  font-weight: 700;
+  color: var(--color-neutral-900);
+  letter-spacing: -0.01em;
+}
+
+.corner-brand .mark {
+  width: 30px;
+  height: 30px;
+  color: var(--color-brand-600);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.corner-brand .mark svg { width: 100%; height: 100%; }
+
+.corner-page {
+  position: absolute;
+  bottom: 9mm;
+  right: 18mm;
+  font-size: 9pt;
+  color: var(--color-neutral-400);
+  font-family: var(--font-sans);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+.corner-page strong {
+  color: var(--color-neutral-700);
+  font-weight: 700;
+}
+
+.corner-meta {
+  position: absolute;
+  bottom: 9mm;
+  left: 18mm;
+  font-size: 9pt;
+  color: var(--color-neutral-400);
+  font-family: var(--font-sans);
+  letter-spacing: 0.02em;
+}
+
+
+/* ==== src/social.css ==== */
+/* ============================================================
+   ScudoAI social card layout
+   Screen-mode (not print) CSS for pixel-exact social cards.
+   Each template sets its own .card dimensions in its layout.css.
+   Depends on tokens.css + base.css + components.css.
+   ============================================================ */
+
+/* =====================================================
+   BODY RESET for social screenshots
+   Chrome headless takes a full-viewport screenshot, so the
+   body must be sized exactly to the card (no scrollbars,
+   no extra whitespace).
+   ===================================================== */
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #eceef4;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: geometricPrecision;
+}
+
+body.social {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 100vh;
+}
+
+/* =====================================================
+   CARD CONTAINER
+   Each template sets explicit width and height via
+   .card { width: 1200px; height: 1200px; } in layout.css.
+   ===================================================== */
+.card {
+  position: relative;
+  overflow: hidden;
+  background: #ffffff;
+  color: var(--color-neutral-900);
+  font-family: var(--font-sans);
+  display: flex;
+  flex-direction: column;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* Dark variant for quote/insight cards */
+.card.dark {
+  background: linear-gradient(160deg, var(--color-dark-950) 0%, var(--color-dark-900) 55%, var(--color-dark-800) 100%);
+  color: #ffffff;
+}
+.card.dark h1, .card.dark h2, .card.dark h3, .card.dark h4,
+.card.dark p, .card.dark blockquote { color: #ffffff; }
+.card.dark .eyebrow { color: var(--color-brand-400); }
+
+/* Light variant (explicit) */
+.card.light {
+  background: #ffffff;
+  color: var(--color-neutral-900);
+}
+
+/* Brand accent variants (colored card backgrounds).
+   Use a darker-ending gradient so white text has reliable contrast
+   across the whole card, not just the top. */
+.card.accent-brand {
+  background: linear-gradient(135deg, var(--color-brand-600) 0%, var(--color-brand-800) 100%);
+  color: #ffffff;
+}
+.card.accent-brand h1, .card.accent-brand h2, .card.accent-brand p { color: #ffffff; }
+
+.card.accent-amber {
+  background: linear-gradient(135deg, var(--color-accent-500) 0%, var(--color-accent-600) 100%);
+  color: var(--color-neutral-900);
+}
+
+.card.accent-nv {
+  background: linear-gradient(135deg, var(--color-nvidia) 0%, color-mix(in oklch, var(--color-nvidia) 40%, black) 100%);
+  color: #ffffff;
+}
+.card.accent-nv h1, .card.accent-nv h2, .card.accent-nv p { color: #ffffff; }
+
+/* =====================================================
+   TEXTURED BACKGROUND (for dark cards)
+   Intentionally very subtle - the grid should register as a
+   texture hint only, never as a full overlay covering the card.
+   ===================================================== */
+.card.dark .grid-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right,  oklch(0.40 0.02 260 / 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, oklch(0.40 0.02 260 / 0.08) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(ellipse 55% 40% at 50% 55%, black 0%, transparent 80%);
+  -webkit-mask-image: radial-gradient(ellipse 55% 40% at 50% 55%, black 0%, transparent 80%);
+}
+/* Accent-brand cards skip the grid entirely - brand blue lines on
+   brand blue bg create visible cross-hatching even at low opacity. */
+.card.accent-brand .grid-bg,
+.card.accent-nv    .grid-bg { display: none; }
+
+.card.dark .glow {
+  position: absolute;
+  top: -15%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 90%;
+  height: 80%;
+  background: radial-gradient(ellipse, oklch(0.40 0.18 260 / 0.30) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+/* =====================================================
+   LOGO WATERMARK (shown on every card, positioned by template)
+   Shield glyph + ScudoAI wordmark. Wordmark side depends on
+   position: for top-* the wordmark appears to the right of the
+   shield; for bottom-* it appears to the left.
+   ===================================================== */
+.logo-watermark {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 52px;
+  color: var(--color-brand-600);
+  z-index: 10;
+}
+.logo-watermark svg {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+}
+.logo-wordmark {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 22pt;
+  letter-spacing: -0.01em;
+  color: inherit;
+  line-height: 1;
+}
+
+.card.dark .logo-watermark,
+.card.accent-brand .logo-watermark,
+.card.accent-nv .logo-watermark { color: #ffffff; }
+
+.logo-watermark.top-left     { top: 56px; left: 56px; }
+.logo-watermark.top-right    { top: 56px; right: 56px; }
+.logo-watermark.bottom-left  { bottom: 56px; left: 56px; }
+.logo-watermark.bottom-right { bottom: 56px; right: 56px; }
+
+/* =====================================================
+   SOCIAL TYPOGRAPHY SCALE
+   Much larger than the document scale - social needs
+   headlines that read at a thumbnail size when scrolling.
+   ===================================================== */
+.card .social-eyebrow {
+  font-family: var(--font-sans);
+  font-size: 18pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--color-brand-500);
+  margin-bottom: 28px;
+}
+.card.dark .social-eyebrow { color: var(--color-brand-400); }
+
+.card .social-headline {
+  font-family: var(--font-display);
+  font-size: 64pt;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+.card .social-headline-lg {
+  font-family: var(--font-display);
+  font-size: 80pt;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.card .social-headline-sm {
+  font-family: var(--font-display);
+  font-size: 44pt;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+}
+
+.card .social-body {
+  font-family: var(--font-sans);
+  font-size: 22pt;
+  line-height: 1.5;
+  color: var(--color-neutral-700);
+}
+.card.dark .social-body { color: var(--color-dark-200); }
+
+.card .social-caption {
+  font-family: var(--font-sans);
+  font-size: 14pt;
+  color: var(--color-neutral-500);
+  line-height: 1.5;
+}
+.card.dark .social-caption { color: var(--color-dark-300); }
+
+.card .social-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: var(--radius-full);
+  font-size: 13pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  background: var(--color-brand-50);
+  color: var(--color-brand-700);
+  border: 1px solid var(--color-brand-200);
+}
+
+.card.dark .social-tag {
+  background: oklch(0.25 0.03 260 / 0.6);
+  color: #ffffff;
+  border-color: oklch(0.40 0.05 260 / 0.6);
+}
+
+/* =====================================================
+   QUOTE CARD (card-quote)
+   Large centered quote with attribution and decorative
+   quotation marks.
+   ===================================================== */
+.card-quote {
+  justify-content: center;
+  padding: 120px 100px;
+}
+.card-quote .quote-mark {
+  position: absolute;
+  top: 80px;
+  left: 100px;
+  font-family: var(--font-display);
+  font-size: 240pt;
+  line-height: 0.7;
+  font-weight: 800;
+  color: var(--color-brand-500);
+  opacity: 0.22;
+  pointer-events: none;
+}
+.card-quote .quote-body,
+.card-quote .quote-body p {
+  font-family: var(--font-display);
+  font-size: 54pt;
+  line-height: 1.15;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: inherit;
+  margin: 0 0 48px 0;
+  max-width: 100%;
+  position: relative;
+  z-index: 2;
+}
+.card-quote .quote-body p:last-child { margin-bottom: 0; }
+.card-quote .quote-attribution {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
+  z-index: 2;
+}
+.card-quote .quote-attribution .author {
+  font-family: var(--font-display);
+  font-size: 22pt;
+  font-weight: 700;
+}
+.card-quote .quote-attribution .role {
+  font-size: 16pt;
+  color: var(--color-neutral-500);
+}
+.card-quote.dark .quote-attribution .role { color: rgba(255, 255, 255, 0.72); }
+
+/* =====================================================
+   STAT CARD (card-stat)
+   Giant number display with label and small citation.
+   ===================================================== */
+.card-stat {
+  justify-content: center;
+  padding: 120px 100px;
+}
+.card-stat .stat-value {
+  font-family: var(--font-display);
+  font-size: 180pt;
+  font-weight: 800;
+  line-height: 0.85;
+  letter-spacing: -0.04em;
+  color: var(--color-brand-500);
+  margin-bottom: 64px;
+}
+.card-stat.dark .stat-value { color: var(--color-brand-400); }
+/* On brand-accent cards the default brand-500 stat-value would
+   vanish into the background, so force white with a faint glow.
+   Note: .card-stat and .accent-brand are on the same element, so
+   we must use a compound selector (not descendant). */
+.card-stat.accent-brand .stat-value,
+.card-stat.accent-nv    .stat-value {
+  color: #ffffff;
+  text-shadow: 0 2px 40px rgba(0, 0, 0, 0.25);
+}
+
+.card-stat .stat-label {
+  font-family: var(--font-display);
+  font-size: 36pt;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-bottom: 20px;
+  letter-spacing: -0.01em;
+}
+.card-stat .stat-context {
+  font-size: 24pt;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--color-neutral-700);
+  margin-bottom: 32px;
+  max-width: 80%;
+}
+.card-stat.dark .stat-context { color: rgba(255, 255, 255, 0.92); }
+.card-stat.accent-brand .stat-context,
+.card-stat.accent-nv    .stat-context { color: rgba(255, 255, 255, 0.95); }
+.card-stat .stat-source {
+  font-size: 14pt;
+  color: var(--color-neutral-500);
+  font-style: italic;
+}
+.card-stat.dark .stat-source { color: rgba(255, 255, 255, 0.72); }
+.card-stat.accent-brand .stat-source,
+.card-stat.accent-nv    .stat-source { color: rgba(255, 255, 255, 0.82); }
+
+/* =====================================================
+   ANNOUNCEMENT CARD (card-announcement)
+   Date pill, headline, body blurb.
+   ===================================================== */
+.card-announcement {
+  justify-content: center;
+  padding: 120px 100px;
+}
+.card-announcement .kind-pill {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 14px 28px;
+  background: var(--color-accent-500);
+  color: var(--color-neutral-900);
+  font-family: var(--font-display);
+  font-size: 15pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  border-radius: var(--radius-full);
+  margin-bottom: 32px;
+}
+.card-announcement.dark .kind-pill {
+  background: var(--color-brand-500);
+  color: #ffffff;
+}
+.card-announcement .announcement-content h1,
+.card-announcement .announcement-content h2 {
+  font-family: var(--font-display);
+  font-size: 58pt;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  margin-bottom: 28px;
+}
+.card-announcement .announcement-content p {
+  font-size: 24pt;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--color-neutral-700);
+  margin-bottom: 32px;
+  max-width: 95%;
+}
+.card-announcement.dark .announcement-content p { color: rgba(255, 255, 255, 0.92); }
+.card-announcement.dark .announcement-body { color: rgba(255, 255, 255, 0.92); }
+.card-announcement .announcement-date {
+  font-size: 16pt;
+  font-weight: 600;
+  color: var(--color-neutral-500);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.card-announcement.dark .announcement-date { color: rgba(255, 255, 255, 0.76); }
+
+/* =====================================================
+   INSIGHT CARD (card-insight)
+   Hook + body vertically centered. Citation footer pinned
+   to the bottom via absolute positioning so it does not
+   interact with the content's vertical alignment.
+   ===================================================== */
+.card-insight {
+  justify-content: center;
+  padding: 100px;
+}
+.card-insight .insight-content {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex: 1;
+}
+.card-insight .insight-content h1,
+.card-insight .insight-content h2 {
+  font-family: var(--font-display);
+  font-size: 56pt;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  margin-bottom: 40px;
+}
+.card-insight .insight-content p {
+  font-size: 24pt;
+  font-weight: 500;
+  line-height: 1.55;
+  color: var(--color-neutral-700);
+  max-width: 95%;
+  margin-bottom: 20px;
+}
+.card-insight .insight-content p:last-of-type { margin-bottom: 0; }
+.card-insight.dark .insight-content p { color: rgba(255, 255, 255, 0.92); }
+.card-insight.dark .insight-body { color: rgba(255, 255, 255, 0.92); }
+.card-insight .insight-citation {
+  position: absolute;
+  left: 100px;
+  right: 100px;
+  bottom: 100px;
+  padding-top: 32px;
+  border-top: 1px solid var(--color-neutral-200);
+  font-size: 16pt;
+  color: var(--color-neutral-500);
+}
+.card-insight.dark .insight-citation {
+  border-top-color: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.76);
+}
+
+/* =====================================================
+   BANNER (card-banner)
+   Wide 1584x396 layout. Logo on left, tagline centered,
+   small CTA on right.
+   ===================================================== */
+.card-banner {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 60px 120px;
+  gap: 48px;
+}
+.card-banner .banner-logo {
+  flex-shrink: 0;
+  width: 180px;
+  height: 180px;
+  color: var(--color-brand-500);
+}
+.card-banner.dark .banner-logo { color: #ffffff; }
+.card-banner .banner-logo svg { width: 100%; height: 100%; }
+
+.card-banner .banner-content {
+  flex: 1;
+  text-align: left;
+}
+.card-banner .banner-tagline,
+.card-banner .banner-tagline p {
+  font-family: var(--font-display);
+  font-size: 46pt;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  margin: 0 0 12px 0;
+  color: inherit;
+}
+.card-banner .banner-subline {
+  font-size: 18pt;
+  color: var(--color-neutral-600);
+  line-height: 1.4;
+}
+.card-banner.dark .banner-subline { color: rgba(255, 255, 255, 0.88); }
+
+.card-banner .banner-cta,
+.card-banner .banner-cta p {
+  flex-shrink: 0;
+  text-align: right;
+  font-family: var(--font-display);
+  font-size: 18pt;
+  font-weight: 700;
+  color: var(--color-brand-600);
+  margin: 0;
+}
+.card-banner.dark .banner-cta { color: var(--color-brand-400); }
+
+/* =====================================================
+   CAROUSEL SLIDES
+   Each slide is a separate .card element that gets
+   screenshotted individually.
+   ===================================================== */
+body.social.carousel {
+  display: block;
+  padding: 0;
+}
+body.social.carousel .card {
+  margin-bottom: 32px;
+}
+body.social.carousel .card:last-child {
+  margin-bottom: 0;
+}
+
+/* =====================================================
+   MEDIA DIRECTIVES
+   :::image and :::background for user-provided media.
+   ===================================================== */
+.card .media-inline {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-lg);
+}
+.card .media-inline.position-top    { margin-bottom: 32px; }
+.card .media-inline.position-bottom { margin-top: 32px; }
+
+.card .media-background {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  pointer-events: none;
+}
+.card .media-background.with-overlay::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.7) 100%);
+}
+.card .media-background.overlay-brand::after {
+  background: linear-gradient(135deg,
+    color-mix(in oklch, var(--color-brand-700) 85%, transparent) 0%,
+    color-mix(in oklch, var(--color-dark-900) 85%, transparent) 100%
+  );
+}
+
+.card .media-missing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  border: 3px dashed var(--color-neutral-300);
+  border-radius: var(--radius-lg);
+  color: var(--color-neutral-400);
+  font-family: var(--font-mono);
+  font-size: 13pt;
+  padding: 32px;
+}
+
+/* =====================================================
+   SCREEN PREVIEW (for in-browser review)
+   Adds shadow and margin around the card when viewed
+   in a regular browser (not in headless screenshot mode).
+   ===================================================== */
+@media screen {
+  body.social.preview {
+    padding: 48px 0;
+    background: #eceef4;
+    align-items: center;
+    min-height: 100vh;
+  }
+  body.social.preview .card {
+    box-shadow: var(--shadow-panel);
+  }
+}
+/* ============================================================
+ *  wro.cpp social card -- standalone stylesheet
+ *
+ *  Self-contained styling for brand-gen's `social/linkedin-post`
+ *  output. Replaces (does NOT extend) the scudoai-social.css that
+ *  brand-gen ships with -- the design language here is the
+ *  wro.cpp 'Editorial Magnet' look used by src/styles/global.css,
+ *  not the scudoai blue-indigo deck aesthetic.
+ *
+ *  Source of truth for tokens: src/styles/global.css:12-30 in the
+ *  wrocpp.github.io repo.
+ *
+ *  Brand-gen markup we style:
+ *    <section class="card card-insight [light|dark]">
+ *      <div class="grid-bg"></div>            (decorative, hidden)
+ *      <div class="glow"></div>               (decorative, hidden)
+ *      <div class="insight-content">
+ *        <h1>...</h1>
+ *        <p>...</p>
+ *        <div class="insight-citation">...</div>
+ *      </div>
+ *      <div class="logo-watermark top-left">
+ *        <svg><use href="#scudo-logo"/></svg>
+ *        <span class="logo-wordmark">ScudoAI</span>  (hidden; replaced via ::after)
+ *      </div>
+ *    </section>
+ *
+ *  Other card types (card-quote, card-stat, card-announcement)
+ *  get analogous rules at the bottom.
+ * ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+:root {
+  --paper:    #FCFAF5;
+  --paper-2:  #F3EFE6;
+  --paper-3:  #E8E1D0;
+  --ink:      #1B1B1D;
+  --ink-muted:#55555A;
+  --ink-faint:#8A8A90;
+  --rule:     #D7D2C4;
+  --orange:   #EA541E;
+  --orange-2: #D6481A;
+  --blue:     #3EB5E9;
+  --blue-deep:#2E8FB8;
+
+  --font-display: 'Quicksand', system-ui, -apple-system, sans-serif;
+  --font-body:    'Source Serif 4', Georgia, serif;
+  --font-mono:    'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-family: var(--font-body);
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+/* Hide brand-gen decorative noise -- the wro.cpp aesthetic is calm
+ * and editorial, not a dark deck with glow + grid backgrounds. */
+.grid-bg, .glow { display: none !important; }
+
+/* ---------------- Card frame (1200x1200) ---------------- */
+.card {
+  position: relative;
+  width: 1200px;
+  height: 1200px;
+  background: var(--paper);
+  /* Faint warm radial wash, mirrors body { background-image } in
+   * src/styles/global.css:44-49 -- gives the paper texture without
+   * looking flat. */
+  background-image:
+    radial-gradient(900px 700px at 80% -10%, rgba(234, 84, 30, 0.06), transparent 60%),
+    radial-gradient(800px 600px at -10% 110%, rgba(62, 181, 233, 0.05), transparent 60%);
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: 130px 110px 130px 110px;
+  display: flex;
+  flex-direction: column;
+  /* Faint inner border gives the card a printed-page feel. */
+  border-bottom: 6px solid var(--orange);
+}
+
+/* Override: theme=dark cards still use paper. We keep the editorial
+ * light look across the board so the wro.cpp brand stays consistent.
+ * If the user really wants a dark variant later, this is the hook. */
+.card.dark { background: var(--paper) !important; color: var(--ink) !important; }
+.card.dark h1, .card.dark h2, .card.dark p,
+.card.dark blockquote { color: var(--ink) !important; }
+
+/* ---------------- INSIGHT card ---------------- */
+.card-insight {
+  justify-content: center;
+}
+.card-insight .insight-content {
+  display: flex;
+  flex-direction: column;
+  gap: 60px;
+  max-width: 980px;
+}
+.card-insight h1 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 92pt;
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+  color: var(--ink);
+  margin: 0;
+}
+/* Auto-accent: ++ in C++/C++26 turns orange, sentence-final period
+ * (when wrapped in <span class="dot">) turns blue. The skill writes
+ * the heading with these spans for the wro.cpp signature look. */
+.card-insight h1 .accent { color: var(--orange); }
+.card-insight h1 .dot    { color: var(--blue-deep); }
+.card-insight p {
+  font-family: var(--font-body);
+  font-size: 30pt;
+  line-height: 1.5;
+  color: var(--ink-muted);
+  margin: 0;
+  max-width: 920px;
+}
+.card-insight .insight-citation {
+  font-family: var(--font-mono);
+  font-size: 18pt;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+  margin-top: 40px;
+  padding-top: 30px;
+  border-top: 1px solid var(--rule);
+  text-transform: lowercase;
+}
+.card-insight .insight-citation::before {
+  content: '// ';
+  color: var(--orange);
+  font-weight: 700;
+}
+
+/* ---------------- QUOTE card ---------------- */
+.card-quote { justify-content: center; padding: 140px 110px; }
+.card-quote .quote-mark {
+  position: absolute;
+  top: 100px;
+  left: 100px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 220pt;
+  line-height: 1;
+  color: var(--orange);
+  opacity: 0.18;
+}
+.card-quote .quote-body {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 64pt;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  max-width: 980px;
+  margin: 0;
+}
+.card-quote .quote-attribution {
+  margin-top: 50px;
+  font-family: var(--font-mono);
+  font-size: 18pt;
+  color: var(--ink-muted);
+}
+.card-quote .quote-attribution::before { content: '-- '; color: var(--orange); }
+
+/* ---------------- STAT card ---------------- */
+.card-stat { justify-content: center; }
+.card-stat .stat-value {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 220pt;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--orange);
+  margin: 0;
+}
+.card-stat .stat-label {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 44pt;
+  line-height: 1.15;
+  color: var(--ink);
+  margin: 30px 0 0;
+}
+.card-stat .stat-context {
+  font-family: var(--font-body);
+  font-size: 26pt;
+  line-height: 1.45;
+  color: var(--ink-muted);
+  margin: 30px 0 0;
+  max-width: 880px;
+}
+.card-stat .stat-source {
+  margin-top: 50px;
+  font-family: var(--font-mono);
+  font-size: 18pt;
+  color: var(--ink-faint);
+}
+.card-stat .stat-source::before { content: '// '; color: var(--orange); }
+
+/* ---------------- ANNOUNCEMENT card ---------------- */
+.card-announcement { justify-content: center; }
+.card-announcement .announcement-meta {
+  font-family: var(--font-mono);
+  font-size: 20pt;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--orange);
+  margin-bottom: 30px;
+}
+.card-announcement .announcement-content h1,
+.card-announcement .announcement-content h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 78pt;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin: 0;
+}
+.card-announcement .announcement-content p {
+  font-family: var(--font-body);
+  font-size: 28pt;
+  line-height: 1.5;
+  color: var(--ink-muted);
+  margin: 40px 0 0;
+  max-width: 900px;
+}
+
+/* ---------------- LOGO WATERMARK ---------------- */
+/* brand-gen hard-codes "ScudoAI" in .logo-wordmark; we hide it and
+ * draw "wro.cpp" via ::after on the watermark. The orange ".cpp" mirrors
+ * the brand-mark in the site header. */
+.logo-watermark {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: 64px;
+  z-index: 10;
+  color: var(--ink);
+}
+.logo-watermark.top-left     { top: 90px; left: 110px; }
+.logo-watermark.top-right    { top: 90px; right: 110px; }
+.logo-watermark.bottom-left  { bottom: 60px; left: 110px; }
+.logo-watermark.bottom-right { bottom: 60px; right: 110px; }
+.logo-watermark svg {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  /* Magnet logo PNG already has transparent paper-tone background;
+   * no rounded box needed -- it sits on the paper card directly. */
+}
+.logo-wordmark {
+  font-size: 0 !important;
+  line-height: 0 !important;
+  /* Hide the upstream "ScudoAI" text node entirely. */
+}
+.logo-watermark::after {
+  content: 'wro.cpp';
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 28pt;
+  letter-spacing: -0.025em;
+  color: var(--ink);
+  line-height: 1;
+  /* The .cpp portion is given orange via a ::first-line trick below
+   * isn't reliable for inline -- so the SKILL writes the wordmark
+   * with explicit spans when it owns the markup. For this default
+   * rendering, the whole wordmark is ink and the orange comes through
+   * the bottom border + eyebrow. */
+}
+.logo-watermark.top-right::after,
+.logo-watermark.bottom-right::after { order: -1; margin-right: 18px; }
+
+/* ---------------- Defensive overrides ---------------- */
+/* Anything brand-gen might have set inline using its tokens. */
+* { box-sizing: border-box; }
