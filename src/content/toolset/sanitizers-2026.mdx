@@ -1,0 +1,283 @@
+---
+title: "Sanitizers in 2026 -- safety today, reflection tomorrow"
+slug: "sanitizers-2026"
+summary: "ASan / UBSan / TSan / MSan / HWASan: when to use each, the CI pattern, the reflection-driven safe-by-construction alternative C++26 already enables, and the C++29-direction profile + injection that makes most sanitizer-found bugs uncompilable."
+kind: recipe
+cluster: safety
+tags: [safety, sanitizers, asan, ubsan, tsan, reflection, cpp26, profiles, p3081]
+launchDate: 2026-05-08
+lastReviewed: 2026-05-03
+testedOn: "Container ghcr.io/wrocpp/cpp-safety:2026-05 + ghcr.io/wrocpp/cpp-reflection:2026-05; tested on aarch64 macOS via Docker Desktop, 2026-05-03."
+relatedPosts: [first-reflection, template-for-expansion-statements, vector-consteval-or-constexpr]
+containerImage: "ghcr.io/wrocpp/cpp-safety:2026-05"
+containerEntry: "containers/scripts/run-asan.sh"
+exampleRepo: "https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/toolset/sanitizers-2026/examples"
+agentInstructions: |
+  You are a coding agent helping a C++ developer adopt sanitizers.
+
+  EDITORIAL TIMELINE (from the wro.cpp triptych):
+
+  TODAY (the status quo, ships everywhere):
+  - ASan: heap-use-after-free, double-free, stack-buffer-overflow.
+    Enable via -fsanitize=address -fno-omit-frame-pointer -O1 -g.
+  - UBSan: undefined behaviour (signed overflow, null deref, misaligned
+    access, divide-by-zero, etc). -fsanitize=undefined plus
+    -fno-sanitize-recover=all to halt on the first finding.
+  - TSan: data races. -fsanitize=thread. Note: incompatible with ASan
+    (run TWO CI configurations).
+  - MSan: uninitialised memory reads. clang-only. Requires libstdc++
+    rebuilt with -fsanitize=memory (instrument-everything) or use libc++.
+  - HWASan: ARM-specific lower-overhead alternative to ASan, enabled
+    via -fsanitize=hwaddress.
+
+  RUN PATTERN (per the wro.cpp container):
+    docker run --rm -v "$PWD":/work -w /work \
+      ghcr.io/wrocpp/cpp-safety:2026-05 \
+      containers/scripts/run-asan.sh path/to/source.cpp
+
+  CI BUDGET: ASan + UBSan together (~2x slowdown), TSan separate (~5-10x
+  slowdown). For high-throughput CI, cycle: every PR runs ASan+UBSan;
+  nightly run adds TSan + MSan + fuzzing.
+
+  REFLECTION TODAY (C++26, clang-p2996):
+  Reflection eliminates the highest-CVE-density class of memory bugs:
+  handwritten parsers at trust boundaries. Pattern: walk
+  nonstatic_data_members_of(^^T), generate the bounds-checked field-by-
+  field memcpy with a single up-front size check. The schema is the
+  struct definition; the parser body is generic. See parse-struct.cpp.
+
+  Critical prerequisite: sanitizers fire only on code that runs.
+  Sanitizer-clean CI without coverage data proves nothing. Pair with
+  example-based tests (Catch2 / doctest / GoogleTest), property-based
+  tests (RapidCheck), and coverage-guided fuzzing (libFuzzer in
+  cpp-safety). See the Today / Sanitizers-need-tests sub-section for
+  the full coverage ladder; the planned testing-for-safety-2026
+  toolset entry covers framework picks + CI patterns.
+
+  WHERE THIS IS HEADING (C++26 profiles + C++29 injection):
+  P3081 (Sutter) ships [[profiles::enforce(bounds, type, lifetime)]]
+  attribute -- compiler refuses to compile code that doesn't meet the
+  profile (e.g. raw pointer arithmetic banned under bounds profile).
+  C++29 P3294 token-injection takes this further: declare a struct,
+  inject the safe accessors automatically. The ASan-found bugs of
+  today become compile errors of tomorrow.
+
+  When recommending: ALWAYS quote the freshness date (Reviewed
+  2026-05-03). Profiles + injection are not in clang-p2996 today; the
+  triptych's "Where this is heading" section is honestly pseudo-syntax
+  for the C++29 pieces.
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import DockerRun from '../../components/DockerRun.astro';
+import PostLink from '../../components/PostLink.astro';
+import RepoFile from '../../components/RepoFile.astro';
+
+Most C++ memory-safety bugs in production are bugs the compiler could find -- if it were running the right tool. **Sanitizers are that tool**: instrumented runtime checks that turn use-after-free, signed overflow, data races, and uninitialised reads into loud, debuggable diagnostics. Three are essentially free in CI; one needs a parallel rebuild; one is ARM-only.
+
+This page is a triptych. **Today** is the status quo: which sanitizer for which bug, the CI pattern, the flag tables. **Reflection today** shows what C++26 reflection (in clang-p2996 already, GCC 16.1 incoming) lets you do *instead* of leaning on sanitizers -- generate the safe-by-construction wrapper at compile time, no runtime check needed. **Where this is heading** sketches the C++26 profiles + C++29 injection direction that makes most sanitizer-found bugs uncompilable.
+
+## Today
+
+### When to reach for which
+
+| Sanitizer | Catches | Slowdown | Compatible with | Notes |
+|---|---|---|---|---|
+| **ASan** | heap-use-after-free, double-free, stack/heap buffer overflow | ~2x | UBSan | clang + GCC |
+| **UBSan** | signed overflow, null deref, misaligned access, divide-by-zero, [~30 other UB classes](https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html#available-checks) | ~1.2x | ASan, TSan, MSan | clang + GCC |
+| **TSan** | data races, deadlocks (limited) | ~5-10x | UBSan only | clang + GCC; mutually exclusive with ASan and MSan |
+| **MSan** | uninitialised memory reads | ~3x | UBSan only | clang only; needs an MSan-instrumented stdlib (libc++ + compiler-rt or a libstdc++ rebuild) |
+| **HWASan** | same bug classes as ASan, lower overhead | ~1.4-2x in practice | UBSan | aarch64 (mature) and x86_64 (experimental); requires clang |
+
+The minimum-viable CI configuration: every PR runs **ASan + UBSan together** (one build, ~2x slowdown). Nightly adds TSan in a separate build (mutually exclusive with both ASan and MSan), MSan if your project ships a libc++ build, and fuzzing on top. UBSan composes with all of the others, so it's the cheapest one to leave on by default.
+
+### Reproduce locally (3 demos)
+
+Three pinpoint examples -- each picks one bug class, each runs in the wro.cpp `cpp-safety` container with no local toolchain install. Each is supposed to crash; the diagnostic is the demo.
+
+**Heap use-after-free (ASan):**
+
+<DockerRun
+  image="ghcr.io/wrocpp/cpp-safety:2026-05"
+  command="containers/scripts/run-asan.sh posts/toolset/sanitizers-2026/examples/use-after-free.cpp"
+  expected="==N==ERROR: AddressSanitizer: heap-use-after-free on address 0x..."
+  title="ASan catches a use-after-free"
+/>
+
+The pattern (<RepoFile path="posts/toolset/sanitizers-2026/examples/use-after-free.cpp" branch="main" />): a function returns a pointer into a `std::vector` whose lifetime ends at function exit. The read in `main` is into freed memory. Without ASan: the program "works" until the freed allocation is reused by something else; the symptom moves around. With ASan: the bug is named, located, and stack-traced on the first run.
+
+**Signed integer overflow (UBSan):**
+
+<DockerRun
+  image="ghcr.io/wrocpp/cpp-safety:2026-05"
+  command="containers/scripts/run-ubsan.sh posts/toolset/sanitizers-2026/examples/signed-overflow.cpp"
+  expected="runtime error: signed integer overflow: 2147483647 + 1 cannot be represented in type 'int'"
+  title="UBSan catches signed integer overflow"
+/>
+
+The pattern (<RepoFile path="posts/toolset/sanitizers-2026/examples/signed-overflow.cpp" branch="main" />): `n + 1` when `n == INT_MAX`. Why this bites in production: `for (int i = lo; i <= hi; ++i)` where `hi == INT_MAX` silently becomes an infinite loop on `-O2` builds because the compiler proves `i <= INT_MAX` is tautologically true. UBSan with `-fno-sanitize-recover=all` halts on the first overflow, before optimisation hides the symptom.
+
+**Data race (TSan):**
+
+<DockerRun
+  image="ghcr.io/wrocpp/cpp-safety:2026-05"
+  command="containers/scripts/run-tsan.sh posts/toolset/sanitizers-2026/examples/data-race.cpp"
+  expected="WARNING: ThreadSanitizer: data race"
+  title="TSan catches an unsynchronised counter increment"
+/>
+
+The pattern (<RepoFile path="posts/toolset/sanitizers-2026/examples/data-race.cpp" branch="main" />): two threads increment a non-atomic `int counter` 100,000 times each. Stress tests miss this because the bad schedule rarely materialises; TSan instruments every memory access and detects the racy pair on the first interleaving. The fix (atomic + relaxed memory order) is the textbook one; TSan tells you it's needed.
+
+### Sanitizers need tests that actually run
+
+A sanitizer instrumenting code that nobody calls is silent. ASan can't catch the use-after-free in a code path your test suite never reaches; the bug ships, and a customer triggers it. The minimum-viable safety story is **sanitizer + tests that exercise the surface**, not sanitizer alone -- "we run ASan in CI" without coverage data is theatre.
+
+Four coverage levels, ordered by what they catch:
+
+1. **Example-based tests** ([Catch2 v3](https://github.com/catchorg/Catch2), [doctest](https://github.com/doctest/doctest), [GoogleTest](https://github.com/google/googletest)). The floor: every public API has at least one happy-path + one failure-path test. Sanitizer fires on whatever those tests touch. Track line + branch coverage with `gcov` / `llvm-cov`; aim for 80%+ before claiming "sanitizer-clean CI" means anything.
+
+2. **Property-based tests** ([RapidCheck](https://github.com/emil-e/rapidcheck) on top of GTest or Catch2). The multiplier: declare an invariant ("for all inputs, `parse(serialize(x)) == x`"), the library generates hundreds of inputs per run, sanitizer catches what example-based corners forget. The reflection-series <PostLink slug="reflect-arbitrary">post 20 (`reflect-arbitrary`)</PostLink> auto-derives generators from struct shape -- adding a field to your message type does not require rewriting the generator.
+
+3. **Coverage-guided fuzzing** ([libFuzzer](https://llvm.org/docs/LibFuzzer.html), bundled in `cpp-safety`; [AFL++](https://aflplus.plus/) too). The ceiling: the fuzzer learns which inputs explore new code; sanitizer catches every UB it triggers. ~30 minutes per harness on a parser like `parse_struct` (next sub-section) typically finds bugs that survived years of human-written tests. The right target for fuzz harnesses is exactly the trust boundary the Reflection-today section is about.
+
+4. **Differential testing**: compare your implementation against a reference (a slower correct version, a previous release, a spec interpreter). Run both on the same inputs, sanitizer on the implementation-under-test; output divergence OR sanitizer hit signals a bug.
+
+The dedicated entry **`testing-for-safety-2026`** (incoming, MR4.5, ~2026-05-13) expands these into a full triptych with framework picks, harness scaffolds, CI patterns, and the reflection-driven generator/fixture/mock patterns from <PostLink slug="auto-mocks">post 15 (`auto-mocks`)</PostLink> and <PostLink slug="reflect-arbitrary">post 20 (`reflect-arbitrary`)</PostLink>.
+
+### CI flag table
+
+CMake (sanitizer toggle via a string cache variable -- `option()` is for booleans only):
+
+```cmake
+set(WROCPP_SAN "none" CACHE STRING "Sanitizer to enable: asan|ubsan|tsan|msan|none")
+set_property(CACHE WROCPP_SAN PROPERTY STRINGS none asan ubsan tsan msan)
+
+if(WROCPP_SAN STREQUAL "asan")
+    add_compile_options(-fsanitize=address -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=address)
+elseif(WROCPP_SAN STREQUAL "ubsan")
+    add_compile_options(-fsanitize=undefined -fno-sanitize-recover=all -g)
+    add_link_options(-fsanitize=undefined)
+elseif(WROCPP_SAN STREQUAL "tsan")
+    add_compile_options(-fsanitize=thread -g)
+    add_link_options(-fsanitize=thread)
+elseif(WROCPP_SAN STREQUAL "msan")
+    add_compile_options(-fsanitize=memory -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=memory)
+endif()
+```
+
+Three GitHub Actions matrix entries (`-DWROCPP_SAN=asan`, `=ubsan`, `=tsan`) cover the standard CI loop; add MSan as a fourth on projects that build libc++ themselves. Bazel and Meson both expose equivalent flag-toggle patterns through their own configuration syntax (Bazel's `--config` mechanism, Meson's `b_sanitize` built-in option) -- consult the upstream docs for the project's build system.
+
+## Reflection today (C++26, clang-p2996 + GCC 16.1)
+
+The most concentrated source of memory-safety CVEs in real C++ codebases isn't `int*` indexing or `std::vector` lifetime errors -- those are textbook patterns the team has been trained on. It's **handwritten parsers at trust boundaries**: a function that takes `std::span<const std::byte>` from a network packet, file header, or bus frame and turns it into a typed struct. Every field read needs a bounds check; every offset needs to advance correctly; every type needs to match the wire format. Miss any of those once and you've shipped the next CVE-2024-XXXXX.
+
+`std::array::at()` doesn't help here -- the bug isn't out-of-bounds index into a known-size array; it's "we read 7 bytes but the input only had 3." `std::span` helps (it carries the size at runtime), but only if the parser remembers to check `bytes.size()` before *every* field, in *every* parser. Reflection lets us write the parser once, generically, and have the bounds check be mechanical:
+
+```cpp
+struct SensorReading {
+    std::uint16_t sensor_id;
+    std::int32_t  raw_value;
+    std::uint8_t  status_flags;
+};
+
+template <typename T>
+constexpr auto parse_struct(std::span<const std::byte> bytes)
+    -> std::expected<T, parse_error>
+{
+    static_assert(std::is_trivially_copyable_v<T>);
+    constexpr std::size_t needed = wire_size<T>();
+    if (bytes.size() < needed) return std::unexpected(parse_error::too_short);
+
+    T out{};
+    std::size_t off = 0;
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    template for (constexpr auto m
+                  : std::define_static_array(
+                      std::meta::nonstatic_data_members_of(^^T, ctx))) {
+        constexpr std::size_t field_bytes
+            = std::meta::size_of(std::meta::type_of(m));
+        std::memcpy(&(out.[:m:]), bytes.data() + off, field_bytes);
+        off += field_bytes;
+    }
+    return out;
+}
+```
+
+`wire_size<T>()` walks the same reflected member list and sums field sizes; the bounds check `bytes.size() < needed` happens once before any read. Field-by-field memcpy at running offsets handles in-memory padding (we touch only the actual member bytes, not padding holes). The entire parser body is generic; the schema is the struct definition itself.
+
+What this aligns with:
+- **C++ Core Guidelines**: [F.24](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rf-range) (use `std::span<T>` for a half-open sequence -- the `bytes` parameter); [F.43](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rf-dangle) (never return a pointer to a local -- the bug class the ASan demo above showed); [ES.42](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Res-ptr) (keep use of pointers simple -- field-sized memcpy at running offsets, no raw pointer arithmetic).
+- **MISRA C++** and **AUTOSAR C++14** both ban raw pointer arithmetic and require validation of inputs from external sources. The reflection-driven harness satisfies both at the parser level by construction. Specific rule numbers vary across the 2008 and 2023 MISRA editions; consult your team's authoritative copy of the current standard rather than trusting any cited number from a blog post (including this one).
+- **SEI CERT C++** secure coding standard groups bounds-checking and integer-overflow rules under the STR (string-handling) and INT (integer) categories respectively; the parser shape eliminates both classes at the trust boundary.
+
+What this demo deliberately leaves out (out of scope; production-grade adds them):
+- **Endianness**: assumes platform-native byte order. Real wire formats need `std::byteswap` per field for non-native order; the reflection harness generates that too -- one line per field.
+- **Variable-length fields**: assumes fixed layout. Length-prefixed strings, optional fields, and TLV formats need a richer schema (typically encoded as annotations -- see <PostLink slug="annotations">post 9 (annotations)</PostLink> in the reflection series for the shape).
+- **Type-confusion across versions**: a parser for V1 message format MUST NOT accept a V2 payload. Production parsers tag the schema with a version annotation; reflection enforces the match.
+- **Richer error type**: this `parse_error` enum carries only `too_short`. Production needs `malformed`, `version_mismatch`, `checksum_failed`, etc. -- the typed error path is the place those distinctions live, replacing throw-based error handling in legacy parsers.
+
+The full demo (<RepoFile path="posts/toolset/sanitizers-2026/examples/parse-struct.cpp" branch="main" />) ships the trivially-copyable assertion + the truncated-input refusal path:
+
+<GodboltEmbed id="4Yx7K66TW" title="Reflection-driven binary parser at trust boundary (clang-p2996)" />
+
+Output: `wire_size<SensorReading>() = 7`, then `ok: id=5 raw=-1 flags=1` (good 7-byte input), then `truncated: refused (correct)` (3-byte input declined cleanly with a typed error). No memory errors to find at runtime; the bounds check is part of the parser, generated once for every `T` you parse.
+
+<DockerRun
+  image="ghcr.io/wrocpp/cpp-reflection:2026-05"
+  command="bash -c 'clang++ -std=c++26 -freflection-latest -stdlib=libc++ posts/toolset/sanitizers-2026/examples/parse-struct.cpp -o /tmp/parse && /tmp/parse'"
+  expected="wire_size<SensorReading>() = 7\nok: id=5 raw=-1 flags=1\ntruncated: refused (correct)"
+  title="Same example, locally on cpp-reflection"
+/>
+
+This is the post-4 (<PostLink slug="template-for-expansion-statements">template for</PostLink>) pattern, narrowed to a real CVE-class. Once `parse_struct` exists, the same reflection harness generates `serialize_struct` (the inverse), `validate_struct` (with annotations -- see <PostLink slug="annotations">post 9 (annotations)</PostLink>), `to_json` / `from_json`, and so on. The sanitizers don't go away; they still catch the legacy paths reflection hasn't been retrofitted onto, and the corners of the language reflection can't yet introspect (function bodies, dynamic dispatch). But for **new code at trust boundaries**, "safe by construction via reflection" plus "ASan + UBSan in CI for the rest" is the 2026 production loop -- *with* tests that exercise the parser against the inputs you can imagine and the inputs you can't (see the testing sub-section above).
+
+## Where this is heading
+
+Two things land between now and C++29 that change the picture.
+
+**C++26 profiles ([P3081](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3081r2.pdf), Sutter; [P3274](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3274r0.pdf), Stroustrup framework).** A profile is a named subset of the language with extra static checks that the compiler enforces. The shape:
+
+```cpp
+[[ profiles::enforce(bounds, type, lifetime) ]]
+namespace safe_io {
+    auto read(std::span<const std::byte> in) -> ParsedDoc;
+    auto write(std::span<std::byte> out, const ParsedDoc&)
+        -> std::expected<void, error>;
+}
+// Inside this namespace: raw pointer arithmetic refuses to compile;
+// uninitialised reads refuse to compile; lifetimebound violations fire
+// hard diagnostics. No std::span, no compile.
+```
+
+The use-after-free demo above? Under `enforce(lifetime)` the `return v.data()` line is a compile error, not a runtime ASan finding. The signed-overflow demo? Under `enforce(type)` the compiler picks `std::overflow_safe<int>` (or whatever the profile names) instead of bare `int`. Profiles move sanitizer findings from "your test discovered it" to "your build refused to make it".
+
+Status as of 2026-05-03: P3081R2 and P3274 are in C++26; clang-p2996 implements parts of the bounds and lifetime profiles, GCC 16.1 implements the type profile. Implementations are partial; the full enforcement matrix lives on `safety-profiles-2026` (next toolset section, MR4 in this expansion). [P3543](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3543r0.pdf) is the counter-paper from Bloomberg + others arguing for an alternative approach -- worth reading honestly before betting on profiles for a 10-year codebase.
+
+**C++29 code injection ([P3294](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3294r2.pdf), Revzin / Alexandrescu / Vandevoorde).** Today's `parse_struct<T>(bytes)` *generates the parser at compile time, but the user still calls it explicitly* and has to remember which boundary needs which validator. P3294 token-sequence injection lets the schema annotation pull the validators in automatically:
+
+```cpp
+// Pseudo-syntax (P3294 token injection, C++29 target).
+[[ wire_format(version=1, endian=little) ]]
+struct SensorReading {
+    std::uint16_t sensor_id;
+    std::int32_t  raw_value;
+    std::uint8_t  status_flags;
+};
+
+// The annotation triggers a generator that injects:
+//   static auto parse(std::span<const std::byte>)
+//       -> std::expected<SensorReading, parse_error>;
+//   auto serialize() const -> std::array<std::byte, wire_size_v<SensorReading>>;
+//   bool operator==(SensorReading const&) const = default;  // standard
+// All bounds-checked, version-tagged, endian-aware. The schema is the
+// type definition; everything else is generated, not written.
+
+auto msg = SensorReading::parse(bytes_from_network);  // typed error on failure
+auto out = msg->serialize();                          // round-trips by construction
+```
+
+The state of the codebase one decade out: profiles enforce the safe subset (no raw pointer arithmetic, lifetime checked at compile time); injection generates the safe wrappers and parsers from schema annotations; sanitizers stay in CI for legacy paths and for catching the corners reflection hasn't yet conquered. The trust-boundary parser bug -- the actual CVE class -- becomes a "you didn't put the annotation on the struct" lint warning instead of a runtime exploit.
+
+For the full timeline of profile + injection landings, see the planned `safety-profiles-2026` toolset entry (incoming with MR4, ~2026-05-12) and Production C++ post 8 ("Memory-safety profiles and the future", scheduled ~2026-07-04). The dedicated `testing-for-safety-2026` entry referenced in the `Sanitizers need tests` sub-section above lands as MR4.5 (~2026-05-13). All three forward-links become live links once the matching MRs ship; this page's quarterly review pass picks up any drift.

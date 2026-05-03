@@ -326,3 +326,13 @@ vector-consteval-or-constexpr:
       (3) runtime vector    fib = 8
 
       (3) runtime vector    fib = 13'
+sanitizers-2026:
+  parse_struct:
+    title: Reflection-driven binary parser at trust boundary
+    id: 4Yx7K66TW
+    url: https://godbolt.org/z/4Yx7K66TW
+    expected_output: 'wire_size<SensorReading>() = 7
+
+      ok: id=5 raw=-1 flags=1
+
+      truncated: refused (correct)'
