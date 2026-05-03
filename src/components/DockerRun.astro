@@ -1,0 +1,196 @@
+---
+/**
+ * "Reproduce locally" call-to-action.
+ *
+ * Renders a compact card with a copy-pastable `docker run ...` command
+ * pointing at a wro.cpp toolset container (ghcr.io/wrocpp/cpp-*).
+ * Visual cousin of GodboltEmbed; same card grammar, different verb.
+ *
+ * Use this in toolset sections when the demo is something godbolt
+ * cannot host (perf, vcpkg, MISRA checkers, hardened-stdlib in a real
+ * project, fuzzing, etc.). Each container's purpose + tagging lives in
+ * containers/README.md in the C++26 examples repo.
+ *
+ * Usage:
+ *   <DockerRun
+ *     image="ghcr.io/wrocpp/cpp-safety:2026-05"
+ *     command="scripts/run-asan.sh examples/use-after-free.cpp"
+ *     expected="==1234==ERROR: AddressSanitizer: heap-use-after-free"
+ *     title="Catch a use-after-free with AddressSanitizer"
+ *   />
+ */
+interface Props {
+  /** Full image ref. Prefix `TODO` -> placeholder card. */
+  image: string;
+  /** Command to run inside the container. */
+  command: string;
+  /** Optional expected output preview (first 1-3 lines). */
+  expected?: string;
+  /** Headline for the card. */
+  title?: string;
+  /**
+   * Mount spec. Default mounts the reader's CWD at /work and sets
+   * working dir there -- matches the toolset README convention.
+   */
+  mounts?: string;
+}
+
+const {
+  image,
+  command,
+  expected,
+  title = 'Reproduce locally',
+  mounts = '-v "$PWD":/work -w /work',
+} = Astro.props;
+
+const isPlaceholder = image.startsWith('TODO') || image === 'placeholder';
+
+// Cluster derivation: image looks like ghcr.io/wrocpp/cpp-safety:tag,
+// pull the segment between cpp- and the colon for a short label.
+const clusterMatch = image.match(/cpp-([a-z]+):/);
+const cluster = clusterMatch ? clusterMatch[1] : null;
+const subtitle = cluster
+  ? `${image} -- ${cluster} cluster`
+  : image;
+
+// Compose the actual `docker run ...` line a reader copies. Multi-line
+// for readability in the rendered card; reader can paste it directly.
+const dockerCmd = `docker run --rm -it \\\n  ${mounts} \\\n  ${image} \\\n  ${command}`;
+---
+{isPlaceholder ? (
+  <div class="dr-cta dr-cta--placeholder">
+    <div class="dr-cta__main">
+      <div class="dr-cta__eyebrow">// container pending</div>
+      <div class="dr-cta__title">Reproduce-locally block coming soon</div>
+      <div class="dr-cta__sub">
+        Once the container ships at <a href="https://github.com/wrocpp/cpp26-reflection-examples">wrocpp/cpp26-reflection-examples</a>, this card carries the exact docker run line.
+      </div>
+    </div>
+  </div>
+) : (
+  <div class="dr-cta-group">
+    <div class="dr-container-badge" aria-label={`wro.cpp container: ${image}`}>
+      <span aria-hidden="true">&#9642;</span> Container: {cluster ? `cpp-${cluster}` : image}
+    </div>
+    <div class="dr-cta">
+      <span class="dr-cta__play" aria-hidden="true">$</span>
+      <div class="dr-cta__main">
+        <div class="dr-cta__eyebrow">{title}</div>
+        <pre class="dr-cta__cmd"><code>{dockerCmd}</code></pre>
+        <div class="dr-cta__sub">{subtitle}</div>
+        {expected && (
+          <details class="dr-cta__expected">
+            <summary>expected output</summary>
+            <pre><code>{expected}</code></pre>
+          </details>
+        )}
+      </div>
+    </div>
+  </div>
+)}
+
+<style>
+  .dr-cta-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin: 1.5rem 0;
+  }
+  .dr-container-badge {
+    font-size: 0.7rem;
+    font-style: italic;
+    color: var(--ink-faint);
+    line-height: 1;
+    margin: 0 0 0.1rem 0.1rem;
+    letter-spacing: 0.01em;
+  }
+  .dr-cta {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.85rem;
+    padding: 1.1rem 1.3rem;
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--orange-hot, #d6481a);
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .dr-cta--placeholder {
+    border-left-color: var(--ink-faint);
+    opacity: 0.85;
+  }
+  .dr-cta__play {
+    font-family: "JetBrains Mono", monospace;
+    font-weight: 700;
+    background: var(--orange-hot, #d6481a);
+    color: var(--paper);
+    width: 1.7rem;
+    height: 1.7rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 2px;
+    flex: 0 0 auto;
+    margin-top: 0.1rem;
+  }
+  .dr-cta__main { flex: 1 1 auto; min-width: 0; }
+  .dr-cta__eyebrow {
+    font-family: "Quicksand", system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--ink);
+    margin-bottom: 0.4rem;
+  }
+  .dr-cta__cmd {
+    background: var(--code-bg);
+    color: var(--code-text);
+    padding: 0.7rem 0.9rem;
+    margin: 0 0 0.4rem;
+    overflow-x: auto;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    border-radius: 2px;
+    white-space: pre;
+  }
+  .dr-cta__cmd code { background: none; padding: 0; color: inherit; }
+  .dr-cta__sub {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.7rem;
+    color: var(--ink-muted);
+    word-break: break-all;
+  }
+  .dr-cta__expected {
+    margin-top: 0.5rem;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.75rem;
+    color: var(--ink-muted);
+  }
+  .dr-cta__expected summary {
+    cursor: pointer;
+    color: var(--blue-deep);
+    margin-bottom: 0.3rem;
+  }
+  .dr-cta__expected pre {
+    background: var(--paper-3);
+    color: var(--ink);
+    padding: 0.5rem 0.7rem;
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    overflow-x: auto;
+    margin: 0;
+  }
+  .dr-cta--placeholder .dr-cta__title {
+    font-family: "Quicksand", system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: var(--ink-muted);
+    font-style: italic;
+  }
+  .dr-cta--placeholder .dr-cta__sub {
+    color: var(--ink-muted);
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 0.95rem;
+  }
+  .dr-cta--placeholder .dr-cta__sub a { color: var(--orange); }
+</style>

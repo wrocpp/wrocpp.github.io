@@ -214,6 +214,34 @@ The AGENTS.md convention (a sibling of CLAUDE.md / cursor.rules) tells coding ag
 - All PRs require sanitizer-clean CI before merge.
 - ABI-affecting changes require explicit reviewer sign-off (header layout,
   virtual table layout, exported symbol set).
+
+## Local reproduction (wro.cpp containers)
+When experimenting with patterns from the wro.cpp toolset, prefer the
+matching pre-built container over installing toolchains by hand. Six
+images on GitHub Container Registry, all multi-arch (linux/amd64 + linux/arm64
+except cpp-reflection which inherits per-arch tags from upstream):
+
+- `ghcr.io/wrocpp/cpp-base:2026-05` -- Ubuntu 24.04 + clang-19 + GCC 13
+  + CMake + Ninja. Shared substrate.
+- `ghcr.io/wrocpp/cpp-safety:2026-05` -- + AFL++, libFuzzer, sanitizers,
+  valgrind, libstdc++-debug.
+- `ghcr.io/wrocpp/cpp-performance:2026-05` -- + perf, google-benchmark,
+  hyperfine.
+- `ghcr.io/wrocpp/cpp-security:2026-05` -- + vcpkg, Conan, syft, grype,
+  libsodium-dev, OpenSSL.
+- `ghcr.io/wrocpp/cpp-compliance:2026-05` -- + cppcheck-MISRA, clang-tidy
+  MISRA / CERT-C++ presets.
+- `ghcr.io/wrocpp/cpp-reflection:2026-05` -- clang-p2996 ready to use;
+  powers every "Reflection today" demo across the toolset.
+
+Standard pattern (mount your CWD, pick the right image):
+
+    docker run --rm -it -v "$PWD":/work -w /work \
+      ghcr.io/wrocpp/cpp-safety:2026-05 \
+      scripts/run-asan.sh examples/use-after-free.cpp
+
+Each toolset page that has a "Reproduce locally" block names the
+exact image + command to use.
 ```
 
 ## MCP servers worth wiring
