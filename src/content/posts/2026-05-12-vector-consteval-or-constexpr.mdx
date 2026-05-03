@@ -50,8 +50,17 @@ Where `std::vector` *does* shine in compile-time code: as a local variable insid
 C++26 ships a small library function that solves the "I have a transient vector and I need its values to live in static storage" problem in one line: `std::define_static_array`. Given a range whose elements are *structural* (loosely: usable as non-type template arguments), it materialises a static-storage const array holding the values, and returns a `std::span<range_value_t<R> const>` over it.
 
 ```cpp
-// fibs is `constexpr` (not `consteval`) -- see (3) below for why.
-constexpr auto fibs(int n) {
+// Toggle: uncomment the line below to make fibs `consteval`. Default
+// (commented out) leaves fibs `constexpr`, so all three patterns run.
+// #define FIBS_AS_CONSTEVAL
+
+#ifdef FIBS_AS_CONSTEVAL
+#  define FIBS_SPECIFIER consteval
+#else
+#  define FIBS_SPECIFIER constexpr
+#endif
+
+FIBS_SPECIFIER auto fibs(int n) {
     std::vector<int> out;
     int a = 0, b = 1;
     for (int i = 0; i < n; ++i) { out.push_back(a); int t = a + b; a = b; b = t; }
@@ -67,9 +76,14 @@ int main() {
     constexpr auto f2 = std::define_static_array(fibs(8));
     for (auto x : f2) std::println("(2) fib = {}", x);
 
-    // (3) runtime call: real heap-allocated vector
+#ifndef FIBS_AS_CONSTEVAL
+    // (3) runtime call: real heap-allocated vector. Excluded when
+    // FIBS_AS_CONSTEVAL is defined -- pattern (3) is exactly the call
+    // site that consteval forbids, so we skip it to keep the program
+    // compilable in both toggle states.
     auto f3 = fibs(8);
     for (auto x : f3) std::println("(3) fib = {}", x);
+#endif
 }
 ```
 
@@ -79,13 +93,13 @@ Three patterns, one function. Each one teaches a different rule:
 
 **(2) `constexpr auto f2 = std::define_static_array(fibs(8));`.** This is the pattern you actually want most of the time. `std::span` is itself a literal type (just a pointer + size), so the span value is a valid `constexpr` initializer; the pointer it holds points to *static* storage (allocated by `define_static_array`), so it freely escapes into runtime. You get a constexpr handle you can iterate as many times as you like with zero runtime allocation. If a future translation unit consumes the same span, the linker deduplicates the storage. This is the cheap-and-honest way to ship "compile-time-known data, used at runtime."
 
-**(3) `auto f3 = fibs(8);`.** This compiles **only because `fibs` is `constexpr`, not `consteval`**. The call happens at runtime, allocates a real heap-backed `std::vector<int>`, runs the same loop, returns the vector. This is the practical difference between the two specifiers: `constexpr` says "I can run at compile time *or* at runtime"; `consteval` says "compile time only -- if you try to call me at runtime, the program is ill-formed." Change line one of the example to `consteval auto fibs(int n)` and patterns (1) and (2) still work, but pattern (3) becomes a compile error: "call to consteval function 'fibs' is not a constant expression."
+**(3) `auto f3 = fibs(8);`.** This compiles **only because `fibs` is `constexpr`, not `consteval`**. The call happens at runtime, allocates a real heap-backed `std::vector<int>`, runs the same loop, returns the vector. This is the practical difference between the two specifiers: `constexpr` says "I can run at compile time *or* at runtime"; `consteval` says "compile time only -- if you try to call me at runtime, the program is ill-formed." Uncomment the `#define FIBS_AS_CONSTEVAL` at the top of the file -- patterns (1) and (2) keep working (consteval still composes with `define_static_array`); pattern (3) drops out via the matching `#ifndef`. Want to see the consteval restriction fire as an error? Uncomment the `#define`, then also delete the `#ifndef` / `#endif` around pattern (3) -- the `auto f3 = fibs(8)` line then gets the diagnostic: "call to consteval function 'fibs' is not a constant expression."
 
 > **Could the demo self-toggle?** Conceptually, yes -- you would wrap pattern (3) in something like `if constexpr (! consteval-test on ^^fibs)` and the body would silently disappear when `fibs` is consteval, leaving patterns (1) and (2) to run. The matching reflection predicate is proposed as `std::meta::is_consteval` in [P3795R0 "Miscellaneous Reflection Cleanup"](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3795r0.html) -- but it is **not yet shipped in clang-p2996**, and the SFINAE idioms you might reach for don't work either. The reason is structural: SFINAE lives in *unevaluated* contexts (`requires` bodies, `decltype` operands), but the consteval restrictions only fire in *potentially-evaluated* contexts. The two never meet. Concretely: `requires { F(0); }`, `requires { +&F; }`, `requires { static_cast<Fn*>(F); }`, lambda-bodied variants, alias-template `decltype(F(0))` substitutions, and the classical Walter-Brown two-overload pair (`auto probe(Fn) -> decltype(...)` + `probe(...)` fallback) all return "callable" for both kinds. The places where consteval restrictions *do* fire -- binding a consteval function to an `auto` or `auto&` non-type template parameter, decaying it to a function pointer in a runtime expression -- produce hard errors at the call site ("pointer to a consteval declaration is not a constant expression"), not SFINAE-friendly substitution failures, so wrapping the binding inside another template just forwards the hard error. The honest reproducer for now is to flip the keyword on line one *and* comment out pattern (3) together. When P3795 lands, this demo gets a one-line upgrade -- and reflection has officially started introspecting the qualifiers of the very functions that produced its values.
 
 That same `define_static_array` step appears in <PostLink slug="template-for-expansion-statements">post 4 (template for)</PostLink>, where it promotes the `std::vector<std::meta::info>` returned by `nonstatic_data_members_of` into a static-storage span the expansion statement can iterate. Same mechanism, different range type.
 
-<GodboltEmbed id="5qTnzc11h" gcc_id="9rec7xzE9" title="Three ways to consume a constant-time std::vector" />
+<GodboltEmbed id="8Kbrjj8Y3" gcc_id="GjE3vvYbY" title="Three ways to consume a constant-time std::vector (with toggle)" />
 
 ## Limits, and where this is heading
 
