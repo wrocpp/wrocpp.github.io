@@ -225,25 +225,29 @@ The use-after-free demo above? Under `enforce(lifetime)` the `return v.data()` l
 
 Status as of 2026-05-03: P3081R2 and P3274 are in C++26; clang-p2996 implements parts of the bounds and lifetime profiles, GCC 16.1 implements the type profile. Implementations are partial; the full enforcement matrix lives on `safety-profiles-2026` (next toolset section, MR4 in this expansion). [P3543](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3543r0.pdf) is the counter-paper from Bloomberg + others arguing for an alternative approach -- worth reading honestly before betting on profiles for a 10-year codebase.
 
-**C++29 code injection ([P3294](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3294r2.pdf), Revzin / Alexandrescu / Vandevoorde).** Today's `safe_buffer.cpp` *generates the wrapper at compile time but you write `safe_at(b, i)` everywhere by hand*. P3294 token-sequence injection makes the wrapper invisible:
+**C++29 code injection ([P3294](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3294r2.pdf), Revzin / Alexandrescu / Vandevoorde).** Today's `parse_struct<T>(bytes)` *generates the parser at compile time, but the user still calls it explicitly* and has to remember which boundary needs which validator. P3294 token-sequence injection lets the schema annotation pull the validators in automatically:
 
 ```cpp
 // Pseudo-syntax (P3294 token injection, C++29 target).
-struct Buffer {
-    std::array<std::byte, 1024> data;
-    std::size_t                 size;
+[[ wire_format(version=1, endian=little) ]]
+struct SensorReading {
+    std::uint16_t sensor_id;
+    std::int32_t  raw_value;
+    std::uint8_t  status_flags;
 };
 
-consteval {
-    inject_for<Buffer>(@tokens{
-        std::expected<std::byte, error> at(size_t i) const noexcept;
-        std::span<const std::byte>      view() const noexcept;
-        // ...bounds-checked iterators, lifetime annotations
-    });
-}
-// Now b.at(i) and b.view() exist -- the compiler wrote them, not you.
+// The annotation triggers a generator that injects:
+//   static auto parse(std::span<const std::byte>)
+//       -> std::expected<SensorReading, parse_error>;
+//   auto serialize() const -> std::array<std::byte, wire_size_v<SensorReading>>;
+//   bool operator==(SensorReading const&) const = default;  // standard
+// All bounds-checked, version-tagged, endian-aware. The schema is the
+// type definition; everything else is generated, not written.
+
+auto msg = SensorReading::parse(bytes_from_network);  // typed error on failure
+auto out = msg->serialize();                          // round-trips by construction
 ```
 
-The state of the codebase one decade out: profiles enforce the safe subset; injection generates the safe wrappers; sanitizers stay in CI for legacy paths and for catching the corners reflection hasn't yet conquered. ASan-found memory bugs become an exception, not the rule.
+The state of the codebase one decade out: profiles enforce the safe subset (no raw pointer arithmetic, lifetime checked at compile time); injection generates the safe wrappers and parsers from schema annotations; sanitizers stay in CI for legacy paths and for catching the corners reflection hasn't yet conquered. The trust-boundary parser bug -- the actual CVE class -- becomes a "you didn't put the annotation on the struct" lint warning instead of a runtime exploit.
 
 For the full timeline of profile + injection landings, see [`safety-profiles-2026`](#) (incoming, MR4) and the [Production C++ post 8 -- Memory-safety profiles and the future](#) (incoming, 2026-07).
