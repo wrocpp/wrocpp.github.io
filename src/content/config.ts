@@ -94,6 +94,14 @@ const toolset = defineCollection({
     tags: z.array(z.string()).default([]),
     lastReviewed: z.coerce.date(),
     nextReviewBy: z.coerce.date().optional(),
+    /**
+     * Public launch date. Distinct from lastReviewed: lastReviewed
+     * tracks "is this still accurate" (refreshes quarterly); launchDate
+     * is the one-time ship event. Page is always-live the moment the
+     * MR merges -- no isPublished gating. launchDate drives Buffer
+     * scheduling for the social ad.
+     */
+    launchDate: z.coerce.date().optional(),
     testedOn: z.string().optional(),
     relatedPosts: z.array(z.string()).default([]),
     licence: z.string().optional(),
