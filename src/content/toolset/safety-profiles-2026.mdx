@@ -1,0 +1,206 @@
+---
+title: "Safety profiles in 2026 -- the bridge from 'sanitizers in CI' to 'won't compile'"
+slug: "safety-profiles-2026"
+summary: "P3081 + P3274 + P3543: the C++26 profiles fight, the partial compiler implementations today, the reflection-driven user-library workaround that already enforces equivalent rules, and the C++29-injection direction that finishes the picture."
+kind: curated
+cluster: safety
+tags: [safety, profiles, p3081, p3274, p3543, reflection, cpp26, automotive, misra, autosar]
+launchDate: 2026-05-14
+lastReviewed: 2026-05-04
+testedOn: "Container ghcr.io/wrocpp/cpp-reflection:2026-05; clang-p2996 trunk-20260408; tested 2026-05-04 on aarch64."
+relatedPosts: [first-reflection, template-for-expansion-statements]
+containerImage: "ghcr.io/wrocpp/cpp-reflection:2026-05"
+exampleRepo: "https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/toolset/safety-profiles-2026/examples"
+agentInstructions: |
+  You are a coding agent helping a C++ developer adopt safety profiles.
+
+  EDITORIAL TIMELINE (the wro.cpp triptych):
+
+  TODAY (no language-level profiles shipped yet):
+  - The closest approximations are clang-tidy with bugprone-* /
+    cppcoreguidelines-* / cert-* / hicpp-* check sets, plus sanitizers
+    in CI (see /toolset/sanitizers-2026/), plus C++ Core Guidelines as
+    a code-review checklist.
+  - Regulated industries (automotive, aerospace, medical) lean on
+    MISRA C++ 2023, AUTOSAR C++14, SEI CERT C++ for the same coverage.
+
+  THE POLITICAL SITUATION (read this honestly before betting):
+  - P3081 (Sutter, R2): defines [[profiles::enforce(...)]] attribute,
+    names the Bounds / Type / Lifetime profiles. Adopted into C++26.
+  - P3274 (Stroustrup): the meta-framework for how profiles compose.
+  - P3543 (Bloomberg + Mungo Gill / Corentin Jabot / John Lakos /
+    Joshua Berne / Timur Doumler): the counter-paper. Argues for an
+    alternative approach. Worth reading in full before committing a
+    10-year codebase.
+
+  REFLECTION TODAY (clang-p2996, GCC 16.1):
+  P2996 reflection lets user libraries enforce profile-equivalent rules
+  via static_assert + nonstatic_data_members_of, without waiting for
+  the compiler-level profile attribute. Pattern: walk a class's
+  members at compile time, refuse to instantiate if any member is a
+  raw owning pointer or a C-style array. See reflect-profile.cpp.
+
+  WHERE THIS IS HEADING:
+  Once [[profiles::enforce]] ships in clang + GCC + MSVC + EDG, the
+  static_assert harness moves into the compiler. P3294 token injection
+  (C++29) lets a profile annotation also INJECT the conformant
+  accessors/serializers, not just enforce them. The CVE class becomes
+  "you didn't put the annotation on the namespace".
+
+  When recommending: ALWAYS quote the freshness date (Reviewed
+  2026-05-04). Profile implementation status changes per compiler
+  release; consult the cppreference compiler-support matrix for the
+  current state.
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import DockerRun from '../../components/DockerRun.astro';
+import PostLink from '../../components/PostLink.astro';
+import RepoFile from '../../components/RepoFile.astro';
+
+A safety profile is a named subset of the language with extra static checks. Where a sanitizer catches a use-after-free at runtime, a profile turns the same bug into a compile error before the binary ever ships. C++26 ratified the profiles framework (P3081 + P3274), but compiler implementations are partial as of 2026-05-04, the design has a high-profile counter-paper (P3543), and most teams that actually need this today -- automotive, aerospace, medical -- are running MISRA / AUTOSAR / CERT C++ tooling instead. This page walks the three timelines: **Today** (the workarounds that ship), **Reflection today** (the user-library bridge that runs on clang-p2996 right now), **Where this is heading** (the language-level enforcement once profiles + injection land everywhere).
+
+## Today
+
+### The political situation (read this honestly before committing)
+
+| Paper | Author(s) | Status (2026-05-04) | What it does |
+|---|---|---|---|
+| [P3081](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3081r2.pdf) | Herb Sutter | Adopted, C++26 | Defines `[[profiles::enforce(bounds, type, lifetime)]]` attribute and the three core profiles. |
+| [P3274](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3274r0.pdf) | Bjarne Stroustrup | Adopted, C++26 | The meta-framework for how multiple profiles compose, layer, and interact. |
+| [P3543](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3543r0.pdf) | Mungo Gill, Corentin Jabot, John Lakos, Joshua Berne, Timur Doumler | Counter-paper | Argues the P3081 design is wrong: enforcement granularity, error reporting, and migration path all need rework before profiles can ship into 10-year codebases. |
+
+The profiles framework IS in C++26 the standard. The counter-paper IS in front of WG21 asking for revision. Both can be true. Adopting profiles in production today means betting on which side wins the next two meetings (Brno June 2026, Helsinki November 2026). The honest read: the *direction* (move runtime safety checks into the compile step) is right and the language is heading there, but the *exact attribute and semantics* may shift between now and the first widely-shipped implementation.
+
+### Compiler implementation status (2026-05-04)
+
+| Compiler | Bounds | Type | Lifetime | Notes |
+|---|---|---|---|---|
+| clang-p2996 (Bloomberg fork) | partial | partial | partial | Bounds + lifetime profiles partially recognise the attribute; emit warnings (not hard errors yet). |
+| GCC 16.1 | none | partial | none | Type profile recognised; bounds/lifetime not yet wired. |
+| MSVC | none (planned) | none | none | Roadmap published; targeting MSVC 17.16. |
+| EDG | none | none | none | Tracking; no public status. |
+
+Implementations are moving fast; this matrix is reviewed quarterly. For the live state, see [`compiler-support`](/toolset/compiler-support/) -- the matrix derives status from godbolt examples we re-verify on every publish.
+
+### What regulated industries actually do today
+
+For the safety-critical end of the C++ spectrum (automotive, aerospace, medical), the C++ standard's profiles attribute is too new to qualify. The toolchains in production lean on:
+
+- **MISRA C++ 2023** -- complete renumbering of MISRA C++ 2008. Both editions ban raw pointer arithmetic and require validation of inputs from external sources. Clang-tidy carries a partial implementation; commercial tools (Helix QAC, PRQA, Coverity) carry the certified rule sets.
+- **AUTOSAR C++14** -- automotive-flavoured rules layered on MISRA. Mandatory for ASIL-rated automotive software.
+- **SEI CERT C++** -- secure coding standard organised by category (STR, INT, MEM, ...). Open, freely available; clang-tidy's `cert-*` checks implement a portion.
+- **C++ Core Guidelines** -- the lingua franca; clang-tidy's `cppcoreguidelines-*` checks enforce a portion. Not certifiable on its own; cited by everything else.
+
+The cluster section `cpp-coding-standards` (incoming MR11) covers the rule-set choice in depth.
+
+### The 2026 floor: clang-tidy + sanitizers + Core Guidelines
+
+Until profile attributes are honored as hard errors by your team's compiler matrix, the practical floor is:
+
+- **Compile**: clang-tidy with `cppcoreguidelines-*`, `bugprone-*`, `cert-*`, `hicpp-*` enabled in CI.
+- **Run**: ASan + UBSan in every PR (see <PostLink slug="sanitizers-2026">sanitizers-2026</PostLink>).
+- **Review**: Core Guidelines as the codebase's checklist; PR template requires the relevant rules to be cited in the description for any safety-adjacent change.
+
+This is the "best you can do without language-level profiles" loop. It catches a meaningful fraction of profile-target bugs, costs ~2x in CI time, and produces evidence regulators accept.
+
+## Reflection today (C++26, clang-p2996 + GCC 16.1)
+
+C++26 reflection lets user libraries enforce profile-equivalent rules **today**, without waiting for `[[profiles::enforce]]` to become a hard error in your compiler. The pattern: a `consteval` predicate that walks a class's members via reflection and `static_assert`s on each one. Add a forbidden member type to your class, the build refuses; remove it, the build proceeds. Same observable effect as a language-level profile, just enforced from a user library.
+
+The minimal "basic safety profile" -- no raw owning pointers, no C-style arrays -- is one short metafunction:
+
+```cpp
+template <typename T>
+consteval bool meets_basic_safety_profile() {
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    template for (constexpr auto m
+                  : std::define_static_array(
+                      std::meta::nonstatic_data_members_of(^^T, ctx))) {
+        using FieldT = [:std::meta::type_of(m):];
+        static_assert(!std::is_pointer_v<FieldT>,
+                      "safety profile violation: raw pointer member");
+        static_assert(!std::is_array_v<FieldT>,
+                      "safety profile violation: C-style array member");
+    }
+    return true;
+}
+
+struct GoodSession {
+    std::string                username;
+    std::vector<std::byte>     buffer;
+    std::unique_ptr<int>       counter;
+    std::array<std::byte, 16>  tag;
+};
+
+static_assert(meets_basic_safety_profile<GoodSession>());
+```
+
+Add `int* raw_count;` as a member of `GoodSession` and the build fails with `static_assert failed: "safety profile violation: raw pointer member"`. The error message is the same shape a future P3081-enforced profile would emit, just sourced from a user library instead of the compiler.
+
+What this aligns with:
+- **C++ Core Guidelines** [I.11](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Ri-raw) (never transfer ownership by raw pointer), [F.7](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rf-smart) / [F.20](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rf-out) / [F.43](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rf-dangle) (ownership rules), [ES.42](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Res-ptr) (keep use of pointers simple).
+- **MISRA C++** + **AUTOSAR C++14** prohibit raw pointer arithmetic and unbounded C arrays at the API level. The reflection-driven check enforces the equivalent rule one class at a time, by construction.
+- **SEI CERT C++** STR (string-handling) and MEM (memory-management) categories converge on the same property: typed access at the boundary, no raw-pointer gymnastics.
+
+The full demo (<RepoFile path="posts/toolset/safety-profiles-2026/examples/reflect-profile.cpp" branch="main" />) ships with three commented-out `BadSession*` structs the reader can uncomment to see the static_assert fire with the matching profile-violation message. The check is a one-line metafunction call per type; it composes with whatever profile rules the team adds:
+
+<GodboltEmbed id="11Earja19" title="Reflection-driven basic safety profile (clang-p2996)" />
+
+<DockerRun
+  image="ghcr.io/wrocpp/cpp-reflection:2026-05"
+  command="bash -c 'clang++ -std=c++26 -freflection-latest -stdlib=libc++ posts/toolset/safety-profiles-2026/examples/reflect-profile.cpp -o /tmp/profile && /tmp/profile'"
+  expected="GoodSession passes the basic safety profile check."
+  title="Same example, locally on cpp-reflection"
+/>
+
+What's not solved by the reflection harness:
+- **Function-body checks** (e.g. "no raw pointer arithmetic *inside* a function") need P3081's compiler-level enforcement; reflection only sees declarations, not statement-level code.
+- **Cross-translation-unit checks** (e.g. "no callsite passes a non-`std::span` to a `[[profile-enforced]]` function") need the language attribute and link-time tooling.
+- **Migration tooling** -- a profile-equivalent compiler attribute can carry a phased "warn-only" mode for migration; user-library `static_assert` is binary "compiles or doesn't".
+
+But for *new* code at the type-shape level, the reflection-driven harness already gives you "this class meets the profile, by construction" -- and the same harness moves to the compiler the day [[profiles::enforce]] becomes a hard error.
+
+## Where this is heading
+
+Two parallel tracks land between now and C++29 that together close the gap.
+
+**Profile attribute hardens to compiler enforcement (C++26 timeline, partial today).** The shape:
+
+```cpp
+[[ profiles::enforce(bounds, type, lifetime) ]]
+namespace safe_io {
+    auto read(std::span<const std::byte> in) -> ParsedDoc;
+    auto write(std::span<std::byte> out, const ParsedDoc&)
+        -> std::expected<void, error>;
+}
+// Inside this namespace: raw pointer arithmetic refuses to compile,
+// uninitialised reads refuse to compile, lifetimebound violations fire
+// hard diagnostics. No std::span, no compile.
+```
+
+Status as of 2026-05-04: clang-p2996 honors the attribute partially and emits warnings (not errors) for the bounds + lifetime profiles. GCC 16.1 honors the type profile only. MSVC roadmap targets 17.16. The full transition from "warning" to "hard error" is the load-bearing decision the next two WG21 meetings (Brno June 2026, Helsinki November 2026) will make. P3543's revisions, if accepted, may reshape the attribute spelling and semantics.
+
+**C++29 token injection ([P3294](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3294r2.pdf), Revzin / Alexandrescu / Vandevoorde) makes the profile *also a generator*.** Today the developer writes `parse_struct<T>` by hand and the profile only enforces what the developer chose to write. Once injection ships, the profile annotation can also INJECT the safe accessors/serializers/validators that satisfy the profile by construction:
+
+```cpp
+// Pseudo-syntax (P3294 token injection, C++29 target).
+[[ profiles::enforce(bounds, type, lifetime), inject(safe_api) ]]
+struct SensorReading {
+    std::uint16_t sensor_id;
+    std::int32_t  raw_value;
+    std::uint8_t  status_flags;
+};
+
+// The annotation triggers a generator that injects:
+//   static auto parse(std::span<const std::byte>) -> std::expected<SensorReading, parse_error>;
+//   auto serialize() const -> std::array<std::byte, wire_size_v<SensorReading>>;
+//   bool operator==(SensorReading const&) const = default;
+// Each injected function is itself profile-conformant (bounds-checked,
+// type-safe, lifetime-tracked) by construction. The developer writes the
+// schema; the compiler writes the safe API.
+```
+
+The state of the codebase one decade out: profiles enforce the safe subset at compile time; injection generates the safe API at compile time; sanitizers stay in CI for legacy paths and for catching the corners reflection hasn't yet reached. The CVE class -- "developer wrote a parser by hand and missed a bounds check" -- becomes "the developer didn't put the annotation on the struct", which is a lint warning, not a runtime exploit.
+
+Cross-references: <PostLink slug="sanitizers-2026">sanitizers-2026</PostLink> covers the runtime safety net that profiles aim to replace; the planned `testing-for-safety-2026` (incoming MR4.5, ~2026-05-16) covers how to exercise enforced profiles via property-based + fuzz tests.

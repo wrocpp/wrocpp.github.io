@@ -336,3 +336,13 @@ sanitizers-2026:
       ok: id=5 raw=-1 flags=1
 
       truncated: refused (correct)'
+safety-profiles-2026:
+  reflect_profile:
+    title: Reflection-driven basic safety profile (clang-p2996)
+    id: 11Earja19
+    url: https://godbolt.org/z/11Earja19
+    expected_output: 'GoodSession passes the basic safety profile check.
+
+      Try uncommenting BadSession* in the source to see the
+
+      static_assert fire with the profile-violation reason.'
