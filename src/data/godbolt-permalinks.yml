@@ -85,10 +85,10 @@ splicing:
     expected_output: "read<Point::x>: 3\nPoint:\n  x = 3\n  y = 4"
 template-for-expansion-statements:
   dump:
-    id: j9vWKaEG6
-    url: https://godbolt.org/z/j9vWKaEG6
+    id: ascPs55jK
+    url: https://godbolt.org/z/ascPs55jK
     title: Dump
-    expected_output: "Point:\n  x = 3\n  y = 4\ntuple element: 1\ntuple element: 2.5\ntuple element: c"
+    expected_output: "Line:\n  a = Point{x=0, y=0}\n  b = Point{x=3, y=4}\n  name = diag"
 enum-to-string:
   renum:
     title: Renum
@@ -209,7 +209,19 @@ gcc-16-hands-on:
     id: e4618nxT1
     url: https://godbolt.org/z/e4618nxT1
     title: GCC 16.1 reflection hands-on
-    expected_output: "name\nage\nadmin\n"
+    expected_output: 'name
+
+      age
+
+      admin
+
+      '
     gcc_id: M8TrGd6b5
     gcc_url: https://godbolt.org/z/M8TrGd6b5
-    gcc_expected_output: "name\nage\nadmin\n"
+    gcc_expected_output: 'name
+
+      age
+
+      admin
+
+      '
