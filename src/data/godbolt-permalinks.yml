@@ -327,12 +327,12 @@ vector-consteval-or-constexpr:
 
       (3) runtime vector    fib = 13'
 sanitizers-2026:
-  safe_buffer:
-    title: Reflection-driven safe accessor
-    id: 1z467c4vz
-    url: https://godbolt.org/z/1z467c4vz
-    expected_output: 'array members reflected: 1
+  parse_struct:
+    title: Reflection-driven binary parser at trust boundary
+    id: 4Yx7K66TW
+    url: https://godbolt.org/z/4Yx7K66TW
+    expected_output: 'wire_size<SensorReading>() = 7
 
-      safe_at(2) = 3
+      ok: id=5 raw=-1 flags=1
 
-      safe_at(99) = out of bounds'
+      truncated: refused (correct)'

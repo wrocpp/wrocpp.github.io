@@ -142,42 +142,66 @@ Three GitHub Actions matrix entries (`-DWROCPP_SAN=asan`, `=ubsan`, `=tsan`) cov
 
 ## Reflection today (C++26, clang-p2996 + GCC 16.1)
 
-C++26 reflection lets you stop *finding* memory bugs and start *not having them*. The simplest pattern: walk a struct's members at compile time, synthesise bounds-checked accessors that return `std::expected<T, error>` instead of raw pointers. Same call sites as raw indexing, same generated code as hand-written safe accessors, zero per-call overhead -- *and* the wrapper exists for every aggregate you define, automatically.
+The most concentrated source of memory-safety CVEs in real C++ codebases isn't `int*` indexing or `std::vector` lifetime errors -- those are textbook patterns the team has been trained on. It's **handwritten parsers at trust boundaries**: a function that takes `std::span<const std::byte>` from a network packet, file header, or bus frame and turns it into a typed struct. Every field read needs a bounds check; every offset needs to advance correctly; every type needs to match the wire format. Miss any of those once and you've shipped the next CVE-2024-XXXXX.
+
+`std::array::at()` doesn't help here -- the bug isn't out-of-bounds index into a known-size array; it's "we read 7 bytes but the input only had 3." `std::span` helps (it carries the size at runtime), but only if the parser remembers to check `bytes.size()` before *every* field, in *every* parser. Reflection lets us write the parser once, generically, and have the bounds check be mechanical:
 
 ```cpp
-struct Buffer {
-    std::array<std::byte, 4> data;
-    std::size_t              size;
+struct SensorReading {
+    std::uint16_t sensor_id;
+    std::int32_t  raw_value;
+    std::uint8_t  status_flags;
 };
 
 template <typename T>
-constexpr auto safe_at(T const& obj, std::size_t i)
-    -> std::expected<std::byte, std::string_view>
+constexpr auto parse_struct(std::span<const std::byte> bytes)
+    -> std::expected<T, parse_error>
 {
-    if (i >= obj.size) return std::unexpected("out of bounds");
-    return obj.data[i];
-}
+    static_assert(std::is_trivially_copyable_v<T>);
+    constexpr std::size_t needed = wire_size<T>();
+    if (bytes.size() < needed) return std::unexpected(parse_error::too_short);
 
-constexpr Buffer b{{ /* 4 bytes */ }, 4};
-auto bad = safe_at(b, 99);  // -> std::unexpected("out of bounds"), no UB
+    T out{};
+    std::size_t off = 0;
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    template for (constexpr auto m
+                  : std::define_static_array(
+                      std::meta::nonstatic_data_members_of(^^T, ctx))) {
+        constexpr std::size_t field_bytes
+            = std::meta::size_of(std::meta::type_of(m));
+        std::memcpy(&(out.[:m:]), bytes.data() + off, field_bytes);
+        off += field_bytes;
+    }
+    return out;
+}
 ```
 
-The full demo (<RepoFile path="posts/toolset/sanitizers-2026/examples/safe-buffer.cpp" branch="main" />) goes one step further -- it uses reflection to *count and report* the array members of `Buffer` at compile time, proving the synthesis is real:
+`wire_size<T>()` walks the same reflected member list and sums field sizes; the bounds check `bytes.size() < needed` happens once before any read. Field-by-field memcpy at running offsets handles in-memory padding (we touch only the actual member bytes, not padding holes). The entire parser body is generic; the schema is the struct definition itself.
 
-<GodboltEmbed id="1z467c4vz" title="Reflection-driven bounds-checked accessor (clang-p2996)" />
+What this aligns with:
+- **C++ Core Guidelines** I.27 (use `std::span` at boundaries), CP.3 (parameter ownership), F.43 (don't return pointers to local data -- which kills the ASan demo class).
+- **MISRA C++ 2023** Rule 5-0-15 (no pointer arithmetic -- the parser uses span indexing + memcpy of field-sized blocks, never raw pointer math), Rule 21-2-1 (validate inputs from external sources -- single up-front bounds check covers the entire schema).
+- **SEI CERT C++** STR50-CPP, INT30-CPP, MEM52-CPP -- all about validated reads at the trust boundary.
 
-What the godbolt link shows: `array members reflected: 1`, then `safe_at(2) = 3` (in-bounds), then `safe_at(99) = out of bounds` (the safe failure path). No sanitizer needed; the bounds check is part of the type.
+What this demo deliberately leaves out (out of scope; production-grade adds them):
+- **Endianness**: assumes platform-native byte order. Real wire formats need `std::byteswap` per field for non-native order; the reflection harness generates that too -- one line per field.
+- **Variable-length fields**: assumes fixed layout. Length-prefixed strings, optional fields, and TLV formats need a richer schema (typically encoded as annotations -- see <PostLink slug="first-reflection">post 9 (annotations)</PostLink> in the reflection series for the shape).
+- **Type-confusion across versions**: a parser for V1 message format MUST NOT accept a V2 payload. Production parsers tag the schema with a version annotation; reflection enforces the match.
+
+The full demo (<RepoFile path="posts/toolset/sanitizers-2026/examples/parse-struct.cpp" branch="main" />) ships the trivially-copyable assertion + the truncated-input refusal path:
+
+<GodboltEmbed id="4Yx7K66TW" title="Reflection-driven binary parser at trust boundary (clang-p2996)" />
+
+Output: `wire_size<SensorReading>() = 7`, then `ok: id=5 raw=-1 flags=1` (good 7-byte input), then `truncated: refused (correct)` (3-byte input declined cleanly with a typed error). No memory errors to find at runtime; the bounds check is part of the parser, generated once for every `T` you parse.
 
 <DockerRun
   image="ghcr.io/wrocpp/cpp-reflection:2026-05"
-  command="bash -c 'clang++ -std=c++26 -freflection-latest -stdlib=libc++ posts/toolset/sanitizers-2026/examples/safe-buffer.cpp -o /tmp/safe && /tmp/safe'"
-  expected="array members reflected: 1\nsafe_at(2) = 3\nsafe_at(99) = out of bounds"
+  command="bash -c 'clang++ -std=c++26 -freflection-latest -stdlib=libc++ posts/toolset/sanitizers-2026/examples/parse-struct.cpp -o /tmp/parse && /tmp/parse'"
+  expected="wire_size<SensorReading>() = 7\nok: id=5 raw=-1 flags=1\ntruncated: refused (correct)"
   title="Same example, locally on cpp-reflection"
 />
 
-This is the post-4 (<PostLink slug="template-for-expansion-statements">template for</PostLink>) pattern, narrowed to safety. Once you have one `safe_at`, the same reflection harness gives you `safe_iterator`, `safe_view`, `safe_slice` -- and the input that determines the safety properties is the type definition the user wrote, not a hand-curated list of "things we remembered to check".
-
-The sanitizers above don't go away. They still catch bugs in third-party code, in legacy paths reflection hasn't been retrofitted onto, and in the corners of the language reflection can't yet introspect (function bodies, for instance). But for *new* code, "safe by construction via reflection" + "ASan + UBSan in CI for the rest" is the 2026 production loop.
+This is the post-4 (<PostLink slug="template-for-expansion-statements">template for</PostLink>) pattern, narrowed to a real CVE-class. Once `parse_struct` exists, the same reflection harness generates `serialize_struct` (the inverse), `validate_struct` (with annotations -- see post 9), `to_json` / `from_json`, and so on. The sanitizers don't go away; they still catch the legacy paths reflection hasn't been retrofitted onto, and the corners of the language reflection can't yet introspect (function bodies, dynamic dispatch). But for **new code at trust boundaries**, "safe by construction via reflection" plus "ASan + UBSan in CI for the rest" is the 2026 production loop.
 
 ## Where this is heading
 
