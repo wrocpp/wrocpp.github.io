@@ -12,7 +12,8 @@ export async function GET(context: APIContext) {
   );
   return rss({
     title: 'wro.cpp — Wrocław C++ community',
-    description: 'Hands-on modern C++ from Wrocław: flagship posts, events, and community content.',
+    description:
+      'Modern C++ for production: safety, performance, security, compliance, and the tooling that ships C++ in cars, trading systems, and hospitals. Flagship posts, news short-form, and community content from the Wroclaw C++ scene.',
     site: context.site!,
     items: posts.sort(byDateDesc).map((p) => ({
       title: p.data.title,

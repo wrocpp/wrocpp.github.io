@@ -20,8 +20,8 @@ const shortCount = posts.filter((p) => p.data.kind === 'short').length;
 const reflectionCount = posts.filter((p) => p.data.series === 'cpp26-reflection').length;
 ---
 <BaseLayout
-  title="wro.cpp — modern C++ from Wrocław"
-  description="wro.cpp — Wrocław C++ community. Hands-on technical posts in English, community glue in Polish, and the people who ship serious C++."
+  title="wro.cpp — modern C++ for production"
+  description="wro.cpp — Wrocław C++ community. Modern C++ for production: safety, performance, security, compliance, and the tooling that ships C++ in cars, trading systems, and hospitals."
 >
   <section class="hero reveal">
     <div class="wrap">
@@ -31,15 +31,16 @@ const reflectionCount = posts.filter((p) => p.data.series === 'cpp26-reflection'
         from&nbsp;Wroc&#322;aw<span class="period">.</span>
       </h1>
       <p class="hero__sub">
-        Hands-on deep dives into modern C++. Events that bring local developers into the same room.
-        Flagship posts in English; community chat in Polish, over on Slack.
+        Modern C++ for production. Safety, performance, security, and the tooling that makes
+        C++ ship in cars, trading systems, and hospitals. Flagship posts in English;
+        community chat in Polish, over on Slack.
       </p>
       <div class="hero__ctas">
         <a href="/posts/" class="btn btn-primary">
           Read the blog <span class="btn__arrow">→</span>
         </a>
-        <a href="https://wrocpp.slack.com" class="btn btn-secondary">Join Slack</a>
-        <a href="/events/" class="btn btn-ghost">Upcoming events</a>
+        <a href="/toolset/" class="btn btn-secondary">Browse Toolset</a>
+        <a href="https://wrocpp.slack.com" class="btn btn-ghost">Join Slack</a>
       </div>
     </div>
   </section>
@@ -108,6 +109,15 @@ const reflectionCount = posts.filter((p) => p.data.series === 'cpp26-reflection'
           <p style="font-family:'Source Serif 4',serif;color:var(--ink-muted);font-size:0.98rem;line-height:1.55;margin-top:0.5rem;">
             Monthly online meetups streamed on YouTube + quarterly in-person at local venues
             in Wrocław.
+          </p>
+        </div>
+        <div style="padding:1.4rem;border:1px solid var(--rule);border-left:3px solid var(--orange-hot,#D6481A);background:var(--paper-2);">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:var(--orange-hot);letter-spacing:0.08em;text-transform:uppercase;">evergreen · toolset</div>
+          <h3 style="font-family:'Quicksand',sans-serif;font-weight:700;font-size:1.2rem;margin-top:0.4rem;">Reference + recipes</h3>
+          <p style="font-family:'Source Serif 4',serif;color:var(--ink-muted);font-size:0.98rem;line-height:1.55;margin-top:0.5rem;">
+            Compiler support, AI agents, local LLMs, sanitizers, profiling, hardened stdlib,
+            qualified compilers. Premium open-source first;
+            <a href="/toolset/" style="color:var(--orange-hot);">browse the hub</a>.
           </p>
         </div>
       </div>
