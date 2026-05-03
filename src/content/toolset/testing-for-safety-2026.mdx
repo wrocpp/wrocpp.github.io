@@ -1,0 +1,209 @@
+---
+title: "Testing for safety in 2026 -- the four coverage levels and the reflection-driven shortcut"
+slug: "testing-for-safety-2026"
+summary: "Catch2 / doctest / GoogleTest for the floor, RapidCheck for properties, libFuzzer + AFL++ for the ceiling, differential testing for the corners. Plus the C++26 reflection pattern that auto-generates per-field tests so the test suite grows with the schema. Plus the C++26 contracts + C++29 injection direction that turns specs into tests."
+kind: curated
+cluster: safety
+tags: [safety, testing, fuzzing, catch2, rapidcheck, libfuzzer, reflection, cpp26, contracts, p2900]
+launchDate: 2026-05-16
+lastReviewed: 2026-05-04
+testedOn: "Container ghcr.io/wrocpp/cpp-reflection:2026-05; clang-p2996 trunk-20260408; tested 2026-05-04 on aarch64."
+relatedPosts: [first-reflection, template-for-expansion-statements]
+containerImage: "ghcr.io/wrocpp/cpp-reflection:2026-05"
+exampleRepo: "https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/toolset/testing-for-safety-2026/examples"
+agentInstructions: |
+  You are a coding agent helping a C++ developer set up safety-relevant tests.
+
+  EDITORIAL TIMELINE (the wro.cpp triptych):
+
+  TODAY: four coverage levels, ordered by what they catch.
+    1. Example-based tests -- Catch2 v3 / doctest / GoogleTest. The
+       FLOOR. Cover every public API with happy-path + failure-path.
+       Track line + branch coverage with gcov / llvm-cov; aim 80%+.
+    2. Property-based tests -- RapidCheck on top of Catch2/GTest.
+       The MULTIPLIER. Declare an invariant, library generates
+       hundreds of inputs.
+    3. Coverage-guided fuzzing -- libFuzzer (in cpp-safety) + AFL++.
+       The CEILING. Targets trust-boundary parsers, deserialisers,
+       protocol handlers.
+    4. Differential testing -- compare implementation vs reference
+       (a slower correct version, prior release, spec interpreter).
+       Sanitizer on the impl; output divergence OR sanitizer hit
+       signals a bug.
+  Sanitizers (see /toolset/sanitizers-2026/) are the runtime safety
+  net under all four levels.
+
+  REFLECTION TODAY (clang-p2996, GCC 16.1):
+  Reflection generates the per-field test cases automatically so the
+  test suite grows with the schema. Pattern: walk
+  nonstatic_data_members_of(^^T) at compile time, generate one
+  assignment / read-back test per field. Add a field, the test suite
+  grows; remove one, it shrinks. Reflection-series posts 15
+  (auto-mocks) and 20 (reflect-arbitrary) cover the same idea for
+  mocks and property generators.
+
+  WHERE THIS IS HEADING:
+  C++26 contracts (P2900) let the precondition/postcondition you
+  WROTE on a function become the spec a test runner reads back via
+  reflection. The contract IS the test. C++29 injection (P3294)
+  goes further: declare an interface with a contract, the compiler
+  injects the test harness alongside the implementation.
+
+  When recommending: match the coverage level to the bug class. UB
+  in handwritten parsers -> fuzzing. Algorithmic invariants ->
+  properties. Public-API regression -> example-based. Cross-impl
+  agreement -> differential.
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import DockerRun from '../../components/DockerRun.astro';
+import PostLink from '../../components/PostLink.astro';
+import RepoFile from '../../components/RepoFile.astro';
+
+A sanitizer instrumenting code that nobody calls is silent. The whole "ASan + UBSan in CI" story (<PostLink slug="sanitizers-2026">sanitizers-2026</PostLink>) only catches bugs in code paths the test suite actually exercises. **Tests are the input; sanitizers are the lens.** This page covers the input side: the four coverage levels that make the lens worth running, the reflection-driven shortcut that keeps the test suite in sync with the schema as the codebase grows, and the C++26 contracts + C++29 injection direction that makes the spec the test.
+
+## Today
+
+### Four coverage levels, ordered by what they catch
+
+| Level | Tool | What it catches | Cost |
+|---|---|---|---|
+| **Example-based** | [Catch2 v3](https://github.com/catchorg/Catch2), [doctest](https://github.com/doctest/doctest), [GoogleTest](https://github.com/google/googletest) | Regressions in known scenarios; named happy-path + failure-path per public API | Low: write per case |
+| **Property-based** | [RapidCheck](https://github.com/emil-e/rapidcheck) (on Catch2 / GTest) | Corners example-based misses; algorithmic invariants ("for all inputs, parse(serialize(x)) == x") | Medium: write the invariant once, library generates inputs |
+| **Coverage-guided fuzzing** | [libFuzzer](https://llvm.org/docs/LibFuzzer.html) (bundled in `cpp-safety`), [AFL++](https://aflplus.plus/) | UB the example + property tests don't reach; trust-boundary parser bugs | Medium per harness; ~30min per harness usually finds bugs that survived years of human-written tests |
+| **Differential** | Two implementations + a runner | Cross-impl divergence; spec disagreements; refactor regressions | High setup; lowest false-positive rate |
+
+The minimum-viable safety story: **example-based + sanitizers in every PR**. Add property-based and fuzzing as the codebase matures. Differential testing is reserved for "two impls of the same thing exist" -- a state-machine refactor against the previous release, a fast-path against the slow correct path, a custom JSON parser against `nlohmann::json`.
+
+### Coverage measurement
+
+Sanitizer-clean CI without coverage data proves nothing. Wire `gcov` / `llvm-cov` (clang) or `lcov` into your CI as the third leg of the stool:
+
+```cmake
+# CMake snippet for coverage instrumentation
+set(WROCPP_COV "off" CACHE STRING "Coverage backend: gcov|llvm|off")
+set_property(CACHE WROCPP_COV PROPERTY STRINGS off gcov llvm)
+
+if(WROCPP_COV STREQUAL "gcov")
+    add_compile_options(--coverage -O0 -g)
+    add_link_options(--coverage)
+elseif(WROCPP_COV STREQUAL "llvm")
+    add_compile_options(-fprofile-instr-generate -fcoverage-mapping -O0 -g)
+    add_link_options(-fprofile-instr-generate)
+endif()
+```
+
+CI step: build with coverage, run the test suite, generate the report (`lcov --capture --output-file coverage.info` for gcov, `llvm-profdata merge` + `llvm-cov` for clang). Fail the build if line coverage drops below the team's floor; 80% is a reasonable starter (regulated industries push this to 95%+ with MC/DC for ASIL-D).
+
+### When to reach for which framework
+
+| Framework | Best when | Cost |
+|---|---|---|
+| **Catch2 v3** | Header + linked, BDD-friendly assertions, broad ecosystem. Default for greenfield. | Long compile (link required) |
+| **doctest** | Single-header, fast compile, drop-in for header-only libs. | Smaller community |
+| **GoogleTest** | Established; integrates with GoogleMock for ergonomic mocks; corporate-friendly. | Bazel-aligned; CMake support is good but verbose |
+| **RapidCheck** | Property-based on top of any of the above. | Auxiliary; not a standalone framework |
+| **libFuzzer** | In-process, coverage-guided. The default fuzz target for new harnesses. | Per-harness setup |
+| **AFL++** | Out-of-process, slow but covers more file-format complexity. | Heavier infra |
+
+For automotive / aerospace / medical, the framework choice is often dictated by the certified toolchain. The pattern below (reflection-driven test generation) is framework-agnostic -- the per-member loop becomes a Catch2 `SECTION`, a GoogleTest `TEST_P`, or a doctest `SUBCASE`.
+
+## Reflection today (C++26, clang-p2996 + GCC 16.1)
+
+As a struct grows new fields, the unit test suite drifts. Hand-written tests for "field A round-trips correctly" don't get extended when field B is added; the new field is implicitly tested via "the test compiled" rather than via "the test exercised the field". Reflection lets the test be GENERATED from the struct shape: one round-trip test per field, automatically. Add a field, the test suite grows; remove one, it shrinks. The schema is the test specification.
+
+```cpp
+template <typename T>
+auto run_field_round_trip_tests() -> bool {
+    bool all_passed = true;
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    template for (constexpr auto m
+                  : std::define_static_array(
+                      std::meta::nonstatic_data_members_of(^^T, ctx))) {
+        using FieldT = [:std::meta::type_of(m):];
+        T obj{};
+        FieldT new_value = distinct_value<FieldT>();
+        obj.[:m:] = new_value;
+        bool passed = (obj.[:m:] == new_value);
+        if (!passed) all_passed = false;
+        std::println("  field {:14}: {}",
+                     std::meta::identifier_of(m),
+                     passed ? "PASS" : "FAIL");
+    }
+    return all_passed;
+}
+```
+
+For SensorReading (the wire-format struct from <PostLink slug="sanitizers-2026">sanitizers-2026</PostLink>), the runner emits:
+
+```
+== generated tests for SensorReading ==
+  field sensor_id     : PASS
+  field raw_value     : PASS
+  field status_flags  : PASS
+--
+overall: PASS
+```
+
+Add a fourth field to SensorReading, the next test run prints four results. Add a field whose `operator==` is broken (a custom type with a typo in the comparator), and that one row reads `FAIL` while the rest still pass -- the reflection-driven runner has zero loyalty to "tests we remembered to write".
+
+The full demo (<RepoFile path="posts/toolset/testing-for-safety-2026/examples/reflect-tests.cpp" branch="main" />) ships as a plain `main()` so it runs anywhere; in production the per-member loop becomes a Catch2 `SECTION`, a GoogleTest `TEST_P`, or a doctest `SUBCASE`. Same shape on top of any framework:
+
+<GodboltEmbed id="Tabe9Y18b" title="Reflection-driven test case generation (clang-p2996)" />
+
+<DockerRun
+  image="ghcr.io/wrocpp/cpp-reflection:2026-05"
+  command="bash -c 'clang++ -std=c++26 -freflection-latest -stdlib=libc++ posts/toolset/testing-for-safety-2026/examples/reflect-tests.cpp -o /tmp/tests && /tmp/tests'"
+  expected="== generated tests for SensorReading ==\n  field sensor_id     : PASS\n  field raw_value     : PASS\n  field status_flags  : PASS\n--\noverall: PASS"
+  title="Same example, locally on cpp-reflection"
+/>
+
+The same reflection harness underwrites two cousin patterns from the C++26 reflection series:
+
+- **Auto-derived property generators** — given a struct T, reflection walks members and asks RapidCheck (or any property-based library) to generate values for each. Adding a new field gives the property tests a new dimension to explore. The reflection-series post 20 (`reflect-arbitrary`, slug `reflect-arbitrary`) covers the implementation in depth.
+- **Auto-derived mocks** — given an abstract interface, reflection walks the virtual functions and synthesises a mock that records calls per method. The reflection-series post 15 (`auto-mocks`, slug `auto-mocks`) covers the GMock-equivalent without `MOCK_METHOD` boilerplate.
+
+What the reflection harness does NOT handle:
+- **Behavioural tests** -- "this function returns the median of its inputs" is a logical property, not a structural one. Reflection sees the signature; the property is the developer's contract.
+- **Test scheduling / parallelism** -- run order, fixture lifetime, parallel execution stay the framework's job.
+- **Coverage measurement** -- reflection generates the test, the framework runs it, but `gcov` / `llvm-cov` measure what actually executed. Three separate concerns.
+
+## Where this is heading
+
+Two things land between now and C++29 that close the gap further.
+
+**C++26 contracts ([P2900](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p2900r6.pdf), Doumler / Garcia / Halpern / Snyder / others).** A contract is a precondition or postcondition attached to a function declaration that the compiler enforces:
+
+```cpp
+auto sqrt(double x) -> double
+    pre (x >= 0.0)
+    post (r: r * r <= x + 1e-9);
+```
+
+The contract IS a partial test specification. Once contracts ship, a test runner can read them back via reflection, generate inputs that satisfy the precondition, run the function, and assert the postcondition. The contract is written ONCE on the function; the test runner is generic. A `pre`-violation in production becomes a `pre`-violation in CI long before -- contracts move test specs from the test file into the function declaration.
+
+Status as of 2026-05-04: P2900 is in C++26. Compiler implementations are partial; clang-p2996 honors the syntax but enforcement is opt-in via `-fcontracts=enforce`. GCC 16.1 emits warnings only.
+
+**C++29 token injection ([P3294](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3294r2.pdf)) makes the test harness ALSO injected.** Today the developer writes the per-field round-trip test loop (above) and the reflection harness expands it. Once injection ships, an annotation can also INJECT the test harness alongside the implementation:
+
+```cpp
+// Pseudo-syntax (P3294 token injection, C++29 target).
+[[ wire_format(version=1, endian=little), inject(round_trip_tests) ]]
+struct SensorReading {
+    std::uint16_t sensor_id;
+    std::int32_t  raw_value;
+    std::uint8_t  status_flags;
+};
+
+// The annotation triggers a generator that injects:
+//   - parse() / serialize() (see safety-profiles-2026)
+//   - operator== (default)
+//   - test_round_trip() that exercises every field, every wire-encoding
+//     edge case, and the truncated-input failure path
+// Adding a new field to SensorReading auto-extends the test set without
+// the developer touching the test file.
+```
+
+The state of the codebase one decade out: contracts carry the spec on the function; reflection generates the per-field tests; injection synthesises the harness alongside the implementation; sanitizers stay in CI to catch the corners reflection hasn't reached. The "we wrote tests but forgot to update them when the schema changed" failure mode -- the most common cause of regression bugs in production -- becomes mechanically impossible.
+
+Cross-references: <PostLink slug="sanitizers-2026">sanitizers-2026</PostLink> covers the runtime safety net these tests feed; <PostLink slug="safety-profiles-2026">safety-profiles-2026</PostLink> covers the compile-time enforcement that handles what tests can't (function-body checks, cross-TU rules).

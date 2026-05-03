@@ -336,3 +336,20 @@ sanitizers-2026:
       ok: id=5 raw=-1 flags=1
 
       truncated: refused (correct)'
+safety-profiles-2026:
+  reflect_profile:
+    title: Reflection-driven basic safety profile (clang-p2996)
+    id: 11Earja19
+    url: https://godbolt.org/z/11Earja19
+    expected_output: 'GoodSession passes the basic safety profile check.
+
+      Try uncommenting BadSession* in the source to see the
+
+      static_assert fire with the profile-violation reason.'
+testing-for-safety-2026:
+  reflect_tests:
+    title: Reflection-driven test case generation (clang-p2996)
+    id: Tabe9Y18b
+    url: https://godbolt.org/z/Tabe9Y18b
+    expected_output: "== generated tests for SensorReading ==\n  field sensor_id     : PASS\n  field raw_value     : PASS\n\
+      \  field status_flags  : PASS\n--\noverall: PASS"
