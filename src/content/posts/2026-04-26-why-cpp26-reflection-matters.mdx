@@ -116,7 +116,7 @@ std::string to_json(T const& obj) {
 }
 ```
 
-<GodboltEmbed id="n4eK93vfv" gcc_id="e3346Pxoh" title="40-line JSON serializer" />
+<GodboltEmbed id="3bjshh58z" gcc_id="fKfr3fs33" title="40-line JSON serializer" />
 
 Five new things are happening:
 
@@ -186,7 +186,7 @@ Three things make this work, and it's worth naming each:
 
 After `-O2`, the codegen is effectively identical — the optimiser proves the `first` flag's value per unrolled iteration and elides the branches either way. The win isn't runtime cost; it's source-level intent. The peel version has zero branches in the source, handles empty structs explicitly via `if constexpr`, and reads like "first, then rest" instead of "carry a flag".
 
-<GodboltEmbed id="MzM4bh3rj" gcc_id="439ro4sno" title="Peel-first variant — first iteration hoisted to compile time" />
+<GodboltEmbed id="xTqP948nc" gcc_id="6bbMhnTW7" title="Peel-first variant — first iteration hoisted to compile time" />
 
 ---
 

@@ -103,15 +103,36 @@ def slug_from_post(post_arg: str) -> tuple[str, str]:
 
 def shorten(source: str, title: str, profile: dict) -> dict:
     """Hit godbolt's shortener with one source file under the given
-    compiler profile. Returns the parsed {id, url, title}."""
+    compiler profile. Returns the parsed {id, url, title}.
+
+    Uses the `executors:` session shape (not `compilers:`) so the
+    permalink opens with the program's stdout pane on the right
+    instead of the assembly pane. The series's editorial promise is
+    "click and see what the program prints" -- assembly is rarely
+    what readers want first. Compile correctness is already gated by
+    compile_and_run() before this is called, so the executor pane
+    will never open onto a broken build."""
     payload = {
         "sessions": [
             {
                 "id": 1,
                 "language": "c++",
                 "source": source,
-                "compilers": [
-                    {"id": profile["id"], "options": profile["options"]}
+                "compilers": [],
+                "executors": [
+                    {
+                        "compiler": {
+                            "id": profile["id"],
+                            "options": profile["options"],
+                            "libs": [],
+                        },
+                        "compilerVisible": False,
+                        "compilerOutputVisible": False,
+                        "arguments": "",
+                        "argumentsVisible": False,
+                        "stdin": "",
+                        "stdinVisible": False,
+                    }
                 ],
             }
         ]
