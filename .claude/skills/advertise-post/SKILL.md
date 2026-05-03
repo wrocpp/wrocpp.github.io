@@ -102,21 +102,16 @@ brand-gen init social/linkedin-post social/<platform>/<slug> --dir .
 
 This creates `social/<platform>/<slug>/{content.md, config.yaml, assets/{scudoai.css, layout.css, logo-symbol.svg}, media/}`.
 
-### 5. Re-skin to wro.cpp
+### 5. Re-skin to wro.cpp -- DO NOT do this manually
 
-For each platform project:
-
-```
-# Append the wro.cpp token overrides + wordmark swap.
-cat .claude/skills/advertise-post/brand-kit/wrocpp.css \
-  >> social/<platform>/<slug>/assets/scudoai.css
-
-# Swap the logo symbol with the magnet mark.
-cp .claude/skills/advertise-post/brand-kit/logo-symbol.svg \
-   social/<platform>/<slug>/assets/logo-symbol.svg
-```
-
-Both files live at `.claude/skills/advertise-post/brand-kit/`. They're version-controlled with this skill.
+The re-skin (CSS + logo swap) happens INSIDE step 9 via `inject.sh`. Do
+NOT manually `cat >>` or `cp` here -- earlier versions of this SKILL.md
+told you to. That approach is wrong: `cat >>` appends instead of
+replacing, leaving the file with both the ScudoAI defaults and the
+wro.cpp overrides, and `cp` of the logo SVG to assets/ gets ignored
+because brand-gen inlines a different SVG into index.html that has to
+be patched there. **The single source of truth is `inject.sh`, run in
+step 9 between `brand-gen build` and `brand-gen image`.** Skip ahead.
 
 ### 6. Write the brand-gen content.md
 
@@ -190,21 +185,58 @@ project:
 
 Drop the caption from step 2 into `social/<platform>/<slug>/caption.md` (LinkedIn copy in the linkedin/ folder, Facebook copy in the facebook/ folder).
 
-### 9. Build + image
+### 9. Build -> INJECT -> image  (the inject step is MANDATORY)
 
-For each platform project:
+> **CRITICAL**: the order is `build` -> `inject.sh` -> `image`. If you
+> swap the order, omit `inject.sh`, or run anything else between them,
+> the rendered PNG carries the **ScudoAI shield** instead of the
+> **wro.cpp magnet** and ships with ScudoAI's default CSS. This is a
+> silent failure -- no warning, no error. You only notice when you
+> look at the image after deploy. Two readers have already hit this
+> (sanitizers-2026 + vector-consteval-or-constexpr, both shipped with
+> the wrong logo and had to be re-rendered).
 
+What each step does:
+
+1. **`brand-gen build`** generates `index.html` with the default
+   ScudoAI shield SVG inlined and `assets/scudoai.css` copied from
+   the brand-kit defaults.
+2. **`inject.sh`** REPLACES `assets/scudoai.css` with `wrocpp.css`
+   (standalone wro.cpp stylesheet, NOT an append), blanks
+   `assets/layout.css`, and patches the inlined `<symbol id="scudo-logo">`
+   in `index.html` with the wro.cpp magnet SVG. All three operations
+   are idempotent.
+3. **`brand-gen image`** runs headless Chrome on the (now wro.cpp-skinned)
+   `index.html` and writes a PNG.
+
+Run the full sequence per platform:
+
+```bash
+for plat in linkedin facebook; do
+    ( cd social/$plat/<slug> \
+      && brand-gen build \
+      && bash $(git rev-parse --show-toplevel)/.claude/skills/advertise-post/brand-kit/inject.sh . \
+      && brand-gen image )
+    mv social/$plat/<slug>/<slug>.png social/$plat/<slug>/image.png
+done
 ```
-( cd social/<platform>/<slug> && brand-gen build && brand-gen image )
+
+After both platforms render, **verify the swap actually happened**:
+
+```bash
+# MUST find viewBox="0 0 320 320" -- that is the wro.cpp magnet.
+# If it shows viewBox="0 0 512 512" -> inject.sh did not run; the SVG
+# is still the ScudoAI shield. STOP and re-run the sequence.
+grep -o 'viewBox="0 0 [0-9 ]*"' social/linkedin/<slug>/index.html | head -1
+
+# MUST report ~287 lines (wrocpp.css standalone). If ~1189, you appended
+# instead of replacing -- delete assets/scudoai.css, re-run inject.sh.
+wc -l social/linkedin/<slug>/assets/scudoai.css
 ```
 
-`brand-gen build` produces `index.html`. `brand-gen image` runs headless Chrome and writes a PNG named `<slug>.png`. Rename to `image.png` so paths are stable across slugs:
-
-```
-mv social/<platform>/<slug>/<slug>.png social/<platform>/<slug>/image.png
-```
-
-Verify each PNG: `file social/<platform>/<slug>/image.png` should report PNG, ~2400x2400. Open one if the user is at the terminal: `open social/linkedin/<slug>/image.png`.
+PNG sanity check: `file social/<platform>/<slug>/image.png` should
+report PNG, 2400x2400. `open social/linkedin/<slug>/image.png` to
+eyeball the wro.cpp magnet mark in the top-left before publishing.
 
 ### 9b. Publish the image at a public URL
 
