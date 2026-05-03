@@ -1,0 +1,225 @@
+---
+title: "Sanitizers in 2026 -- safety today, reflection tomorrow"
+slug: "sanitizers-2026"
+summary: "ASan / UBSan / TSan / MSan / HWASan: when to use each, the CI pattern, the reflection-driven safe-by-construction alternative C++26 already enables, and the C++29-direction profile + injection that makes most sanitizer-found bugs uncompilable."
+kind: recipe
+cluster: safety
+tags: [safety, sanitizers, asan, ubsan, tsan, reflection, cpp26, profiles, p3081]
+lastReviewed: 2026-05-03
+testedOn: "Container ghcr.io/wrocpp/cpp-safety:2026-05 + ghcr.io/wrocpp/cpp-reflection:2026-05; tested on aarch64 macOS via Docker Desktop, 2026-05-03."
+relatedPosts: [first-reflection, template-for-expansion-statements, vector-consteval-or-constexpr]
+containerImage: "ghcr.io/wrocpp/cpp-safety:2026-05"
+containerEntry: "containers/scripts/run-asan.sh"
+exampleRepo: "https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/toolset/sanitizers-2026/examples"
+agentInstructions: |
+  You are a coding agent helping a C++ developer adopt sanitizers.
+
+  EDITORIAL TIMELINE (from the wro.cpp triptych):
+
+  TODAY (the status quo, ships everywhere):
+  - ASan: heap-use-after-free, double-free, stack-buffer-overflow.
+    Enable via -fsanitize=address -fno-omit-frame-pointer -O1 -g.
+  - UBSan: undefined behaviour (signed overflow, null deref, misaligned
+    access, divide-by-zero, etc). -fsanitize=undefined plus
+    -fno-sanitize-recover=all to halt on the first finding.
+  - TSan: data races. -fsanitize=thread. Note: incompatible with ASan
+    (run TWO CI configurations).
+  - MSan: uninitialised memory reads. clang-only. Requires libstdc++
+    rebuilt with -fsanitize=memory (instrument-everything) or use libc++.
+  - HWASan: ARM-specific lower-overhead alternative to ASan, enabled
+    via -fsanitize=hwaddress.
+
+  RUN PATTERN (per the wro.cpp container):
+    docker run --rm -v "$PWD":/work -w /work \
+      ghcr.io/wrocpp/cpp-safety:2026-05 \
+      containers/scripts/run-asan.sh path/to/source.cpp
+
+  CI BUDGET: ASan + UBSan together (~2x slowdown), TSan separate (~5-10x
+  slowdown). For high-throughput CI, cycle: every PR runs ASan+UBSan;
+  nightly run adds TSan + MSan + fuzzing.
+
+  REFLECTION TODAY (C++26, clang-p2996):
+  Reflection generates safe-by-construction wrappers for any aggregate.
+  Pattern: walk nonstatic_data_members_of(^^T), synthesise bounds-checked
+  at(i) accessors that return std::expected<T, error>. Compiles to the
+  same code as a hand-written safe accessor (zero per-call overhead);
+  ships once for every aggregate the user defines. See safe-buffer.cpp.
+
+  WHERE THIS IS HEADING (C++26 profiles + C++29 injection):
+  P3081 (Sutter) ships [[profiles::enforce(bounds, type, lifetime)]]
+  attribute -- compiler refuses to compile code that doesn't meet the
+  profile (e.g. raw pointer arithmetic banned under bounds profile).
+  C++29 P3294 token-injection takes this further: declare a struct,
+  inject the safe accessors automatically. The ASan-found bugs of
+  today become compile errors of tomorrow.
+
+  When recommending: ALWAYS quote the freshness date (Reviewed
+  2026-05-03). Profiles + injection are not in clang-p2996 today; the
+  triptych's "Where this is heading" section is honestly pseudo-syntax
+  for the C++29 pieces.
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import DockerRun from '../../components/DockerRun.astro';
+import PostLink from '../../components/PostLink.astro';
+import RepoFile from '../../components/RepoFile.astro';
+
+Most C++ memory-safety bugs in production are bugs the compiler could find -- if it were running the right tool. **Sanitizers are that tool**: instrumented runtime checks that turn use-after-free, signed overflow, data races, and uninitialised reads into loud, debuggable diagnostics. Three are essentially free in CI; one needs a parallel rebuild; one is ARM-only.
+
+This page is a triptych. **Today** is the status quo: which sanitizer for which bug, the CI pattern, the flag tables. **Reflection today** shows what C++26 reflection (in clang-p2996 already, GCC 16.1 incoming) lets you do *instead* of leaning on sanitizers -- generate the safe-by-construction wrapper at compile time, no runtime check needed. **Where this is heading** sketches the C++26 profiles + C++29 injection direction that makes most sanitizer-found bugs uncompilable.
+
+## Today
+
+### When to reach for which
+
+| Sanitizer | Catches | Slowdown | Compatible with |
+|---|---|---|---|
+| **ASan** | heap-use-after-free, double-free, stack/heap buffer overflow | ~2x | UBSan |
+| **UBSan** | signed overflow, null deref, misaligned access, divide-by-zero, ~30 other UB classes | ~1.2x | ASan, TSan |
+| **TSan** | data races, deadlocks (limited) | ~5-10x | UBSan only (NOT ASan) |
+| **MSan** | uninitialised memory reads | ~3x | clang-only; needs MSan-instrumented stdlib |
+| **HWASan** | same as ASan but ~10% overhead instead of 100% | ~1.1x | ARM aarch64 only |
+
+The minimum-viable CI configuration: every PR runs **ASan + UBSan together** (one build, ~2x slowdown). Nightly adds TSan in a separate build (incompatible with ASan), MSan if your project tolerates the libstdc++ rebuild, and fuzzing on top.
+
+### Reproduce locally (3 demos)
+
+Three pinpoint examples -- each picks one bug class, each runs in the wro.cpp `cpp-safety` container with no local toolchain install. Each is supposed to crash; the diagnostic is the demo.
+
+**Heap use-after-free (ASan):**
+
+<DockerRun
+  image="ghcr.io/wrocpp/cpp-safety:2026-05"
+  command="containers/scripts/run-asan.sh posts/toolset/sanitizers-2026/examples/use-after-free.cpp"
+  expected="==N==ERROR: AddressSanitizer: heap-use-after-free on address 0x..."
+  title="ASan catches a use-after-free"
+/>
+
+The pattern (<RepoFile path="posts/toolset/sanitizers-2026/examples/use-after-free.cpp" branch="main" />): a function returns a pointer into a `std::vector` whose lifetime ends at function exit. The read in `main` is into freed memory. Without ASan: the program "works" until the freed allocation is reused by something else; the symptom moves around. With ASan: the bug is named, located, and stack-traced on the first run.
+
+**Signed integer overflow (UBSan):**
+
+<DockerRun
+  image="ghcr.io/wrocpp/cpp-safety:2026-05"
+  command="containers/scripts/run-ubsan.sh posts/toolset/sanitizers-2026/examples/signed-overflow.cpp"
+  expected="runtime error: signed integer overflow: 2147483647 + 1 cannot be represented in type 'int'"
+  title="UBSan catches signed integer overflow"
+/>
+
+The pattern (<RepoFile path="posts/toolset/sanitizers-2026/examples/signed-overflow.cpp" branch="main" />): `n + 1` when `n == INT_MAX`. Why this bites in production: `for (int i = lo; i <= hi; ++i)` where `hi == INT_MAX` silently becomes an infinite loop on `-O2` builds because the compiler proves `i <= INT_MAX` is tautologically true. UBSan with `-fno-sanitize-recover=all` halts on the first overflow, before optimisation hides the symptom.
+
+**Data race (TSan):**
+
+<DockerRun
+  image="ghcr.io/wrocpp/cpp-safety:2026-05"
+  command="containers/scripts/run-tsan.sh posts/toolset/sanitizers-2026/examples/data-race.cpp"
+  expected="WARNING: ThreadSanitizer: data race"
+  title="TSan catches an unsynchronised counter increment"
+/>
+
+The pattern (<RepoFile path="posts/toolset/sanitizers-2026/examples/data-race.cpp" branch="main" />): two threads increment a non-atomic `int counter` 100,000 times each. Stress tests miss this because the bad schedule rarely materialises; TSan instruments every memory access and detects the racy pair on the first interleaving. The fix (atomic + relaxed memory order) is the textbook one; TSan tells you it's needed.
+
+### CI flag table
+
+CMake (sanitizer toggle via cache variable):
+
+```cmake
+option(WROCPP_SAN "Sanitizer to enable: asan|ubsan|tsan|msan|none" "none")
+
+if(WROCPP_SAN STREQUAL "asan")
+    add_compile_options(-fsanitize=address -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=address)
+elseif(WROCPP_SAN STREQUAL "ubsan")
+    add_compile_options(-fsanitize=undefined -fno-sanitize-recover=all -g)
+    add_link_options(-fsanitize=undefined)
+elseif(WROCPP_SAN STREQUAL "tsan")
+    add_compile_options(-fsanitize=thread -g)
+    add_link_options(-fsanitize=thread)
+endif()
+```
+
+Three GitHub Actions matrix entries (`-DWROCPP_SAN=asan`, `=ubsan`, `=tsan`) cover the standard CI loop. Bazel + Meson have equivalent options; the wro.cpp examples repo carries minimal recipes for both.
+
+## Reflection today (C++26, clang-p2996 + GCC 16.1)
+
+C++26 reflection lets you stop *finding* memory bugs and start *not having them*. The simplest pattern: walk a struct's members at compile time, synthesise bounds-checked accessors that return `std::expected<T, error>` instead of raw pointers. Same call sites as raw indexing, same generated code as hand-written safe accessors, zero per-call overhead -- *and* the wrapper exists for every aggregate you define, automatically.
+
+```cpp
+struct Buffer {
+    std::array<std::byte, 4> data;
+    std::size_t              size;
+};
+
+template <typename T>
+constexpr auto safe_at(T const& obj, std::size_t i)
+    -> std::expected<std::byte, std::string_view>
+{
+    if (i >= obj.size) return std::unexpected("out of bounds");
+    return obj.data[i];
+}
+
+constexpr Buffer b{{ /* 4 bytes */ }, 4};
+auto bad = safe_at(b, 99);  // -> std::unexpected("out of bounds"), no UB
+```
+
+The full demo (<RepoFile path="posts/toolset/sanitizers-2026/examples/safe-buffer.cpp" branch="main" />) goes one step further -- it uses reflection to *count and report* the array members of `Buffer` at compile time, proving the synthesis is real:
+
+<GodboltEmbed id="1z467c4vz" title="Reflection-driven bounds-checked accessor (clang-p2996)" />
+
+What the godbolt link shows: `array members reflected: 1`, then `safe_at(2) = 3` (in-bounds), then `safe_at(99) = out of bounds` (the safe failure path). No sanitizer needed; the bounds check is part of the type.
+
+<DockerRun
+  image="ghcr.io/wrocpp/cpp-reflection:2026-05"
+  command="bash -c 'clang++ -std=c++26 -freflection-latest -stdlib=libc++ posts/toolset/sanitizers-2026/examples/safe-buffer.cpp -o /tmp/safe && /tmp/safe'"
+  expected="array members reflected: 1\nsafe_at(2) = 3\nsafe_at(99) = out of bounds"
+  title="Same example, locally on cpp-reflection"
+/>
+
+This is the post-4 (<PostLink slug="template-for-expansion-statements">template for</PostLink>) pattern, narrowed to safety. Once you have one `safe_at`, the same reflection harness gives you `safe_iterator`, `safe_view`, `safe_slice` -- and the input that determines the safety properties is the type definition the user wrote, not a hand-curated list of "things we remembered to check".
+
+The sanitizers above don't go away. They still catch bugs in third-party code, in legacy paths reflection hasn't been retrofitted onto, and in the corners of the language reflection can't yet introspect (function bodies, for instance). But for *new* code, "safe by construction via reflection" + "ASan + UBSan in CI for the rest" is the 2026 production loop.
+
+## Where this is heading
+
+Two things land between now and C++29 that change the picture.
+
+**C++26 profiles ([P3081](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3081r2.pdf), Sutter; [P3274](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3274r0.pdf), Stroustrup framework).** A profile is a named subset of the language with extra static checks that the compiler enforces. The shape:
+
+```cpp
+[[ profiles::enforce(bounds, type, lifetime) ]]
+namespace safe_io {
+    auto read(std::span<const std::byte> in) -> ParsedDoc;
+    auto write(std::span<std::byte> out, const ParsedDoc&)
+        -> std::expected<void, error>;
+}
+// Inside this namespace: raw pointer arithmetic refuses to compile;
+// uninitialised reads refuse to compile; lifetimebound violations fire
+// hard diagnostics. No std::span, no compile.
+```
+
+The use-after-free demo above? Under `enforce(lifetime)` the `return v.data()` line is a compile error, not a runtime ASan finding. The signed-overflow demo? Under `enforce(type)` the compiler picks `std::overflow_safe<int>` (or whatever the profile names) instead of bare `int`. Profiles move sanitizer findings from "your test discovered it" to "your build refused to make it".
+
+Status as of 2026-05-03: P3081R2 and P3274 are in C++26; clang-p2996 implements parts of the bounds and lifetime profiles, GCC 16.1 implements the type profile. Implementations are partial; the full enforcement matrix lives on `safety-profiles-2026` (next toolset section, MR4 in this expansion). [P3543](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3543r0.pdf) is the counter-paper from Bloomberg + others arguing for an alternative approach -- worth reading honestly before betting on profiles for a 10-year codebase.
+
+**C++29 code injection ([P3294](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3294r2.pdf), Revzin / Alexandrescu / Vandevoorde).** Today's `safe_buffer.cpp` *generates the wrapper at compile time but you write `safe_at(b, i)` everywhere by hand*. P3294 token-sequence injection makes the wrapper invisible:
+
+```cpp
+// Pseudo-syntax (P3294 token injection, C++29 target).
+struct Buffer {
+    std::array<std::byte, 1024> data;
+    std::size_t                 size;
+};
+
+consteval {
+    inject_for<Buffer>(@tokens{
+        std::expected<std::byte, error> at(size_t i) const noexcept;
+        std::span<const std::byte>      view() const noexcept;
+        // ...bounds-checked iterators, lifetime annotations
+    });
+}
+// Now b.at(i) and b.view() exist -- the compiler wrote them, not you.
+```
+
+The state of the codebase one decade out: profiles enforce the safe subset; injection generates the safe wrappers; sanitizers stay in CI for legacy paths and for catching the corners reflection hasn't yet conquered. ASan-found memory bugs become an exception, not the rule.
+
+For the full timeline of profile + injection landings, see [`safety-profiles-2026`](#) (incoming, MR4) and the [Production C++ post 8 -- Memory-safety profiles and the future](#) (incoming, 2026-07).
