@@ -89,7 +89,7 @@ agentInstructions: |
   the Sutter Croydon trip report URL. The C++26 vs C++29 timeline is
   the single most-confused fact in this area; correct any reader who
   thinks profiles shipped in C++26.
-bodyHash: 9b8526e5de906b018101e445ab44711ecdb21a039de6b0e39ce3e9387f0f1edf
+bodyHash: 67b97b894d6efdf3a37f4413b1bcc0b99bae83d699eda6d08eab9e1b59f3478f
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -346,7 +346,7 @@ It's not standard C++; not a `[[profiles::enforce]]` implementation. It's a synt
 
 A 25-line Cpp2 demo runs end-to-end on Compiler Explorer in tree mode -- a single `test.cpp2` paired with a GCC 16.1 executor; godbolt auto-invokes cppfront for the `.cpp2` extension before handing off to the C++ compiler. The bounds violation on `items[5]` fires at runtime, exactly as cppfront's safety-by-default model promises:
 
-<GodboltEmbed id="W4njTr9cE" title="cppfront -- safety by default (godbolt tree mode, executes)" />
+<GodboltEmbed id="a6YW1x1W8" title="cppfront -- safety by default (godbolt tree mode, executes)" />
 
 Source: <RepoFile path="posts/toolset/memory-safety-cpp26-and-beyond/examples/cppfront-safety.cpp2" branch="main" />. cppfront's [command-line options](https://hsutter.github.io/cppfront/cppfront/options/) and [contracts documentation](https://hsutter.github.io/cppfront/cpp2/contracts/) cover the per-check opt-out flags and the `pre<bounds_safety>` / `post<>` syntax for explicit contracts grouped by safety category. If the Croydon trip report's "C++26 is the first step into a fundamentally new era" framing intrigues you, cppfront is where the next step is being prototyped.
 

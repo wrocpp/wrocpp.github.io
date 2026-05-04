@@ -348,8 +348,8 @@ memory-safety-cpp26-and-beyond:
       static_assert fire with the profile-violation reason.'
   cppfront_safety:
     title: cppfront -- safety by default (executes via godbolt tree mode)
-    id: W4njTr9cE
-    url: https://godbolt.org/z/W4njTr9cE
+    id: a6YW1x1W8
+    url: https://godbolt.org/z/a6YW1x1W8
     expected_output: |-
       Program returned: 1
       /app/test.cpp2(20) int main(): Bounds safety violation: out of bounds access attempt detected - attempted access at index 5, [min,max] range is [0,2]
