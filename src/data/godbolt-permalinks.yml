@@ -92,8 +92,8 @@ template-for-expansion-statements:
 enum-to-string:
   renum:
     title: Renum
-    gcc_id: qEjo8ME17
-    gcc_url: https://godbolt.org/z/qEjo8ME17
+    gcc_id: vYsfvz3Yh
+    gcc_url: https://godbolt.org/z/vYsfvz3Yh
     gcc_expected_output: 'green
 
       read|exec

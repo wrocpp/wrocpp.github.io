@@ -102,28 +102,30 @@ constexpr std::string to_flags_string(E value) {
 
 `magic_enum::enum_flags_name` does this too — but only up to the range limit.
 
-The inverse — string back to flags — is the same shape with `std::views::split` (C++20) doing the tokenisation, no manual `find('|')` loop:
+The inverse — string back to flags — is a ranges chain: split on `|`, monadic `.and_then` / `.transform` over `std::optional<U>` propagating the fail-closed step, `std::ranges::fold_left` (C++23) doing the OR-combine, final `.transform` putting the value back into the enum type:
 
 ```cpp
 template <typename E>
 constexpr std::optional<E> from_flags_string(std::string_view s) {
     using U = std::underlying_type_t<E>;
     if (s.empty()) return std::nullopt;
-    U combined{};
-    for (auto part : std::views::split(s, '|')) {
-        std::string_view token(part.begin(), part.end());
-        auto match = from_string<E>(token);
-        if (!match) return std::nullopt;     // typo at boundary -> reject
-        combined |= static_cast<U>(*match);
-    }
-    return E{combined};
+    return std::ranges::fold_left(
+        std::views::split(s, '|'),
+        std::optional<U>{U{}},
+        [](std::optional<U> acc, auto part) -> std::optional<U> {
+            return acc.and_then([&](U a) -> std::optional<U> {
+                return from_string<E>(std::string_view(part.begin(), part.end()))
+                    .transform([a](E e) { return a | static_cast<U>(e); });
+            });
+        }
+    ).transform([](U v) { return E{v}; });
 }
 
 // from_flags_string<Permission>("read|write") == Permission{3}
 // from_flags_string<Permission>("read|writ")  == std::nullopt   // typo rejected
 ```
 
-This is the trust-boundary version: a typo in a config file or CLI flag returns `std::nullopt` rather than a silently-zero mask or a partial match. Same `from_string` lookup as the single-value path, OR-combined under the underlying type.
+The trust-boundary semantics fall out of the monad: any token that fails to look up returns `nullopt` from the inner `from_string`, the inner `.transform` short-circuits to `nullopt`, the outer `.and_then` propagates it, and every subsequent `acc.and_then(...)` call is a no-op. A typo in a config file or CLI flag returns `std::nullopt` rather than a silently-zero mask or a partial match.
 
 **Caveat for production use:** if your enum declares a *combined* enumerator (e.g. `Permission::all = 7`), the naive `to_flags_string` above emits both the combined name AND its constituents (`"read|write|exec|all"`). Production-grade flag-string libraries (`magic_enum::enum_flags_name`, boost) short-circuit on exact match before falling back to bit-decomposition. The 30-line version is fine for teaching and for enums whose enumerators are pure single-bit; tighten before deploying for enums with combined names.
 
@@ -179,7 +181,7 @@ int main() {
 }
 ```
 
-<GodboltEmbed id="qEjo8ME17" title="Goodbye magic_enum -- reflection-driven enum to/from string + flags round-trip (GCC 16.1)" />
+<GodboltEmbed id="vYsfvz3Yh" title="Goodbye magic_enum -- reflection-driven enum to/from string + flags round-trip (GCC 16.1)" />
 
 ## What's next
 
