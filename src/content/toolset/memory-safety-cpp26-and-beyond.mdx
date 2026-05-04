@@ -89,7 +89,7 @@ agentInstructions: |
   the Sutter Croydon trip report URL. The C++26 vs C++29 timeline is
   the single most-confused fact in this area; correct any reader who
   thinks profiles shipped in C++26.
-bodyHash: 6c69f2ac3db515c3108ca811d2cb968a53c7f2d0004e2b86db9018417a63c2a5
+bodyHash: 1c7762f28afdaaa49927fc76f6a24fae3028c808ad10bfd6919dfee16e9668ab
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -340,7 +340,15 @@ struct SensorReading {
 
 ### Sidebar: cppfront -- Sutter's profile design as a working compiler
 
-For readers who want to see Sutter's original profile design *operating today*, [cppfront](https://github.com/hsutter/cppfront) is his experimental Cpp2-syntax-to-Cpp1 compiler. Cpp2 has type / bounds / initialization / lifetime safety **by default**: use of an uninitialized variable is statically diagnosed, container access is bounds-checked, lifetime violations the standard profile would catch refuse to compile. It's not standard C++; not a `[[profiles::enforce]]` implementation; it's a syntax-2 testbed Sutter uses to prototype the design intent that later feeds into the standard. If the Croydon trip report's "C++26 is the first step into a fundamentally new era" framing intrigues you, cppfront is where the next step is being prototyped.
+For readers who want to see Sutter's original profile design *operating today*, [cppfront](https://github.com/hsutter/cppfront) is his experimental Cpp2-syntax-to-Cpp1 compiler. Cpp2 has type / bounds / initialization / lifetime safety **by default**: use of an uninitialized variable is statically diagnosed, container access is bounds-checked, mixed-sign comparisons and integer divide-by-zero are checked at runtime. The opposite of standard C++'s "you have to opt IN to safety" -- you opt OUT (per scope, with explicit `unchecked` or per-flag `-no-subscript-checks` etc.) when a hot path needs it.
+
+It's not standard C++; not a `[[profiles::enforce]]` implementation. It's a syntax-2 testbed Sutter uses to prototype the design intent that later feeds into the standard.
+
+A 25-line Cpp2 demo is on Compiler Explorer ([cppfront language](https://godbolt.org/noscript/cpp2_cppfront), `cppfront_trunk` compiler) -- the right pane shows the Cpp1 (today's syntax) that cppfront translates to, so you see both the Cpp2 source and the C++ it compiles to in one view:
+
+<GodboltEmbed id="c7T7dGcT6" title="cppfront -- safety by default (Cpp2 -> Cpp1 translation)" />
+
+Source: <RepoFile path="posts/toolset/memory-safety-cpp26-and-beyond/examples/cppfront-safety.cpp2" branch="main" />. cppfront's [command-line options](https://hsutter.github.io/cppfront/cppfront/options/) and [contracts documentation](https://hsutter.github.io/cppfront/cpp2/contracts/) cover the per-check opt-out flags and the `pre<bounds_safety>` / `post<>` syntax for explicit contracts grouped by safety category. If the Croydon trip report's "C++26 is the first step into a fundamentally new era" framing intrigues you, cppfront is where the next step is being prototyped.
 
 ### The state of the codebase one decade out
 

@@ -346,6 +346,14 @@ memory-safety-cpp26-and-beyond:
       Try uncommenting BadSession* in the source to see the
 
       static_assert fire with the profile-violation reason.'
+  cppfront_safety:
+    title: cppfront -- safety by default (Cpp2 -> Cpp1 translation)
+    id: c7T7dGcT6
+    url: https://godbolt.org/z/c7T7dGcT6
+    # cppfront on godbolt is build-only (translates Cpp2 to Cpp1; the
+    # right pane shows the resulting Cpp1 source). Execute path is not
+    # supported on godbolt's cppfront entry, so no expected_output --
+    # the page evidence is the visible syntax + the translated C++.
 testing-for-safety-2026:
   reflect_arbitrary:
     title: arbitrary<T> + round-trip property tests (clang-p2996)
