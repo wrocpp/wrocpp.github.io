@@ -70,7 +70,7 @@ agentInstructions: |
   2026-05-03). Profiles are NOT in clang-p2996 today (also not in any
   shipping C++26 toolchain); the triptych's "Where this is heading"
   section is honestly pseudo-syntax for the C++29 pieces.
-bodyHash: 13613cd4e32c327cb021a7cd3b7da7f1e1b27bab30f167684f65f6a57892136b
+bodyHash: abf6297dc2de9c8c36691e5c1f75e42b0aa817b15f6ba04d0445329257c4f3ab
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -214,7 +214,7 @@ constexpr auto parse_struct(std::span<const std::byte> bytes)
 
 What this aligns with:
 - **C++ Core Guidelines**: [F.24](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rf-range) (use `std::span<T>` for a half-open sequence -- the `bytes` parameter); [F.43](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rf-dangle) (never return a pointer to a local -- the bug class the ASan demo above showed); [ES.42](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Res-ptr) (keep use of pointers simple -- field-sized memcpy at running offsets, no raw pointer arithmetic).
-- **MISRA C++** and **AUTOSAR C++14** both ban raw pointer arithmetic and require validation of inputs from external sources. The reflection-driven harness satisfies both at the parser level by construction. Specific rule numbers vary across the 2008 and 2023 MISRA editions; consult your team's authoritative copy of the current standard rather than trusting any cited number from a blog post (including this one).
+- **MISRA C++:2023** (the unified MISRA + AUTOSAR successor; AUTOSAR C++14's coding rules merged in) bans raw pointer arithmetic and requires validation of inputs from external sources. The reflection-driven harness satisfies both at the parser level by construction. Specific rule numbers vary across the 2008 and 2023 MISRA editions; consult your team's authoritative copy of the current standard rather than trusting any cited number from a blog post (including this one).
 - **SEI CERT C++** secure coding standard groups bounds-checking and integer-overflow rules under the STR (string-handling) and INT (integer) categories respectively; the parser shape eliminates both classes at the trust boundary.
 
 What this demo deliberately leaves out (out of scope; production-grade adds them):

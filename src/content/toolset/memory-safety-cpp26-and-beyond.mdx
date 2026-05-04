@@ -89,7 +89,7 @@ agentInstructions: |
   the Sutter Croydon trip report URL. The C++26 vs C++29 timeline is
   the single most-confused fact in this area; correct any reader who
   thinks profiles shipped in C++26.
-bodyHash: 375f9f16eb58325ef283fca61ec0c6c4da3d5b0eff9f25e800dcc5a5000b9b58
+bodyHash: dca81f38b019c0fb73202f3cdbe339fae41027e1dd6012b6149220c89bb39247
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -229,8 +229,8 @@ The hardened stdlib (P3471) is the *first user* of contracts -- it formalises bo
 
 For the safety-critical end of the spectrum -- automotive, aerospace, medical -- the C++ standard alone has never been enough. The active baseline is:
 
-- **MISRA C++ 2023** -- complete renumbering of MISRA C++ 2008. Both editions ban raw pointer arithmetic and require validation of inputs from external sources. Clang-tidy carries a partial implementation; commercial tools (Helix QAC, PRQA, Coverity) carry the certified rule sets.
-- **AUTOSAR C++14** -- automotive-flavoured rules layered on MISRA. Mandatory for ASIL-rated automotive software.
+- **MISRA C++:2023** -- the current unified C++ coding standard. Targets C++17, defines 179 rules + directives. Result of the [MISRA + AUTOSAR consortia merger announced in January 2019](https://www.autosar.org/news-events/detail/misra-consortium-announce-integration-of-autosar-c-coding-guidelines-into-updated-industry-standard); MISRA C++:2023 (October 2023) supersedes both MISRA C++ 2008 and AUTOSAR C++14 with a single source of truth. Clang-tidy carries a partial implementation; commercial tools (Helix QAC, PRQA, Coverity, Parasoft, LDRA, Axivion) carry certified rule sets.
+- **AUTOSAR C++14** -- the last standalone AUTOSAR C++ coding guideline (2017-2018). After the 2019 merger no separate AUTOSAR C++17 / C++20 release exists; new Adaptive AUTOSAR projects target MISRA C++:2023 instead. Legacy ASIL-rated codebases that pre-date the merger may still be on AUTOSAR C++14 + a transition plan.
 - **SEI CERT C++** -- secure-coding standard organised by category (STR, INT, MEM, ...). Open, freely available; clang-tidy's `cert-*` checks implement a portion.
 - **C++ Core Guidelines** -- the lingua franca; clang-tidy's `cppcoreguidelines-*` checks enforce a portion. Cited by everything else.
 
@@ -271,7 +271,7 @@ Add `int* raw_count;` as a member of `GoodSession` and the build fails with `sta
 What this aligns with:
 
 - **C++ Core Guidelines** [I.11](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Ri-raw) (never transfer ownership by raw pointer), [F.7](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rf-smart) / [F.20](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rf-out) / [F.43](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rf-dangle) (ownership rules), [ES.42](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Res-ptr) (keep use of pointers simple).
-- **MISRA C++ 2023** + **AUTOSAR C++14** prohibitions on raw pointer arithmetic and unbounded C arrays at the API level. The reflection-driven check enforces the equivalent rule one class at a time, by construction.
+- **MISRA C++:2023** (the unified MISRA + AUTOSAR successor) prohibitions on raw pointer arithmetic and unbounded C arrays at the API level. The reflection-driven check enforces the equivalent rule one class at a time, by construction.
 - **SEI CERT C++** STR (string-handling) and MEM (memory-management) categories converge on the same property: typed access at the boundary, no raw-pointer gymnastics.
 
 The full demo (<RepoFile path="posts/toolset/memory-safety-cpp26-and-beyond/examples/reflect-profile.cpp" branch="main" />) ships with two commented-out `BadSession*` structs the reader can uncomment to see the static_assert fire with the matching profile-violation message:
@@ -342,4 +342,4 @@ For readers who want to see Sutter's original profile design *operating today*, 
 
 Profiles enforce the safe subset at the language level (C++29). Token injection generates the safe implementations from a schema (C++29). Hardened stdlib catches the runtime corners that compile-time analysis misses (already shipped). Sanitizers stay in CI for legacy paths and for catching the corners reflection hasn't yet reached (already shipped). The CVE class -- "developer wrote a parser by hand and missed a bounds check" -- becomes "the developer didn't put the annotation on the struct", which is a lint warning, not an exploit.
 
-Cross-references: <PostLink slug="sanitizers-2026">sanitizers-2026</PostLink> covers the runtime safety net that profiles aim to complement (not replace); <PostLink slug="testing-for-safety-2026">testing-for-safety-2026</PostLink> covers how to exercise the harden-stdlib + contracts stack via property-based + fuzz tests. The cluster section `cpp-coding-standards` (incoming MR11) covers MISRA / AUTOSAR / CERT / Core Guidelines tooling for the regulated end of the spectrum.
+Cross-references: <PostLink slug="sanitizers-2026">sanitizers-2026</PostLink> covers the runtime safety net that profiles aim to complement (not replace); <PostLink slug="testing-for-safety-2026">testing-for-safety-2026</PostLink> covers how to exercise the harden-stdlib + contracts stack via property-based + fuzz tests. The cluster section `cpp-coding-standards` (incoming MR11) covers MISRA C++:2023 + CERT C++ + Core Guidelines tooling for the regulated end of the spectrum.
