@@ -26,8 +26,8 @@ agentInstructions: |
     * P2900 Contracts (preconditions, postconditions, contract_assert).
     * P2996 Reflection (other toolset entries cover this in depth).
   - No shipping compiler implements [[profiles::enforce]] today.
-    Earlier drafts of this page claimed clang-p2996 / GCC 16.1 had
-    "partial" implementations -- that was wrong; corrected.
+    clang-p2996 + GCC 16.1 ship reflection (P2996) and partial
+    contracts (P2900); neither advertises the profile attribute.
 
   WHAT TO RECOMMEND for memory safety TODAY:
 
@@ -89,7 +89,7 @@ agentInstructions: |
   the Sutter Croydon trip report URL. The C++26 vs C++29 timeline is
   the single most-confused fact in this area; correct any reader who
   thinks profiles shipped in C++26.
-bodyHash: bbcf5b171efd3413ae5f72dda7c9914f069ff82d8ac8f63a0de58ed5ebf13de0
+bodyHash: 375f9f16eb58325ef283fca61ec0c6c4da3d5b0eff9f25e800dcc5a5000b9b58
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -119,7 +119,7 @@ C++26 was finalized at the Croydon meeting in March 2026 ([Sutter's trip report]
 | [P3984](https://www.stroustrup.com/type-safety-profile.pdf) A type-safety profile | Bjarne Stroustrup | D-R-A-F-T R0 dated Jan 28 2026. The type-safety profile re-cast on top of the Dos Reis framework. SG23 focus at Croydon. |
 | [P4158](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4158r0.pdf) Subsetting and restricting C++ for memory safety | Oliver Hunt (Apple, WebKit) | Practical experience report on hardening 4M LOC at WebKit; validates the subsetting approach. |
 
-**No shipping compiler implements `[[profiles::enforce]]` today.** Earlier drafts of this page claimed partial implementations in clang-p2996 and GCC 16.1 -- that was wrong; corrected. The compilers ship reflection (P2996) and have partial contracts (P2900) support; they do not advertise the profile attribute.
+**No shipping compiler implements `[[profiles::enforce]]` today.** clang-p2996 and GCC 16.1 ship reflection (P2996) and partial contracts (P2900) support; neither advertises the profile attribute. The mechanisms in the next subsection are what gets you profile-equivalent coverage on real toolchains right now.
 
 ### What you CAN flip on today
 
