@@ -347,9 +347,17 @@ memory-safety-cpp26-and-beyond:
 
       static_assert fire with the profile-violation reason.'
   cppfront_safety:
-    title: cppfront -- safety by default (executes via godbolt tree mode)
-    id: a6YW1x1W8
-    url: https://godbolt.org/z/a6YW1x1W8
+    title: cppfront -- safety by default (executes via godbolt CMake tree)
+    id: dGaP7nYaf
+    url: https://godbolt.org/z/dGaP7nYaf
+    # User-curated session shape. Re-deriving via shortlinkinfo + shortener
+    # produces a structurally-identical short link that fails to compile
+    # (godbolt appears to carry implicit session state that does not
+    # round-trip through the API). When cppfront upstream cpp2util.h
+    # changes meaningfully and this link's bundled copy goes stale, the
+    # right move is to manually re-create the session in godbolt's UI
+    # (clone this URL, refresh cpp2util.h tab from upstream, save) rather
+    # than scripting it. See memory/godbolt_cppfront.md for details.
     expected_output: |-
       Program returned: 1
       /app/test.cpp2(20) int main(): Bounds safety violation: out of bounds access attempt detected - attempted access at index 5, [min,max] range is [0,2]
