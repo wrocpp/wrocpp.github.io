@@ -198,13 +198,15 @@ overall: PASS
 
 Add a fourth field to `SensorReading` and a matching `field_spec` to the test spec; the cross-product expands and the next CI run exercises 162 samples. Add the field to production but forget the spec -- compile error, no silent drift. Swap two field declarations by mistake (a real bug: parser reads `u16` then `i32` but serializer writes `i32` then `u16` after someone reordered for "natural padding") -- P1 and P2 fail loudly across all 54 samples. Drop `round_trip = false` because the parser is exercised elsewhere -- the runner skips the round-trip checks at compile time, no wasted CI cycles.
 
-Full file: <RepoFile path="posts/toolset/testing-for-safety-2026/examples/reflect-arbitrary.cpp" branch="main" />. (Godbolt embed regenerates on the next `shorten-examples.py` run.)
+Full file: <RepoFile path="posts/toolset/testing-for-safety-2026/examples/reflect-arbitrary.cpp" branch="main" />.
+
+<GodboltEmbed id="q4b5a439M" title="arbitrary<T> + round-trip property tests (clang-p2996)" />
 
 <DockerRun
   image="ghcr.io/wrocpp/cpp-reflection:2026-05"
   command="bash -c 'clang++ -std=c++26 -freflection-latest -stdlib=libc++ posts/toolset/testing-for-safety-2026/examples/reflect-arbitrary.cpp -o /tmp/arb && LD_LIBRARY_PATH=/opt/p2996/clang/lib/aarch64-unknown-linux-gnu /tmp/arb'"
   expected="overall: PASS"
-  title="arbitrary<T> + round-trip property tests, locally on cpp-reflection"
+  title="Same example, locally on cpp-reflection"
 />
 
 The same `arbitrary<T>` kernel underwrites every other property-style test in the cluster. A fuzz harness translates random bytes into well-formed T values via `arbitrary<T>` so libFuzzer / AFL++ exercise structured inputs instead of bouncing off the parser's bounds check. A differential test runs both implementations of the same interface on samples drawn from `arbitrary<T>` and asserts equivalent outputs. A fixture factory replaces hand-written `make_test_X()` builders. None of the wrappers add per-struct boilerplate; the kernel does the work.
@@ -266,11 +268,13 @@ The bug is on the failure line. Add a field, both helpers cover it on the next b
 
 Full file: <RepoFile path="posts/toolset/testing-for-safety-2026/examples/reflect-pretty-diff.cpp" branch="main" />.
 
+<GodboltEmbed id="3n634TqMb" title="pretty_diff field-level test diagnostics (clang-p2996)" />
+
 <DockerRun
   image="ghcr.io/wrocpp/cpp-reflection:2026-05"
   command="bash -c 'clang++ -std=c++26 -freflection-latest -stdlib=libc++ posts/toolset/testing-for-safety-2026/examples/reflect-pretty-diff.cpp -o /tmp/diff && LD_LIBRARY_PATH=/opt/p2996/clang/lib/aarch64-unknown-linux-gnu /tmp/diff'"
   expected="raw_value: 12345 != 12344"
-  title="pretty_diff field-level test failure diagnostics"
+  title="Same example, locally on cpp-reflection"
 />
 
 ### Where reflection-alone falls short
