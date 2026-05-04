@@ -102,6 +102,32 @@ constexpr std::string to_flags_string(E value) {
 
 `magic_enum::enum_flags_name` does this too — but only up to the range limit.
 
+The inverse — string back to flags — is the same shape with one extra step (split on `|`):
+
+```cpp
+template <typename E>
+constexpr std::optional<E> from_flags_string(std::string_view s) {
+    using U = std::underlying_type_t<E>;
+    if (s.empty()) return std::nullopt;
+    U combined{};
+    while (true) {
+        auto pipe = s.find('|');
+        auto token = s.substr(0, pipe);
+        auto match = from_string<E>(token);
+        if (!match) return std::nullopt;     // typo at the boundary -> reject
+        combined |= static_cast<U>(*match);
+        if (pipe == std::string_view::npos) break;
+        s = s.substr(pipe + 1);
+    }
+    return E{combined};
+}
+
+// from_flags_string<Permission>("read|write") == Permission{3}
+// from_flags_string<Permission>("read|writ")  == std::nullopt   // typo rejected
+```
+
+This is the trust-boundary version: a typo in a config file or CLI flag returns `std::nullopt` rather than a silently-zero mask or a partial match. Same `from_string` lookup as the single-value path, OR-combined under the underlying type.
+
 ## What you lose vs. `magic_enum`
 
 Honestly, not much that matters:
