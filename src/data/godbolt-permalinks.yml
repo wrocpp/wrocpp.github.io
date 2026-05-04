@@ -348,20 +348,20 @@ memory-safety-cpp26-and-beyond:
       static_assert fire with the profile-violation reason.'
   cppfront_safety:
     title: cppfront -- safety by default (executes via godbolt CMake tree)
-    id: EM9jfTToY
-    url: https://godbolt.org/z/EM9jfTToY
-    # Built by cloning user's reference shape (5EW8oGY8q) which uses the
-    # CRITICAL keys earlier attempts missed: session.language=cpp2_cppfront
-    # (not "c++") so godbolt knows to invoke cppfront, plus tree.compilers
-    # with execute=true (not session-level executor or tree-level executor).
-    # Bundled cpp2util.h is the full ~104K upstream copy from
-    # github.com/hsutter/cppfront/main/include -- the user's reference uses
-    # a 1-line URL #include trick which is elegant but more fragile.
-    # If this link breaks, fall back to the user's 5EW8oGY8q (their own
-    # parameter-passing demo) and clone-and-edit in the godbolt UI.
+    id: 8v76EaM7a
+    url: https://godbolt.org/z/8v76EaM7a
+    # User-curated link: language=cpp2_cppfront, isCMakeProject=true,
+    # tree.compilers (clang_trunk, execute=true), JEGP cppfront-CMake
+    # integration in the tree. Compiles main.cpp2 -> main.cpp via cppfront
+    # then clang+libc++; bounds_safety violation on items[5] fires at
+    # runtime with line/index in the diagnostic.
+    # If cpp2util.h goes stale relative to current cppfront output (new
+    # cpp2::impl::* symbols emitted), refresh by opening this link in
+    # godbolt UI, paste fresh upstream into cpp2util.h tab,
+    # Share -> Short link, record new id. See memory/godbolt_cppfront.md.
     expected_output: |-
       Program returned: 1
-      /app/main.cpp2 int main(): Bounds safety violation: out of bounds access attempt detected - attempted access at index 5, [min,max] range is [0,2]
+      main.cpp2(19) int main(): Bounds safety violation: out of bounds access attempt detected
       items[1]: 20
 testing-for-safety-2026:
   reflect_arbitrary:
