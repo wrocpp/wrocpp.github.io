@@ -361,18 +361,8 @@ memory-safety-cpp26-and-beyond:
     # parameter-passing demo) and clone-and-edit in the godbolt UI.
     expected_output: |-
       Program returned: 1
-      Bounds safety violation: out of bounds access attempt detected - attempted access at index 5, [min,max] range is [0,2]
+      /app/main.cpp2 int main(): Bounds safety violation: out of bounds access attempt detected - attempted access at index 5, [min,max] range is [0,2]
       items[1]: 20
-    expected_output: |-
-      Program returned: 1
-      /app/test.cpp2(20) int main(): Bounds safety violation: out of bounds access attempt detected - attempted access at index 5, [min,max] range is [0,2]
-      items[1]: 20
-    # Uses godbolt's tree-mode (isCMakeProject: false) with a single
-    # test.cpp2 file in a tree paired with one executor entry pointing at
-    # GCC 16.1. Godbolt auto-invokes cppfront for .cpp2 files in tree
-    # mode, then the executor runs the resulting binary. Cleaner than the
-    # CMake-with-jegp-modules variant: no vendored CMake files, no
-    # custom_command pipeline, executor pane renders clean program output.
 testing-for-safety-2026:
   reflect_arbitrary:
     title: arbitrary<T> + round-trip property tests (clang-p2996)
