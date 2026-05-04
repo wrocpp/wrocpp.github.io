@@ -348,8 +348,8 @@ memory-safety-cpp26-and-beyond:
       static_assert fire with the profile-violation reason.'
   cppfront_safety:
     title: cppfront -- safety by default (CMake + cpp2 -> cpp1 -> binary, executes)
-    id: 853jT4z6x
-    url: https://godbolt.org/z/853jT4z6x
+    id: c4vMa3xvn
+    url: https://godbolt.org/z/c4vMa3xvn
     expected_output: |-
       items[1]: 20
       Bounds safety violation detected: out of bounds access detected
