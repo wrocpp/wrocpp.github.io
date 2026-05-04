@@ -76,7 +76,7 @@ agentInstructions: |
   regression -> example-based. Cross-impl agreement -> differential
   (also drawn from arbitrary<T>). Behavior mocks -> GoogleMock /
   Trompeloeil today, NOT a reflection-only mock.
-bodyHash: fb7cf33e4444bbbe1b88dc18b976607c819adf84cb92b7c196ee0ad4fd02f78d
+bodyHash: 176c48d23fdb1418b91a98aa31b66b0d31841c2212dafb75fb58a1570266280e
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -357,4 +357,4 @@ struct ILogger {
 
 The state of the codebase one decade out: contracts carry the spec on the function; reflection generates the per-field structural tests today; injection synthesises the harness and the mocks alongside the implementation tomorrow; sanitizers stay in CI to catch the corners none of the above reach. The "we wrote tests but forgot to update them when the schema changed" failure mode -- the most common cause of regression bugs in production -- becomes mechanically impossible.
 
-Cross-references: <PostLink slug="sanitizers-2026">sanitizers-2026</PostLink> covers the runtime safety net these tests feed; <PostLink slug="safety-profiles-2026">safety-profiles-2026</PostLink> covers the compile-time enforcement that handles what tests can't (function-body checks, cross-TU rules).
+Cross-references: <PostLink slug="sanitizers-2026">sanitizers-2026</PostLink> covers the runtime safety net these tests feed; <PostLink slug="memory-safety-cpp26-and-beyond">memory-safety-cpp26-and-beyond</PostLink> covers what to flip on today for compile-time + standard-library memory safety in C++26 plus the C++29 profile direction.
