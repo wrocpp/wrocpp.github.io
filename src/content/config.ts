@@ -143,6 +143,15 @@ const toolset = defineCollection({
      * (per https://llmstxt.org/).
      */
     agentInstructions: z.string().optional(),
+    /**
+     * SHA256 hex of the body (everything after the closing frontmatter
+     * delimiter). Stale-snapshot guard for agentInstructions: edit the
+     * body and the hash drifts; the prebuild check (scripts/
+     * check-llms-sync.py) refuses to ship until you re-review
+     * agentInstructions and re-record the hash. Missing the field is
+     * tolerated only on entries with NO agentInstructions.
+     */
+    bodyHash: z.string().optional(),
   }),
 });
 

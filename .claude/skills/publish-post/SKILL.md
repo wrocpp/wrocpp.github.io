@@ -134,7 +134,20 @@ NODE_ENV=production npm run build
 python3 scripts/check-post-links.py --slug <slug>
 ```
 
-`npm run build` must complete without warnings. `check-post-links.py` greps every `href` in the new post's HTML and verifies internal links resolve in `dist/`, plus HEAD-checks external links. **Abort on any failure** -- this catches forward-refs that escaped PostLink wrapping (the failure mode where a live post has a broken link to an unshipped post).
+`npm run build` must complete without warnings. The `prebuild` hook
+runs `scripts/check-llms-sync.py` automatically -- if any toolset entry
+was touched on this branch (cross-link added, frontmatter tweaked) and
+its `agentInstructions` was not re-reviewed, the build fails with the
+expected/actual `bodyHash`. **Resolve the drift before re-running the
+build**: open the named entry, read its body and its `agentInstructions`
+side by side, edit `agentInstructions` for any new claims or removed
+patterns, then run `python3 scripts/check-llms-sync.py --update` to
+record the new hash. Skipping the review and just running `--update`
+defeats the guard's purpose -- the per-page `/toolset/<slug>/llms.txt`
+exists to give agents a current summary of the page; a stale summary
+ships bad recommendations.
+
+`check-post-links.py` greps every `href` in the new post's HTML and verifies internal links resolve in `dist/`, plus HEAD-checks external links. **Abort on any failure** -- this catches forward-refs that escaped PostLink wrapping (the failure mode where a live post has a broken link to an unshipped post).
 
 If any internal link points to a post that hasn't shipped yet, wrap that link in `<PostLink slug="...">label</PostLink>` so it renders as plain text until the target's pubDate, then auto-becomes a live link.
 

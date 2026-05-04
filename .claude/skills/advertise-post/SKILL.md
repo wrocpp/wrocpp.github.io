@@ -33,6 +33,7 @@ The skill must be invoked from the wrocpp.github.io repo root.
 - `which brand-gen` returns a path. (One-time install: `cd /Users/filipsajdak/dev/scudoai/brand-kit && npm link`.)
 - Working tree is clean (or you're on a dedicated `chore/social-<slug>` branch).
 - The target post has `draft: false` in its frontmatter.
+- `python3 scripts/check-llms-sync.py` reports OK across all toolset entries. If it fails, the post being advertised may cross-reference a toolset page whose `agentInstructions` (and therefore the per-page `/toolset/<slug>/llms.txt` an agent fetches) is stale relative to the body. Resolve the drift first: read the named entry's body and `agentInstructions` together, edit the instructions for any new claims or removed patterns, then `python3 scripts/check-llms-sync.py --update`. Do NOT just `--update` without reviewing -- the guard exists to make the review explicit.
 
 If any precondition fails, abort and explain the fix.
 
