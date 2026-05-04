@@ -102,7 +102,7 @@ constexpr std::string to_flags_string(E value) {
 
 `magic_enum::enum_flags_name` does this too — but only up to the range limit.
 
-The inverse — string back to flags — is the same shape with one extra step (split on `|`):
+The inverse — string back to flags — is the same shape with `std::views::split` (C++20) doing the tokenisation, no manual `find('|')` loop:
 
 ```cpp
 template <typename E>
@@ -110,14 +110,11 @@ constexpr std::optional<E> from_flags_string(std::string_view s) {
     using U = std::underlying_type_t<E>;
     if (s.empty()) return std::nullopt;
     U combined{};
-    while (true) {
-        auto pipe = s.find('|');
-        auto token = s.substr(0, pipe);
+    for (auto part : std::views::split(s, '|')) {
+        std::string_view token(part.begin(), part.end());
         auto match = from_string<E>(token);
-        if (!match) return std::nullopt;     // typo at the boundary -> reject
+        if (!match) return std::nullopt;     // typo at boundary -> reject
         combined |= static_cast<U>(*match);
-        if (pipe == std::string_view::npos) break;
-        s = s.substr(pipe + 1);
     }
     return E{combined};
 }
@@ -127,6 +124,8 @@ constexpr std::optional<E> from_flags_string(std::string_view s) {
 ```
 
 This is the trust-boundary version: a typo in a config file or CLI flag returns `std::nullopt` rather than a silently-zero mask or a partial match. Same `from_string` lookup as the single-value path, OR-combined under the underlying type.
+
+**Caveat for production use:** if your enum declares a *combined* enumerator (e.g. `Permission::all = 7`), the naive `to_flags_string` above emits both the combined name AND its constituents (`"read|write|exec|all"`). Production-grade flag-string libraries (`magic_enum::enum_flags_name`, boost) short-circuit on exact match before falling back to bit-decomposition. The 30-line version is fine for teaching and for enums whose enumerators are pure single-bit; tighten before deploying for enums with combined names.
 
 ## What you lose vs. `magic_enum`
 
@@ -180,7 +179,7 @@ int main() {
 }
 ```
 
-<GodboltEmbed id="MTr1q8P6h" title="Goodbye magic_enum -- reflection-driven enum to/from string + flags round-trip (GCC 16.1)" />
+<GodboltEmbed id="qEjo8ME17" title="Goodbye magic_enum -- reflection-driven enum to/from string + flags round-trip (GCC 16.1)" />
 
 ## What's next
 
