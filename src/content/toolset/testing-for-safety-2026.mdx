@@ -110,69 +110,85 @@ For automotive / aerospace / medical, the framework choice is often dictated by 
 
 ## Reflection today (C++26, clang-p2996 + GCC 16.1)
 
-A test that writes `42` to a field and reads it back tests C++ assignment, not the production code. The bugs that hit production are different shapes: the parser and serializer drift apart after one of them gains a field; an interface gains a method but only half its mocks know; a "this should never happen in the happy path" log line starts firing because nobody asserted the call count. Reflection (P2996) and **user-defined annotations (P3394, also adopted into C++26)** together let the schema itself carry the test specification: per-field hints constrain the generators; struct-level markers dispatch which properties to assert. The runner is generic; the spec lives next to the data.
+Reflection in C++26 is **structural traversal at compile time** -- walk T's members, read each member's type, read its annotations, splice it back into runtime expressions. That is the entire surface area. It is the right shape for tests that follow mechanically from struct shape ("for each field, do X"), and the wrong shape for tests that need to synthesise new code alongside the production type ("for each method, generate an intercepting wrapper with argument matchers"). The first category is where reflection genuinely earns its keep today; the second waits for C++29 token injection.
 
-### Annotation-driven round-trip property test
+The most crucial pattern in the first category is the C++ analogue of Rust's `#[derive(Arbitrary)]` and Haskell QuickCheck's `Generic` instances: a generic, type-driven sample generator that derives sensible inputs for any user-defined struct without external code generation, and that automatically grows when the struct grows. Around this `arbitrary<T>` kernel, every property-style test, fuzzer harness, fixture factory, and differential test becomes a short layer on top.
 
-The parser/serializer pair from <PostLink slug="sanitizers-2026">sanitizers-2026</PostLink> has three real invariants -- the kind that break silently in production when one side of the pair is edited and the other is not:
+The second crucial pattern is the diagnostic side of the same loop: when an assertion fails, name the differing fields. The difference between `T != T` and `field raw_value: 12345 != 12344` is the difference between attaching a debugger and reading the bug off the failure message. Reflection makes this a 30-line library that covers every struct in the codebase, never goes stale.
 
-1. `parse(serialize(x)) == x` for every well-formed value `x`.
-2. `serialize(parse(b)) == b` for every byte stream of length `wire_size<T>()`.
-3. `parse(b)` refuses cleanly when `b.size() < wire_size<T>()`.
+### Pattern 1 -- arbitrary&lt;T&gt; (the kernel) and a property test layered on top
 
-The annotation taxonomy borrows from established property-based testing libraries -- nothing here is novel, just the C++ syntax. The cousins, side by side:
-
-| Our annotation | hypothesis (Python) | JUnit 5 (Java) | proptest (Rust) | kotest / jqwik (Kotlin) |
-|---|---|---|---|---|
-| `[[=test_range{lo,hi}]]` on field | `st.integers(min_value=lo, max_value=hi)` | (no native; emulate via `@CsvSource`) | `#[strategy(lo..hi)]` | `Arb.int(lo..hi)` |
-| `[[=test_examples{{...}, n}]]` on field | `@example(value)` | `@ValueSource(ints={...})` | `prop_oneof![Just(a), Just(b)]` | `Exhaustive.of(...)` |
-| `[[=test_round_trip{}]]` struct marker | `@settings(...)` + property body | `@Tag("round_trip")` on class | `#[proptest]` fn attribute | `@Property` (jqwik) |
-| `[[=test_reject_short{}]]` struct marker | (separate test fn) | `@Tag` | (separate fn) | (separate spec) |
-
-Field-level annotations describe the valid-input domain the generator should exercise; struct-level markers dispatch which properties to assert. Same shape as `@derive(Arbitrary)` in proptest -- the type IS the test specification.
+The layering matters. Production headers must stay clean; test annotations belong in test code. The pattern that gets this right mirrors how `std::hash` and `std::formatter` are extended -- a primary `TestSpec<T>` template that test code specialises per production type:
 
 ```cpp
-struct test_range    { long long lo, hi; };
-struct test_examples { long long v[4]; std::size_t n; };  // pinned cases
-struct test_round_trip {};
-struct test_reject_short {};
-
-struct [[=test_round_trip{}]] [[=test_reject_short{}]] SensorReading {
-    [[=test_range{0, 1023}]]
-    [[=test_examples{{0, 1023, 1024, 0}, 3}]]   // lo, hi, hi+1 (off-by-one)
+// production header (sensor.hpp) -- TEST-CLEAN
+struct SensorReading {
     std::uint16_t sensor_id;
-
-    [[=test_range{-100000, 100000}]]
     std::int32_t  raw_value;
-
-    [[=test_range{0, 0xFF}]]
     std::uint8_t  status_flags;
+};
+
+// test code (sensor_test.cpp) -- the only place SensorReading and its
+// test contract appear together. Keyed by &SensorReading::field, so
+// renaming a production field breaks the spec at build time.
+template <>
+struct TestSpec<SensorReading> {
+    static constexpr bool round_trip   = true;
+    static constexpr bool reject_short = true;
+    static constexpr auto fields = std::tuple{
+        field_spec<&SensorReading::sensor_id>{
+            .range = {0, 1023},
+            .examples = {0, 1023, 1024, 0},   // lo, hi, hi+1 (off-by-one)
+            .example_count = 3,
+        },
+        field_spec<&SensorReading::raw_value>{
+            .range = {-100000, 100000},
+        },
+        field_spec<&SensorReading::status_flags>{
+            .range = {0, 0xFF},
+        },
+    };
 };
 ```
 
-The runner reads annotations back via `std::meta::annotations_of(m)` + `std::meta::extract<Tag>(a)`. Per field, it builds a sample set from `test_range` (`{lo, mid, hi}`) plus any `test_examples` (pinned values, hypothesis-style) and runs the cross-product through the parse/serialize pair:
+`arbitrary<T>()` walks `TestSpec<T>::fields` and returns the cross-product of per-field samples. The kernel is small and entirely generic in T:
 
 ```cpp
 template <typename T>
-auto run_annotated_tests() -> bool {
-    auto samples = generate_samples<T>();   // cross-product per [[=test_range]]
+auto arbitrary() -> std::vector<T> {
+    std::vector<T> out{T{}};
+    constexpr auto& specs = TestSpec<T>::fields;
+    [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+        (apply_field<T>(out, std::get<Is>(specs)), ...);
+    }(std::make_index_sequence<std::tuple_size_v<
+            std::remove_cvref_t<decltype(specs)>>>{});
+    return out;
+}
+```
+
+The round-trip property test (the parse/serialize contract from <PostLink slug="sanitizers-2026">sanitizers-2026</PostLink>) becomes one short layer:
+
+```cpp
+template <typename T>
+auto run_round_trip_tests() -> bool {
+    auto samples = arbitrary<T>();
     bool ok = true;
-    if constexpr (has_annotation<test_round_trip>(^^T)) {
-        ok &= check_value_round_trip<T>(samples);   // P1
-        ok &= check_byte_round_trip<T>(samples);    // P2
+    if constexpr (TestSpec<T>::round_trip) {
+        ok &= check_value_round_trip<T>(samples);   // P1: parse(serialize(x)) == x
+        ok &= check_byte_round_trip<T>(samples);    // P2: serialize(parse(b)) == b
     }
-    if constexpr (has_annotation<test_reject_short>(^^T)) {
-        ok &= check_truncated_refused<T>();         // P3
+    if constexpr (TestSpec<T>::reject_short) {
+        ok &= check_truncated_refused<T>();         // P3: refuses short input
     }
     return ok;
 }
 ```
 
-For `SensorReading` (sensor_id has 3 range + 3 pinned = 6 samples, raw_value has 3, status_flags has 3 -- cross-product is 54), the runner emits:
+For `SensorReading` (3 range + 3 pinned = 6 samples for sensor_id, 3 for raw_value, 3 for status_flags -- cross-product 54), the runner emits:
 
 ```
-== annotation-driven tests for SensorReading ==
-== 54 samples generated from per-field annotations ==
+== reflection-driven property tests for SensorReading ==
+== 54 samples generated by arbitrary<T> ==
   P1 value round-trip (54 samples, 0 failed): PASS
   P2 byte round-trip (54 samples): PASS
   P3 truncated refused (lengths 0..6): PASS
@@ -180,27 +196,88 @@ For `SensorReading` (sensor_id has 3 range + 3 pinned = 6 samples, raw_value has
 overall: PASS
 ```
 
-Add a fourth field with its own `[[=test_range]]`, the cross-product expands automatically and the next CI run exercises 162 samples. Swap two field declarations by mistake (a real bug: parser reads `u16` then `i32` but serializer writes `i32` then `u16` because someone reordered for "natural padding") -- P1 and P2 fail loudly across all 54 samples. Drop the `[[=test_reject_short]]` marker because the parser is now used in a context that pre-checks length, the truncation tests stop wasting CI time. Pin a regression value via `[[=test_examples{...}]]` after a CVE was disclosed; that exact byte appears in every future run regardless of how the random generator drifts. The schema declares the contract; the runner enforces it; nobody re-states the field list in test code.
+Add a fourth field to `SensorReading` and a matching `field_spec` to the test spec; the cross-product expands and the next CI run exercises 162 samples. Add the field to production but forget the spec -- compile error, no silent drift. Swap two field declarations by mistake (a real bug: parser reads `u16` then `i32` but serializer writes `i32` then `u16` after someone reordered for "natural padding") -- P1 and P2 fail loudly across all 54 samples. Drop `round_trip = false` because the parser is exercised elsewhere -- the runner skips the round-trip checks at compile time, no wasted CI cycles.
 
-Full file: <RepoFile path="posts/toolset/testing-for-safety-2026/examples/reflect-roundtrip-tests.cpp" branch="main" />. (Godbolt embed regenerates on the next `shorten-examples.py` run -- the live link will appear here after MR4.5 deploys.)
+Full file: <RepoFile path="posts/toolset/testing-for-safety-2026/examples/reflect-arbitrary.cpp" branch="main" />. (Godbolt embed regenerates on the next `shorten-examples.py` run.)
 
 <DockerRun
   image="ghcr.io/wrocpp/cpp-reflection:2026-05"
-  command="bash -c 'clang++ -std=c++26 -freflection-latest -stdlib=libc++ posts/toolset/testing-for-safety-2026/examples/reflect-roundtrip-tests.cpp -o /tmp/rt && LD_LIBRARY_PATH=/opt/p2996/clang/lib/aarch64-unknown-linux-gnu /tmp/rt'"
+  command="bash -c 'clang++ -std=c++26 -freflection-latest -stdlib=libc++ posts/toolset/testing-for-safety-2026/examples/reflect-arbitrary.cpp -o /tmp/arb && LD_LIBRARY_PATH=/opt/p2996/clang/lib/aarch64-unknown-linux-gnu /tmp/arb'"
   expected="overall: PASS"
-  title="Round-trip tests, locally on cpp-reflection"
+  title="arbitrary<T> + round-trip property tests, locally on cpp-reflection"
 />
 
-The pattern slots under any test framework: the per-member loop becomes a Catch2 `SECTION`, a GoogleTest `TEST_P`, or a doctest `SUBCASE`. The reflection-driven runner doesn't replace the framework -- it replaces the per-target boilerplate that's required to write structural property tests by hand.
+The same `arbitrary<T>` kernel underwrites every other property-style test in the cluster. A fuzz harness translates random bytes into well-formed T values via `arbitrary<T>` so libFuzzer / AFL++ exercise structured inputs instead of bouncing off the parser's bounds check. A differential test runs both implementations of the same interface on samples drawn from `arbitrary<T>` and asserts equivalent outputs. A fixture factory replaces hand-written `make_test_X()` builders. None of the wrappers add per-struct boilerplate; the kernel does the work.
+
+The pattern from other ecosystems should be recognisable: this is the C++ analogue of Rust's `#[derive(Arbitrary)]` (proptest), Haskell's `Generic`-derived QuickCheck instances, Python hypothesis's `from_type` strategy, and Kotest's `Arb.bind()`. Where those languages have had it for years, C++ historically pushed the same job onto external code generators (`.proto` + protoc, FlatBuffers schemas, IDL compilers). Reflection ends the codegen step.
+
+### Pattern 2 -- pretty_diff for legible test failures
+
+The other half of the test loop. Hand-written `operator<<` per type is what every C++ codebase has and everyone forgets to update. With reflection, two short helpers cover every struct, never go stale:
+
+```cpp
+template <typename T>
+auto pretty_print(const T& obj) -> std::string {
+    std::string out;
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    template for (constexpr auto m
+                  : std::define_static_array(
+                      std::meta::nonstatic_data_members_of(^^T, ctx))) {
+        std::format_to(std::back_inserter(out), "  {} = {}\n",
+                       std::meta::identifier_of(m),
+                       +obj.[:m:]);     // unary + promotes uint8_t to int
+    }
+    return out;
+}
+
+template <typename T>
+auto pretty_diff(const T& expected, const T& actual) -> std::string {
+    std::string out;
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    template for (constexpr auto m
+                  : std::define_static_array(
+                      std::meta::nonstatic_data_members_of(^^T, ctx))) {
+        if (expected.[:m:] != actual.[:m:]) {
+            std::format_to(std::back_inserter(out), "  {}: {} != {}\n",
+                           std::meta::identifier_of(m),
+                           +expected.[:m:], +actual.[:m:]);
+        }
+    }
+    return out.empty() ? "  (no differences)\n" : out;
+}
+```
+
+The failure-message UX upgrade is immediate. Without reflection:
+
+```
+== without reflection ==
+FAIL: SensorReading != SensorReading
+```
+
+With reflection:
+
+```
+== with reflection ==
+FAIL: SensorReading mismatch:
+  raw_value: 12345 != 12344
+```
+
+The bug is on the failure line. Add a field, both helpers cover it on the next build. Remove a field, both helpers stop printing it. The diagnostic surface tracks the schema mechanically; nobody maintains a `dump.hpp` that goes stale.
+
+Full file: <RepoFile path="posts/toolset/testing-for-safety-2026/examples/reflect-pretty-diff.cpp" branch="main" />.
+
+<DockerRun
+  image="ghcr.io/wrocpp/cpp-reflection:2026-05"
+  command="bash -c 'clang++ -std=c++26 -freflection-latest -stdlib=libc++ posts/toolset/testing-for-safety-2026/examples/reflect-pretty-diff.cpp -o /tmp/diff && LD_LIBRARY_PATH=/opt/p2996/clang/lib/aarch64-unknown-linux-gnu /tmp/diff'"
+  expected="raw_value: 12345 != 12344"
+  title="pretty_diff field-level test failure diagnostics"
+/>
 
 ### Where reflection-alone falls short
 
-Reflection in C++26 is **structural traversal** -- walk the members, read their types, read their annotations, generate code per member. That is exactly the right shape for the round-trip property test: every claim is "for each field, do X" and reflection writes the loop.
+Reflection in C++26 lets you *read* a type's structure but not *generate code* alongside it. That is enough for `arbitrary<T>` and `pretty_diff` -- both are pure traversal. It is not enough for behaviour synthesis, which is where C++29 token injection (P3294) takes over. What reflection-alone today is NOT a substitute for:
 
-It is the wrong shape for **behavior synthesis**. Tools like GoogleMock generate per-method intercepting wrappers that match arguments, sequence expectations, and dispatch actions. You can simulate a thin slice of that today by walking a struct of `std::function` members and replacing each with a recording stub -- but the result is strictly weaker than what GMock already does well, and lacks per-call argument matchers, cardinality matchers, sequenced expectations, and action customization. The reason is structural: today's reflection lets you *read* the interface but not *generate new code* alongside it. The full mock-synthesis story wants C++29 token injection (P3294); it is sketched in "Where this is heading" below, not pretended into existence here.
-
-What reflection-alone today is NOT a substitute for:
-- **GoogleMock / Trompeloeil for behavior mocks** -- argument matchers, sequenced calls, action wiring stay better in those frameworks. Reflection earns its keep on schema-driven property tests, not on call-mocking.
+- **GoogleMock / Trompeloeil for behavior mocks** -- argument matchers, sequenced calls, action wiring stay better in those frameworks. A reflection-only mock can count calls and intercept stubs, but it cannot synthesise a `MOCK_METHOD`-equivalent class with per-call expectations, so it ends up strictly weaker than the tool it would replace. The full mock-synthesis story is in "Where this is heading".
 - **Behavioural tests** -- "this function returns the median of its inputs" is a logical property, not a structural one. Reflection sees the signature; the property is the developer's contract.
 - **Test scheduling / parallelism** -- run order, fixture lifetime, parallel execution stay the framework's job.
 - **Coverage measurement** -- reflection generates the test, the framework runs it, but `gcov` / `llvm-cov` measure what actually executed. Three separate concerns.
