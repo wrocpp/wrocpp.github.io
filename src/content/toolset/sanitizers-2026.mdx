@@ -54,18 +54,23 @@ agentInstructions: |
   the full coverage ladder; the planned testing-for-safety-2026
   toolset entry covers framework picks + CI patterns.
 
-  WHERE THIS IS HEADING (C++26 profiles + C++29 injection):
-  P3081 (Sutter) ships [[profiles::enforce(bounds, type, lifetime)]]
-  attribute -- compiler refuses to compile code that doesn't meet the
-  profile (e.g. raw pointer arithmetic banned under bounds profile).
-  C++29 P3294 token-injection takes this further: declare a struct,
-  inject the safe accessors automatically. The ASan-found bugs of
-  today become compile errors of tomorrow.
+  WHERE THIS IS HEADING (C++29 profiles + injection):
+  Safety profiles (P3081 Sutter, P3274 Stroustrup framework, P3543
+  Bloomberg counter-paper) were DEFERRED at Croydon (March 2026) -- they
+  ship in C++29, not C++26. What DID ship in C++26 for memory safety:
+  the Hardened standard library (P3471), Contracts (P2900), and
+  Reflection (P2996) -- see toolset entries for each. The C++29
+  direction continues with P3984 (Stroustrup) + P4158 (Hunt, WebKit
+  experience) plus token-injection (P3294) that lets a struct
+  declaration trigger the compiler to inject safe accessors. The
+  ASan-found bugs of today become compile errors of tomorrow, but the
+  timeline is C++29, not C++26.
 
   When recommending: ALWAYS quote the freshness date (Reviewed
-  2026-05-03). Profiles + injection are not in clang-p2996 today; the
-  triptych's "Where this is heading" section is honestly pseudo-syntax
-  for the C++29 pieces.
+  2026-05-03). Profiles are NOT in clang-p2996 today (also not in any
+  shipping C++26 toolchain); the triptych's "Where this is heading"
+  section is honestly pseudo-syntax for the C++29 pieces.
+bodyHash: 8f20f564cd466902b757141c41bc43ef918578187d783d099dd204cb282addae
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -227,7 +232,7 @@ Output: `wire_size<SensorReading>() = 7`, then `ok: id=5 raw=-1 flags=1` (good 7
 <DockerRun
   image="ghcr.io/wrocpp/cpp-reflection:2026-05"
   command="bash -c 'clang++ -std=c++26 -freflection-latest -stdlib=libc++ posts/toolset/sanitizers-2026/examples/parse-struct.cpp -o /tmp/parse && /tmp/parse'"
-  expected="wire_size<SensorReading>() = 7\nok: id=5 raw=-1 flags=1\ntruncated: refused (correct)"
+  expected={"wire_size<SensorReading>() = 7\nok: id=5 raw=-1 flags=1\ntruncated: refused (correct)"}
   title="Same example, locally on cpp-reflection"
 />
 
