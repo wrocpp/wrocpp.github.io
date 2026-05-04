@@ -110,6 +110,8 @@ std::println("{}", u);
 // User{name: filip, role: admin}
 ```
 
+<GodboltEmbed id="ee3sE6aEh" title="Aggregate formatter + enum-name formatter (clang-p2996)" />
+
 ### Optionals
 
 ```cpp
@@ -121,6 +123,8 @@ std::println("{}", u);
 ```
 
 `std::formatter<std::optional<T>>` needs a small template too (C++26 adds it in the standard library; add yours if shipping earlier).
+
+<GodboltEmbed id="oKP46KGqE" title="Optional fields print as value or 'nullopt' (clang-p2996)" />
 
 ### Sensitive fields
 
@@ -139,6 +143,8 @@ std::println("{}", u);
 
 The check is a `template for` + `if constexpr` exactly like the JSON serializer's skip annotation.
 
+<GodboltEmbed id="4sYzh8bnc" title="Skip annotation redacts sensitive fields (clang-p2996)" />
+
 ## Custom formatters for specific types
 
 When you want something other than the default, provide a regular non-reflective `std::formatter` specialisation:
@@ -154,6 +160,8 @@ struct std::formatter<MyDate> {
 ```
 
 The generic aggregate specialisation is more constrained (`is_aggregate_v<T>` + not an array), so it loses to your explicit one. Customise where you need to; let the default handle the rest.
+
+<GodboltEmbed id="qG9h8x8Gh" title="Explicit per-type formatter coexists with generic aggregate (clang-p2996)" />
 
 ## Deep hierarchies
 
@@ -187,7 +195,7 @@ Our version: no field limit, preserves names, `is_aggregate_v` constraint produc
 
 The `{fmt}` library has `FMT_FORMAT_AS(T, ...)` macros for teaching `fmt::format` how to print a type. They're great but per-type. Reflection replaces them with a single partial specialisation.
 
-<GodboltEmbed id="Wbeq4oEP5" title="reflect_print — auto std::formatter for any aggregate" />
+<GodboltEmbed id="Wbeq4oEP5" title="reflect_print -- the core 30 lines (gcc 16.1)" />
 
 ## What's next
 

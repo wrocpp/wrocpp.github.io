@@ -107,6 +107,30 @@ auto-formatter:
     gcc_id: Wbeq4oEP5
     gcc_url: https://godbolt.org/z/Wbeq4oEP5
     gcc_expected_output: 'User{name: Filip, age: 40, admin: true, home: Address{city: Warsaw, postal_code: 12345}}'
+  formatter_custom:
+    title: Formatter custom
+    id: qG9h8x8Gh
+    url: https://godbolt.org/z/qG9h8x8Gh
+    expected_output: '2026-05-14
+
+      Event{name: C++26 ratification, when: 2026-03-28}'
+  formatter_enum:
+    title: Formatter enum
+    id: ee3sE6aEh
+    url: https://godbolt.org/z/ee3sE6aEh
+    expected_output: 'User{name: filip, role: admin}'
+  formatter_optional:
+    title: Formatter optional
+    id: oKP46KGqE
+    url: https://godbolt.org/z/oKP46KGqE
+    expected_output: 'User{name: filip, age: nullopt}
+
+      User{name: alice, age: 42}'
+  formatter_skip:
+    title: Formatter skip
+    id: 4sYzh8bnc
+    url: https://godbolt.org/z/4sYzh8bnc
+    expected_output: 'User{name: filip, password_hash: <redacted>}'
 derive-eq-hash:
   hash_demo:
     title: Hash demo
