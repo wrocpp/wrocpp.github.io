@@ -347,20 +347,19 @@ memory-safety-cpp26-and-beyond:
 
       static_assert fire with the profile-violation reason.'
   cppfront_safety:
-    title: cppfront -- safety by default (CMake + cpp2 -> cpp1 -> binary, executes)
-    id: K853f7x8v
-    url: https://godbolt.org/z/K853f7x8v
+    title: cppfront -- safety by default (executes via godbolt tree mode)
+    id: W4njTr9cE
+    url: https://godbolt.org/z/W4njTr9cE
     expected_output: |-
       Program returned: 1
       /app/test.cpp2(20) int main(): Bounds safety violation: out of bounds access attempt detected - attempted access at index 5, [min,max] range is [0,2]
       items[1]: 20
-    # Uses godbolt's CMake project mode with the JohelEGP jegp.cmake_modules
-    # library that wires cppfront into the CMake pipeline (test.cpp2 ->
-    # cppfront translates to .cpp -> gsnapshot/GCC compiles -> executor
-    # runs the binary). The plain cpp2_cppfront language entry on godbolt
-    # is build-only; this CMake-tree shape is what gets you a runnable
-    # binary on godbolt for cppfront examples. Source for the JEGP CMake
-    # modules is in the godbolt session's tree (not a wro.cpp dependency).
+    # Uses godbolt's tree-mode (isCMakeProject: false) with a single
+    # test.cpp2 file in a tree paired with one executor entry pointing at
+    # GCC 16.1. Godbolt auto-invokes cppfront for .cpp2 files in tree
+    # mode, then the executor runs the resulting binary. Cleaner than the
+    # CMake-with-jegp-modules variant: no vendored CMake files, no
+    # custom_command pipeline, executor pane renders clean program output.
 testing-for-safety-2026:
   reflect_arbitrary:
     title: arbitrary<T> + round-trip property tests (clang-p2996)
