@@ -348,11 +348,12 @@ memory-safety-cpp26-and-beyond:
       static_assert fire with the profile-violation reason.'
   cppfront_safety:
     title: cppfront -- safety by default (CMake + cpp2 -> cpp1 -> binary, executes)
-    id: TjGM3vn96
-    url: https://godbolt.org/z/TjGM3vn96
+    id: MzjxchYP8
+    url: https://godbolt.org/z/MzjxchYP8
     expected_output: |-
+      Program returned: 1
+      /app/test.cpp2(20) int main(): Bounds safety violation: out of bounds access attempt detected - attempted access at index 5, [min,max] range is [0,2]
       items[1]: 20
-      Bounds safety violation detected: out of bounds access detected
     # Uses godbolt's CMake project mode with the JohelEGP jegp.cmake_modules
     # library that wires cppfront into the CMake pipeline (test.cpp2 ->
     # cppfront translates to .cpp -> gsnapshot/GCC compiles -> executor
