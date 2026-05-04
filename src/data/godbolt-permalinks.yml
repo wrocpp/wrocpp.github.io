@@ -336,7 +336,7 @@ sanitizers-2026:
       ok: id=5 raw=-1 flags=1
 
       truncated: refused (correct)'
-safety-profiles-2026:
+memory-safety-cpp26-and-beyond:
   reflect_profile:
     title: Reflection-driven basic safety profile (clang-p2996)
     id: 11Earja19
@@ -346,6 +346,23 @@ safety-profiles-2026:
       Try uncommenting BadSession* in the source to see the
 
       static_assert fire with the profile-violation reason.'
+  cppfront_safety:
+    title: cppfront -- safety by default (executes via godbolt CMake tree)
+    id: 8v76EaM7a
+    url: https://godbolt.org/z/8v76EaM7a
+    # User-curated link: language=cpp2_cppfront, isCMakeProject=true,
+    # tree.compilers (clang_trunk, execute=true), JEGP cppfront-CMake
+    # integration in the tree. Compiles main.cpp2 -> main.cpp via cppfront
+    # then clang+libc++; bounds_safety violation on items[5] fires at
+    # runtime with line/index in the diagnostic.
+    # If cpp2util.h goes stale relative to current cppfront output (new
+    # cpp2::impl::* symbols emitted), refresh by opening this link in
+    # godbolt UI, paste fresh upstream into cpp2util.h tab,
+    # Share -> Short link, record new id. See memory/godbolt_cppfront.md.
+    expected_output: |-
+      Program returned: 1
+      main.cpp2(19) int main(): Bounds safety violation: out of bounds access attempt detected
+      items[1]: 20
 testing-for-safety-2026:
   reflect_arbitrary:
     title: arbitrary<T> + round-trip property tests (clang-p2996)

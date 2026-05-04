@@ -559,6 +559,11 @@ a:hover { color: var(--orange); }
   padding: 0.55rem 0.75rem;
   text-align: left;
   vertical-align: top;
+  /* Long inline-code spans (CMake macros, env-var names, etc.) should
+   * break across lines instead of forcing the whole table out of the
+   * viewport. The .table-scroll wrapper below is the explicit escape
+   * hatch when even per-word wrapping isn't enough. */
+  overflow-wrap: anywhere;
 }
 .prose th {
   font-family: "Quicksand", system-ui, sans-serif;
@@ -566,6 +571,41 @@ a:hover { color: var(--orange); }
   background: var(--paper-2);
   border-bottom: 2px solid var(--ink);
 }
+
+/* Wrap any wide table in <div class="table-scroll">...</div> in MDX to
+ * make it horizontally scrollable instead of overflowing the page.
+ * Use sparingly -- prefer .table-fit below, which keeps the table on
+ * screen by constraining column widths instead. */
+.prose .table-scroll {
+  overflow-x: auto;
+  margin: 1.5rem 0;
+  border-bottom: 1px solid transparent;
+}
+.prose .table-scroll > table {
+  margin: 0;
+  width: max-content;
+  min-width: 100%;
+}
+
+/* Fit-to-page table: constrains column widths so the whole table fits
+ * the prose column without horizontal scrolling. Cells with long
+ * inline-code spans rely on `overflow-wrap: anywhere` (set on
+ * .prose th/td above) to break across lines.
+ *
+ * .table-fit-3col gives proportional widths for a Mechanism / How to
+ * enable / Catches three-column shape. Add more sibling modifiers
+ * (.table-fit-2col, .table-fit-4col) as patterns repeat. */
+.prose .table-fit > table {
+  table-layout: fixed;
+  width: 100%;
+  margin: 1.5rem 0;
+}
+.prose .table-fit-3col > table th:nth-child(1),
+.prose .table-fit-3col > table td:nth-child(1) { width: 18%; }
+.prose .table-fit-3col > table th:nth-child(2),
+.prose .table-fit-3col > table td:nth-child(2) { width: 50%; }
+.prose .table-fit-3col > table th:nth-child(3),
+.prose .table-fit-3col > table td:nth-child(3) { width: 32%; }
 
 .prose hr {
   border: none;

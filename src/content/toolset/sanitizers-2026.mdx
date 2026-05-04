@@ -70,7 +70,7 @@ agentInstructions: |
   2026-05-03). Profiles are NOT in clang-p2996 today (also not in any
   shipping C++26 toolchain); the triptych's "Where this is heading"
   section is honestly pseudo-syntax for the C++29 pieces.
-bodyHash: 8f20f564cd466902b757141c41bc43ef918578187d783d099dd204cb282addae
+bodyHash: abf6297dc2de9c8c36691e5c1f75e42b0aa817b15f6ba04d0445329257c4f3ab
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -214,7 +214,7 @@ constexpr auto parse_struct(std::span<const std::byte> bytes)
 
 What this aligns with:
 - **C++ Core Guidelines**: [F.24](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rf-range) (use `std::span<T>` for a half-open sequence -- the `bytes` parameter); [F.43](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rf-dangle) (never return a pointer to a local -- the bug class the ASan demo above showed); [ES.42](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Res-ptr) (keep use of pointers simple -- field-sized memcpy at running offsets, no raw pointer arithmetic).
-- **MISRA C++** and **AUTOSAR C++14** both ban raw pointer arithmetic and require validation of inputs from external sources. The reflection-driven harness satisfies both at the parser level by construction. Specific rule numbers vary across the 2008 and 2023 MISRA editions; consult your team's authoritative copy of the current standard rather than trusting any cited number from a blog post (including this one).
+- **MISRA C++:2023** (the unified MISRA + AUTOSAR successor; AUTOSAR C++14's coding rules merged in) bans raw pointer arithmetic and requires validation of inputs from external sources. The reflection-driven harness satisfies both at the parser level by construction. Specific rule numbers vary across the 2008 and 2023 MISRA editions; consult your team's authoritative copy of the current standard rather than trusting any cited number from a blog post (including this one).
 - **SEI CERT C++** secure coding standard groups bounds-checking and integer-overflow rules under the STR (string-handling) and INT (integer) categories respectively; the parser shape eliminates both classes at the trust boundary.
 
 What this demo deliberately leaves out (out of scope; production-grade adds them):
@@ -258,7 +258,7 @@ namespace safe_io {
 
 The use-after-free demo above? Under `enforce(lifetime)` the `return v.data()` line is a compile error, not a runtime ASan finding. The signed-overflow demo? Under `enforce(type)` the compiler picks `std::overflow_safe<int>` (or whatever the profile names) instead of bare `int`. Profiles move sanitizer findings from "your test discovered it" to "your build refused to make it".
 
-Status as of 2026-05-03: P3081R2 and P3274 are in C++26; clang-p2996 implements parts of the bounds and lifetime profiles, GCC 16.1 implements the type profile. Implementations are partial; the full enforcement matrix lives on `safety-profiles-2026` (next toolset section, MR4 in this expansion). [P3543](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3543r0.pdf) is the counter-paper from Bloomberg + others arguing for an alternative approach -- worth reading honestly before betting on profiles for a 10-year codebase.
+Status as of 2026-05-04 (corrected): the `[[profiles::enforce]]` attribute (P3081 Sutter, P3589 Dos Reis framework, P3984 Stroustrup type-safety profile) was **deferred from C++26 to C++29** at the Croydon meeting in March 2026 -- see [Sutter's trip report](https://herbsutter.com/2026/03/29/c26-is-done-trip-report-march-2026-iso-c-standards-meeting-london-croydon-uk/). No shipping compiler implements the attribute today. [P3543](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3543r0.pdf) was the Bloomberg counter-paper that contributed to the deferral. The full picture of *what you CAN flip on today* for memory safety in C++26 -- Hardened standard library, clang-tidy `pro-*` checks, Contracts (P2900), `[[clang::lifetimebound]]` -- lives on <PostLink slug="memory-safety-cpp26-and-beyond">memory-safety-cpp26-and-beyond</PostLink>.
 
 **C++29 code injection ([P3294](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3294r2.pdf), Revzin / Alexandrescu / Vandevoorde).** Today's `parse_struct<T>(bytes)` *generates the parser at compile time, but the user still calls it explicitly* and has to remember which boundary needs which validator. P3294 token-sequence injection lets the schema annotation pull the validators in automatically:
 
@@ -285,4 +285,4 @@ auto out = msg->serialize();                          // round-trips by construc
 
 The state of the codebase one decade out: profiles enforce the safe subset (no raw pointer arithmetic, lifetime checked at compile time); injection generates the safe wrappers and parsers from schema annotations; sanitizers stay in CI for legacy paths and for catching the corners reflection hasn't yet conquered. The trust-boundary parser bug -- the actual CVE class -- becomes a "you didn't put the annotation on the struct" lint warning instead of a runtime exploit.
 
-For the full timeline of profile + injection landings, see the planned `safety-profiles-2026` toolset entry (incoming with MR4, ~2026-05-12) and Production C++ post 8 ("Memory-safety profiles and the future", scheduled ~2026-07-04). The dedicated `testing-for-safety-2026` entry referenced in the `Sanitizers need tests` sub-section above lands as MR4.5 (~2026-05-13). All three forward-links become live links once the matching MRs ship; this page's quarterly review pass picks up any drift.
+For the full picture of *what to flip on today* for memory safety in C++26 (Hardened stdlib + clang-tidy `pro-*` + Contracts + lifetime attributes) plus the C++29 profile direction, see <PostLink slug="memory-safety-cpp26-and-beyond">memory-safety-cpp26-and-beyond</PostLink> (MR4, launches 2026-05-14). For the testing input side, <PostLink slug="testing-for-safety-2026">testing-for-safety-2026</PostLink> (MR4.5, 2026-05-16). Production C++ post 8 ("Memory-safety profiles and the future", scheduled ~2026-07-04) covers the C++29 path in long form.
