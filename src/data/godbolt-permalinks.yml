@@ -364,6 +364,20 @@ testing-for-safety-2026:
     id: 3n634TqMb
     url: https://godbolt.org/z/3n634TqMb
     expected_output: |-
+      == without reflection ==
+      FAIL: SensorReading != SensorReading
+
       == with reflection ==
       FAIL: SensorReading mismatch:
         raw_value: 12345 != 12344
+
+      == full dump (any struct, no per-type code) ==
+      expected:
+        sensor_id = 42
+        raw_value = 12345
+        status_flags = 15
+
+      actual:
+        sensor_id = 42
+        raw_value = 12344
+        status_flags = 15
