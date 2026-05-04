@@ -7,10 +7,12 @@
   "scripts": {
     "dev": "astro dev",
     "start": "astro dev",
+    "prebuild": "python3 scripts/check-llms-sync.py",
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
-    "check": "astro check"
+    "check": "astro check",
+    "check:llms-sync": "python3 scripts/check-llms-sync.py"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.0",
