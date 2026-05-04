@@ -89,7 +89,7 @@ agentInstructions: |
   the Sutter Croydon trip report URL. The C++26 vs C++29 timeline is
   the single most-confused fact in this area; correct any reader who
   thinks profiles shipped in C++26.
-bodyHash: dca81f38b019c0fb73202f3cdbe339fae41027e1dd6012b6149220c89bb39247
+bodyHash: 4715624a79b68ffc1187dd75560d2d6fd9b352dc89d1d8c012ddb63d058008a7
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -125,13 +125,17 @@ C++26 was finalized at the Croydon meeting in March 2026 ([Sutter's trip report]
 
 For the bug classes that the deferred profile attribute would have caught, real workable mechanisms exist on shipping toolchains. The following table is the "**what to actually turn on**" view -- the rest of this section walks each row in detail.
 
-| Mechanism | clang | GCC | MSVC | Catches |
-|---|---|---|---|---|
-| **Hardened stdlib** | `-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST` | `-D_GLIBCXX_ASSERTIONS` (or `-fhardened`) | `_ITERATOR_DEBUG_LEVEL=1` | `vector::operator[]` OOB, deref of null `unique_ptr`, string overruns |
-| **clang-tidy `pro-*` checks** | clang-tidy 21+ | clang-tidy 21+ (cross-tool) | clang-tidy 21+ | Pointer arithmetic, array decay, unchecked container access, unsafe casts (the literal Core Guidelines profile rules) |
-| **MSVC Lifetime Profile** | -- | -- | `/analyze` with EspXEngine | Dangling pointers, use-after-scope (Sutter's original Lifetime Profile design, 2018-onward) |
-| **`[[clang::lifetimebound]]`** | yes | yes (`[[gnu::access]]` cousin) | partial | API-boundary lifetime hints |
-| **C++26 Contracts (P2900)** | clang-p2996 `-fcontracts=enforce` | GCC 16.1 warnings only | roadmap | User-written precondition / postcondition violations |
+<div class="table-scroll">
+
+| Mechanism | How to enable | Catches |
+|---|---|---|
+| **Hardened stdlib** | **clang:** `-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST`<br/>**GCC:** `-D_GLIBCXX_ASSERTIONS` (or `-fhardened`)<br/>**MSVC:** `_ITERATOR_DEBUG_LEVEL=1` | `vector::operator[]` OOB, deref of null `unique_ptr`, string overruns |
+| **clang-tidy `pro-*` checks** | clang-tidy 21+ (cross-tool: works with clang, GCC, MSVC builds) | Pointer arithmetic, array decay, unchecked container access, unsafe casts (the literal Core Guidelines profile rules) |
+| **MSVC Lifetime Profile** | **MSVC:** `/analyze` with EspXEngine.<br/>(no clang/GCC equivalent in mainline) | Dangling pointers, use-after-scope (Sutter's original Lifetime Profile design, 2018-onward) |
+| **`[[clang::lifetimebound]]`** | **clang:** `[[clang::lifetimebound]]`<br/>**GCC:** `[[gnu::access]]` cousin<br/>**MSVC:** partial | API-boundary lifetime hints |
+| **C++26 Contracts (P2900)** | **clang-p2996:** `-fcontracts=enforce`<br/>**GCC 16.1:** warnings only<br/>**MSVC:** roadmap | User-written precondition / postcondition violations |
+
+</div>
 
 #### Hardened standard library (P3471)
 

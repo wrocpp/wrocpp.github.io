@@ -559,12 +559,36 @@ a:hover { color: var(--orange); }
   padding: 0.55rem 0.75rem;
   text-align: left;
   vertical-align: top;
+  /* Long inline-code spans (CMake macros, env-var names, etc.) should
+   * break across lines instead of forcing the whole table out of the
+   * viewport. The .table-scroll wrapper below is the explicit escape
+   * hatch when even per-word wrapping isn't enough. */
+  overflow-wrap: anywhere;
 }
 .prose th {
   font-family: "Quicksand", system-ui, sans-serif;
   font-weight: 600;
   background: var(--paper-2);
   border-bottom: 2px solid var(--ink);
+}
+
+/* Wrap any wide table in <div class="table-scroll">...</div> in MDX to
+ * make it horizontally scrollable instead of overflowing the page.
+ * Tall code-flag tables (memory-safety-cpp26-and-beyond's "what to flip
+ * on today") use this. */
+.prose .table-scroll {
+  overflow-x: auto;
+  margin: 1.5rem 0;
+  /* Match the table's outer rule visually so the scroll container
+   * doesn't look orphaned. */
+  border-bottom: 1px solid transparent;
+}
+.prose .table-scroll > table {
+  margin: 0;
+  /* Inside a horizontally scrollable wrapper, the table can grow to
+   * its natural width rather than being squeezed. */
+  width: max-content;
+  min-width: 100%;
 }
 
 .prose hr {
