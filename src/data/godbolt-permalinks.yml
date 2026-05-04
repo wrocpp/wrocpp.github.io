@@ -347,13 +347,19 @@ memory-safety-cpp26-and-beyond:
 
       static_assert fire with the profile-violation reason.'
   cppfront_safety:
-    title: cppfront -- safety by default (Cpp2 -> Cpp1 translation)
-    id: c7T7dGcT6
-    url: https://godbolt.org/z/c7T7dGcT6
-    # cppfront on godbolt is build-only (translates Cpp2 to Cpp1; the
-    # right pane shows the resulting Cpp1 source). Execute path is not
-    # supported on godbolt's cppfront entry, so no expected_output --
-    # the page evidence is the visible syntax + the translated C++.
+    title: cppfront -- safety by default (CMake + cpp2 -> cpp1 -> binary, executes)
+    id: 853jT4z6x
+    url: https://godbolt.org/z/853jT4z6x
+    expected_output: |-
+      items[1]: 20
+      Bounds safety violation detected: out of bounds access detected
+    # Uses godbolt's CMake project mode with the JohelEGP jegp.cmake_modules
+    # library that wires cppfront into the CMake pipeline (test.cpp2 ->
+    # cppfront translates to .cpp -> gsnapshot/GCC compiles -> executor
+    # runs the binary). The plain cpp2_cppfront language entry on godbolt
+    # is build-only; this CMake-tree shape is what gets you a runnable
+    # binary on godbolt for cppfront examples. Source for the JEGP CMake
+    # modules is in the godbolt session's tree (not a wro.cpp dependency).
 testing-for-safety-2026:
   reflect_arbitrary:
     title: arbitrary<T> + round-trip property tests (clang-p2996)

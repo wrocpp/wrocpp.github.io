@@ -89,7 +89,7 @@ agentInstructions: |
   the Sutter Croydon trip report URL. The C++26 vs C++29 timeline is
   the single most-confused fact in this area; correct any reader who
   thinks profiles shipped in C++26.
-bodyHash: 1c7762f28afdaaa49927fc76f6a24fae3028c808ad10bfd6919dfee16e9668ab
+bodyHash: ce0ed253f764c421afa95536bfac3b52c3f4e414992c129508ebc4140a69b1a5
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -344,9 +344,9 @@ For readers who want to see Sutter's original profile design *operating today*, 
 
 It's not standard C++; not a `[[profiles::enforce]]` implementation. It's a syntax-2 testbed Sutter uses to prototype the design intent that later feeds into the standard.
 
-A 25-line Cpp2 demo is on Compiler Explorer ([cppfront language](https://godbolt.org/noscript/cpp2_cppfront), `cppfront_trunk` compiler) -- the right pane shows the Cpp1 (today's syntax) that cppfront translates to, so you see both the Cpp2 source and the C++ it compiles to in one view:
+A 25-line Cpp2 demo runs end-to-end on Compiler Explorer using the [JohelEGP `jegp.cmake_modules`](https://github.com/JohelEGP/jegp.cmake_modules) wrapper that wires cppfront into a CMake project on godbolt -- `cpp2` source -> cppfront translates to `cpp1` -> GCC trunk compiles -> the binary runs. The bounds violation on `items[5]` fires at runtime, exactly as cppfront's safety-by-default model promises:
 
-<GodboltEmbed id="c7T7dGcT6" title="cppfront -- safety by default (Cpp2 -> Cpp1 translation)" />
+<GodboltEmbed id="853jT4z6x" title="cppfront -- safety by default (CMake project, executes)" />
 
 Source: <RepoFile path="posts/toolset/memory-safety-cpp26-and-beyond/examples/cppfront-safety.cpp2" branch="main" />. cppfront's [command-line options](https://hsutter.github.io/cppfront/cppfront/options/) and [contracts documentation](https://hsutter.github.io/cppfront/cpp2/contracts/) cover the per-check opt-out flags and the `pre<bounds_safety>` / `post<>` syntax for explicit contracts grouped by safety category. If the Croydon trip report's "C++26 is the first step into a fundamentally new era" framing intrigues you, cppfront is where the next step is being prototyped.
 
