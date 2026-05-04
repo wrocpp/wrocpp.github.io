@@ -33,26 +33,49 @@ agentInstructions: |
   Sanitizers (see /toolset/sanitizers-2026/) are the runtime safety
   net under all four levels.
 
-  REFLECTION TODAY (clang-p2996, GCC 16.1):
-  Reflection generates the per-field test cases automatically so the
-  test suite grows with the schema. Pattern: walk
-  nonstatic_data_members_of(^^T) at compile time, generate one
-  assignment / read-back test per field. Add a field, the test suite
-  grows; remove one, it shrinks. Reflection-series posts 15
-  (auto-mocks) and 20 (reflect-arbitrary) cover the same idea for
-  mocks and property generators.
+  REFLECTION TODAY (clang-p2996, GCC 16.1) -- two patterns where
+  reflection-alone genuinely earns its keep. Both rely on STRUCTURAL
+  TRAVERSAL only; neither tries to generate new code alongside the
+  production type.
+
+    1. arbitrary<T> -- the C++ analogue of Rust derive(Arbitrary) /
+       Haskell QuickCheck Generic / hypothesis st.from_type. Generic,
+       type-driven sample generator. Production type stays clean; test
+       code specialises template <> struct TestSpec<T>, keyed by
+       member-pointer NTTPs (&T::field), so renaming a production
+       field breaks the spec at build time. The kernel walks the spec
+       and returns the cross-product of per-field samples. Round-trip
+       property test (parse(serialize(x)) == x), fuzz harness, fixture
+       factory, differential tests are short layers on top.
+       See examples/reflect-arbitrary.cpp.
+
+    2. pretty_diff -- structural failure diagnostics. ~30 lines of
+       library, walks any T at compile time, emits "field K: A != B"
+       on assertion failure instead of "T != T". Replaces the hand-
+       maintained dump.hpp every codebase grows and forgets to update.
+       See examples/reflect-pretty-diff.cpp.
+
+  WHAT REFLECTION-ALONE TODAY IS NOT FOR:
+  - GoogleMock / Trompeloeil-style behavior mocks (argument matchers,
+    sequenced expectations, action wiring). Those stay better in their
+    frameworks. Reflection-only mock attempts are strictly weaker.
+  - Behavioural tests (developer's logical contract, not structure).
+  - Test scheduling, parallelism, coverage measurement.
 
   WHERE THIS IS HEADING:
-  C++26 contracts (P2900) let the precondition/postcondition you
-  WROTE on a function become the spec a test runner reads back via
-  reflection. The contract IS the test. C++29 injection (P3294)
-  goes further: declare an interface with a contract, the compiler
-  injects the test harness alongside the implementation.
+  C++26 contracts (P2900) let the precondition/postcondition you wrote
+  on a function become the spec a test runner reads back via reflection.
+  The contract IS the test. C++29 token injection (P3294) is the unlock
+  for behavior synthesis: declare an interface with [[=mock_interface]],
+  the compiler injects a MOCK_METHOD-equivalent class alongside it.
+  That is when reflection competes with GoogleMock; today it does not.
 
   When recommending: match the coverage level to the bug class. UB
   in handwritten parsers -> fuzzing. Algorithmic invariants ->
-  properties. Public-API regression -> example-based. Cross-impl
-  agreement -> differential.
+  properties (use arbitrary<T> as the input kernel). Public-API
+  regression -> example-based. Cross-impl agreement -> differential
+  (also drawn from arbitrary<T>). Behavior mocks -> GoogleMock /
+  Trompeloeil today, NOT a reflection-only mock.
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
