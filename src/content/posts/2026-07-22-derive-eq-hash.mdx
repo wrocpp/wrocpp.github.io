@@ -10,7 +10,8 @@ series_order: 7
 audience: working-cpp
 tags: [reflection, cpp26, equality, hash, ordering]
 summary: "C++20 gave us `= default` for operator== and <=>. Reflection lets us do the same for hashing, plus go beyond default: include/exclude fields, custom combinators, floating-point tolerances — all declarative."
-draft: true
+draft: false
+discussion: https://github.com/wrocpp/wrocpp.github.io/discussions/46
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -174,7 +175,7 @@ Reflection version: zero bytes of per-type code. Opt out when you need custom lo
 
 Each struct hash becomes an unrolled sequence of `hash_combine` calls. For a struct with N fields, that's N hash-of-field calls plus N seed updates. Identical to what you'd hand-write. No reflection cost at runtime — `template for` unrolled before codegen.
 
-<GodboltEmbed id="TODOdereqhash" title="Derived hash + ordering from structure" />
+<GodboltEmbed id="43WMPKPMq" title="Derived hash + ordering from structure" />
 
 ## When not to use this
 

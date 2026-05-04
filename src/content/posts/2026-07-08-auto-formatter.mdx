@@ -10,7 +10,8 @@ series_order: 6
 audience: working-cpp
 tags: [reflection, cpp26, formatter, debug-print, reflect_print]
 summary: "Rust's #[derive(Debug)] in C++: make any struct printable via std::format and std::println by dropping in one partial specialisation of std::formatter. Nested types, containers, enum names — all handled."
-draft: true
+draft: false
+discussion: https://github.com/wrocpp/wrocpp.github.io/discussions/45
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -186,7 +187,7 @@ Our version: no field limit, preserves names, `is_aggregate_v` constraint produc
 
 The `{fmt}` library has `FMT_FORMAT_AS(T, ...)` macros for teaching `fmt::format` how to print a type. They're great but per-type. Reflection replaces them with a single partial specialisation.
 
-<GodboltEmbed id="TODOfmt" title="reflect_print — auto std::formatter for any aggregate" />
+<GodboltEmbed id="Wbeq4oEP5" title="reflect_print — auto std::formatter for any aggregate" />
 
 ## What's next
 
