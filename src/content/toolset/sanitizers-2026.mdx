@@ -227,7 +227,7 @@ Output: `wire_size<SensorReading>() = 7`, then `ok: id=5 raw=-1 flags=1` (good 7
 <DockerRun
   image="ghcr.io/wrocpp/cpp-reflection:2026-05"
   command="bash -c 'clang++ -std=c++26 -freflection-latest -stdlib=libc++ posts/toolset/sanitizers-2026/examples/parse-struct.cpp -o /tmp/parse && /tmp/parse'"
-  expected="wire_size<SensorReading>() = 7\nok: id=5 raw=-1 flags=1\ntruncated: refused (correct)"
+  expected={"wire_size<SensorReading>() = 7\nok: id=5 raw=-1 flags=1\ntruncated: refused (correct)"}
   title="Same example, locally on cpp-reflection"
 />
 
