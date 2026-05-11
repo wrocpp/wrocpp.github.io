@@ -398,3 +398,19 @@ testing-for-safety-2026:
     expected_output: "== without reflection ==\nFAIL: SensorReading != SensorReading\n\n== with reflection ==\nFAIL: SensorReading\
       \ mismatch:\n  raw_value: 12345 != 12344\n\n== full dump (any struct, no per-type code) ==\nexpected:\n  sensor_id =\
       \ 42\n  raw_value = 12345\n  status_flags = 15\n\nactual:\n  sensor_id = 42\n  raw_value = 12344\n  status_flags = 15"
+annotations:
+  annotated:
+    title: Annotated
+    id: f7hcnMx9o
+    url: https://godbolt.org/z/f7hcnMx9o
+    expected_output: '{"userName":"filip","id":42,"email":"filip@example.com","bio":"hello","isAdmin":true}
+
+      {"userName":"anon","id":7,"email":"a@b.c","isAdmin":false}'
+one-codegen-many-formats:
+  formats_demo:
+    title: Formats demo
+    id: vPrq7n3on
+    url: https://godbolt.org/z/vPrq7n3on
+    expected_output: "--- JSON ---\n{\"userName\":\"filip\",\"id\":42,\"email\":\"filip@example.com\",\"isAdmin\":true,\"\
+      homeAddress\":{\"city\":\"Warsaw\",\"postal_code\":12345}}\n\n--- YAML ---\nuserName: filip\nid: 42\nemail: filip@example.com\n\
+      isAdmin: true\nhomeAddress: \n  city: Warsaw\n  postal_code: 12345\n\n--- XML  ---\n<userName>filip</userName><id>42</id><email>filip@example.com</email><isAdmin>true</isAdmin><homeAddress><city>Warsaw</city><postal_code>12345</postal_code></homeAddress>"
