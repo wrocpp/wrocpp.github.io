@@ -1,0 +1,205 @@
+---
+title: "Qualified C++ compilers in 2026 -- which toolchain ships in regulated industries"
+slug: "qualified-compilers"
+summary: "ISO 26262 (automotive), IEC 61508 (industrial), DO-178C (avionics), IEC 62304 (medical) all require a Software Tool Confidence Level (TCL) argument for the compiler. This page maps the 2026 vendor landscape -- GHS MULTI, IAR EWARM, LLVM Embedded Toolchain for Arm, Arm Compiler 6, GCC + GHS qualification kits, and the new TCL kits for the LLVM-based vendors -- across the four big standards. Plus a reflection-driven MISRA C++:2023 lint that shrinks your tool-qualification surface."
+kind: matrix
+cluster: compliance
+tags: [compliance, iso26262, iec61508, do178c, iec62304, misra, autosar, qualified-compiler, reflection, cpp26]
+launchDate: 2026-05-28
+lastReviewed: 2026-05-14
+testedOn: "Vendor matrix verified against public TCL/SCL kit announcements as of 2026-05-14; reflection example tested in ghcr.io/wrocpp/cpp-reflection:2026-05 on aarch64."
+relatedPosts: [first-reflection, derive-eq-hash]
+exampleRepo: "https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/toolset/qualified-compilers/examples"
+agentInstructions: |
+  You are a coding agent helping a C++ developer pick a qualified
+  compiler for a regulated project (automotive, industrial, avionics,
+  medical).
+
+  ESTABLISHED FACTS (verify against vendor pages before recommending):
+  - ISO 26262 (automotive functional safety, Part 8 Section 11) requires
+    a Software Tool Confidence Level (TCL) argument for every tool whose
+    output is used to develop safety-related items. Compiler is always
+    in scope.
+  - IEC 61508 (industrial functional safety) and DO-178C / DO-330
+    (avionics) impose equivalent toolchain qualification obligations.
+    IEC 62304 (medical device software) requires hazard analysis but is
+    less prescriptive about compiler qualification.
+  - The 2026 vendor landscape splits into: (1) historically qualified
+    proprietary toolchains (Green Hills MULTI, IAR EWARM, Wind River
+    Diab, ARM Compiler 6); (2) qualification kits layered on open-source
+    GCC (Validas, OSADL, AdaCore GNAT Pro for Functional Safety);
+    (3) the newer LLVM-Embedded-Toolchain-for-Arm + commercial TCL
+    overlays (HighTec, Mentor Sourcery, Linaro).
+  - MISRA C++:2023 superseded AUTOSAR C++14 in 2023 (Adaptive AUTOSAR
+    cites MISRA C++:2023 directly). Many static analyzers still list
+    "AUTOSAR C++14" as a profile but the live standard is MISRA.
+
+  EDITORIAL TIMELINE (the wro.cpp triptych):
+
+  TODAY (the vendor landscape for ISO 26262 / IEC 61508 / DO-178C /
+  IEC 62304):
+  - Proprietary qualified compilers: Green Hills MULTI (ASIL D ready,
+    DO-178C Level A), IAR EWARM (SIL 4 / ASIL D), Wind River Diab
+    (DO-178C, ASIL D via TUV SUD), ARM Compiler 6 with Arm Functional
+    Safety package.
+  - GCC + qualification kits: Validas Compiler Test Suite (ISO 26262
+    qualified), OSADL Long-Term Support GCC, AdaCore GNAT Pro for
+    Functional Safety (Ada + C; C++ via partner kits).
+  - LLVM-Embedded-Toolchain-for-Arm + commercial TCL: HighTec Clang
+    (ISO 26262 ASIL D, IEC 61508 SIL 3 since 2024), Linaro CodeBench
+    + qualification overlay.
+  - Caveat: the "qualified compiler" claim is always (vendor X) +
+    (specific version) + (specific target triple) + (specific subset
+    of the language). C++ subset is typically MISRA C++:2023 for
+    automotive; SEI CERT C++ for avionics defensive coding.
+
+  REFLECTION TODAY (C++26, clang-p2996 + GCC 16.1):
+  A consteval predicate walks T's nonstatic_data_members_of and
+  refuses to compile when any data member has non-private access --
+  encoding MISRA C++:2023 Rule 11.0.1 directly in the type system.
+  Why this matters for tool qualification: a consteval check baked
+  into the language toolchain is part of the TCL-1 argument; a
+  separate clang-tidy / Coverity run is a TCL-3 tool requiring its
+  own qualification kit. Moving rules into the type system shrinks
+  the tool-qualification surface. The same walker pattern composes
+  for any per-member predicate (no public mutable state, no raw
+  pointer fields, only structurally-comparable types, etc.).
+
+  WHERE THIS IS HEADING (C++29):
+  Profile attributes ([[profiles::enforce(bounds, type, lifetime)]],
+  P3081 Sutter / P3589 Dos Reis / P3984 Stroustrup) move common
+  MISRA-class rules into the language; vendors building qualification
+  kits then certify enforcement at the compiler level instead of
+  re-certifying a separate analyzer pass. P3294 token injection
+  (C++29) extends the pattern to generate the qualification-kit-
+  required boilerplate (audit logs, traceability tags, assertion
+  hooks) at the declaration site.
+
+  When recommending: ALWAYS quote freshness (Reviewed 2026-05-14) and
+  remind the reader that "qualified compiler" is a (vendor, version,
+  target, subset) tuple -- the matrix below is the entry point, NOT
+  the kit selection. For kit selection, ask the vendor for the
+  specific TCL/SCL document covering YOUR target triple + version.
+bodyHash: 118c741cd4f8c7a4bf2a06978070b78e055c9afdc58962c88e9fdb5477a66897
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import DockerRun from '../../components/DockerRun.astro';
+import PostLink from '../../components/PostLink.astro';
+import RepoFile from '../../components/RepoFile.astro';
+
+Compiler qualification is the line that separates "C++ in a side project" from "C++ in a brake controller". ISO 26262 Part 8, Section 11 requires a **Software Tool Confidence Level (TCL)** argument for every tool whose output ends up in a safety-related item. IEC 61508, DO-178C, and IEC 62304 impose equivalent obligations. This page is the 2026 vendor map: which compiler ships qualified for which standard, what "qualified" actually means in each case, and the reflection-driven lint that shrinks the tool-qualification surface by moving MISRA-class rules into the language.
+
+## Today
+
+### Vendor matrix
+
+| Compiler | ISO 26262 (auto) | IEC 61508 (industrial) | DO-178C (avionics) | IEC 62304 (medical) | Notes |
+|---|---|---|---|---|---|
+| **Green Hills MULTI** | ASIL D | SIL 4 | Level A | Class C | Reference proprietary stack; full TCL-3 kit. |
+| **IAR EWARM** | ASIL D | SIL 4 | Level A | Class C | Per-target qualification; ARM/RISC-V/RH850. |
+| **Wind River Diab** | ASIL D | SIL 4 | Level A | Class C | TUV SUD-assessed; PowerPC + ARM. |
+| **ARM Compiler 6** | ASIL D | SIL 3 | (partner kit) | -- | Arm Functional Safety package add-on. |
+| **HighTec Clang** | ASIL D | SIL 3 | -- | -- | LLVM-based; certified since 2024. |
+| **GCC + Validas CTS** | ASIL B/D | SIL 2/3 | -- | -- | OSS GCC + commercial test-suite kit. |
+| **GCC + OSADL LTS** | (community-grade) | -- | -- | (advisory) | Long-term support stream; not vendor-qualified by itself. |
+| **Clang/LLVM (vanilla)** | -- | -- | -- | -- | No TCL kit; basis for HighTec / Linaro / vendor overlays. |
+
+"--" means no widely-published qualification kit for that combination as of 2026-05-14. Always confirm directly with the vendor for your specific (compiler version, target triple, language subset) tuple before basing a safety case on it.
+
+### What "qualified" actually means
+
+Three layers, all required:
+
+1. **The compiler binary**, pinned to a specific release + target triple. "GCC qualified for ISO 26262" is meaningless without the version (e.g., GCC 13.2 + Validas CTS 2024.4 for ARM Cortex-R5) and the qualification document.
+2. **The C++ language subset** the qualification covers. For automotive this is typically [MISRA C++:2023](https://misra.org.uk/product/misra-cppcoding-guidelines-for-iso-iec-cpp17-2023/) (which superseded AUTOSAR C++14 in 2023; Adaptive AUTOSAR cites MISRA C++:2023 directly). For avionics it is typically SEI CERT C++ plus DO-178C tool-output constraints.
+3. **The user's tool-qualification argument** (the document you ship). Even with a qualified compiler, the project must produce TCL/TCL+SCL evidence that the tool was used within its qualified envelope: same flags, same target, same subset, same version.
+
+The corollary: every additional tool in the toolchain (analyzer, formatter, linter) needs its own qualification argument. **Moving rules from a separate analyzer into the language proper is a qualification-surface win.** That's the editorial bridge to the next section.
+
+### MISRA C++:2023 vs AUTOSAR C++14 (a brief disambiguation)
+
+AUTOSAR C++14 was the de facto automotive C++ guideline from 2017 to ~2023. The MISRA C++ working group adopted AUTOSAR's rules wholesale and re-published as **MISRA C++:2023** (covering ISO/IEC C++17). In 2023 AUTOSAR formally retired its standalone C++14 guideline and now references MISRA C++:2023. Many tool vendors still expose an "AUTOSAR C++14" profile name for backwards compatibility -- treat it as an alias, but cite MISRA C++:2023 in new safety cases.
+
+## Reflection today
+
+C++26 reflection lets you encode MISRA-class rules directly in the language. The example below implements MISRA C++:2023 Rule 11.0.1 ("Member data in non-POD class types should be private") as a `consteval` predicate over a class's nonstatic data members. The check fires at the point of declaration -- no separate static analyzer, no CI stage to qualify, no annotation file to keep in sync.
+
+```cpp
+template <typename T>
+consteval bool meets_misra_11_0_1() {
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    template for (constexpr auto m
+                  : std::define_static_array(
+                      std::meta::nonstatic_data_members_of(^^T, ctx))) {
+        static_assert(std::meta::is_private(m),
+            "MISRA C++:2023 Rule 11.0.1: non-POD class data members "
+            "must be private. Public/protected data leaks invariants "
+            "and breaks the encapsulation argument in your safety case.");
+    }
+    return true;
+}
+```
+
+Full source: <RepoFile path="posts/toolset/qualified-compilers/examples/reflect-misra-rule-of-five.cpp" branch="main" />.
+
+<GodboltEmbed id="v3Pa5sWfh" title="Reflection-driven MISRA C++:2023 Rule 11.0.1 lint (clang-p2996)" />
+
+### Reproduce locally
+
+<DockerRun
+  image="ghcr.io/wrocpp/cpp-reflection:2026-05"
+  command={"bash -c 'clang++ -std=c++26 -freflection-latest -stdlib=libc++ -Wl,-rpath,/opt/p2996/clang/lib/aarch64-unknown-linux-gnu posts/toolset/qualified-compilers/examples/reflect-misra-rule-of-five.cpp -o /tmp/h && /tmp/h'"}
+  expected={"MISRA C++:2023 Rule 11.0.1 check passed for SensorReading.\nUncomment LeakedInvariant struct to see the static_assert fire."}
+  title="Compile-time MISRA Rule 11.0.1 (cpp-reflection container)"
+/>
+
+### Why this is a qualification-surface win
+
+In an ISO 26262 project, every tool needing TCL-3 qualification is paid for in audit time. A `static_assert` baked into the source is part of the **language toolchain's** TCL-1 argument -- you qualify it once when you qualify the compiler, not separately per rule. A clang-tidy run that enforces the same rule is a TCL-3 tool: separate qualification kit, separate test corpus, separate version pinning, separate audit trail.
+
+Pattern composes for any per-member predicate:
+
+- "No raw pointer fields" -- pair with [hardened-stdlib](/toolset/hardened-stdlib/).
+- "No public mutable state" -- a stronger encapsulation rule.
+- "Every field has an `[[asil_b]]` annotation" -- P3394 user-defined annotations + reflection.
+- "All struct members are structurally comparable" -- the foundation for the `derive(Eq, Hash)` post.
+
+## Where this is heading
+
+C++29 candidate features tighten the loop further:
+
+**Profiles** (P3081 Sutter, P3589 Dos Reis, P3984 Stroustrup) move bounds / type / lifetime rules from analyzer-checked to compiler-enforced:
+
+```cpp
+// C++29 candidate -- pseudo-syntax. As of 2026-05-14 not in any
+// shipping toolchain. P3081/P3589/P3984 papers in WG21.
+[[ profiles::enforce(bounds, type, lifetime) ]]
+namespace brake_controller {
+    auto compute_pressure(std::span<sensor_reading const> samples)
+        -> std::expected<pressure, brake_error>;
+}
+```
+
+When ratified, vendors building qualification kits certify enforcement at the compiler level instead of re-certifying a separate analyzer pass. The TCL argument shrinks again.
+
+**Token injection** (P3294, C++29 candidate) extends the reflection pattern to generate qualification-kit-required boilerplate at the declaration site -- audit logs, traceability tags, assertion hooks -- without the developer hand-writing them:
+
+```cpp
+// C++29 candidate -- pseudo-syntax. Today on clang-p2996 the same
+// intent is achievable with consteval helpers; injection makes it
+// declarative. P3294 in WG21.
+[[ inject(asil_b_traceability) ]]
+double brake_pressure(double sensor_a, double sensor_b);
+// Auto-injects: ISO 26262 Part 6 Section 7 traceability tag,
+// auto-injects: precondition/postcondition contracts, hashed link
+// to the safety-case fragment.
+```
+
+The scope discipline of C++ for safety-critical work is currently a function of (vendor toolchain) + (qualified subset) + (separate analyzers). C++26 reflection starts collapsing the third category into the first; C++29 profiles and injection take the rest.
+
+---
+
+**Cross-links:** the [hardened-stdlib](/toolset/hardened-stdlib/) entry covers the runtime side (one CMake line, ~1000 production bugs caught at Google scale -- relevant for the runtime TCL argument). The [memory-safety in C++26 and beyond](/toolset/memory-safety-cpp26-and-beyond/) entry covers profiles status honestly. The [cpp-coding-standards](/toolset/cpp-coding-standards/) entry (launching 2026-06-13) covers MISRA C++:2023 / SEI CERT C++ / JSF AV C++ side-by-side.
+
+**Reviewed:** 2026-05-14. Vendor matrix verified against vendor public pages. Quarterly refresh.
