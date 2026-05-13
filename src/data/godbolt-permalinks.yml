@@ -364,6 +364,16 @@ sanitizers-2026:
       ok: id=5 raw=-1 flags=1
 
       truncated: refused (correct)'
+profiling-cpp-2026:
+  reflect_tracing:
+    title: Auto-trace every annotated method (clang-p2996)
+    id: 1cbnKGfW3
+    url: https://godbolt.org/z/1cbnKGfW3
+    expected_output: |-
+      == span log (3 entries) ==
+        draw            <ns> ns
+        flush           <ns> ns
+        draw            <ns> ns
 memory-safety-cpp26-and-beyond:
   reflect_profile:
     title: Reflection-driven basic safety profile (clang-p2996)
