@@ -10,7 +10,8 @@ series_order: 15
 audience: working-cpp
 tags: [reflection, cpp26, mocking, testing]
 summary: "Mockito and Moq in C++: point a library at an abstract base class and get a mock that records calls and lets you program return values. No per-method MOCK_METHOD boilerplate."
-draft: true
+draft: false
+discussion: https://github.com/wrocpp/wrocpp.github.io/discussions/61
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -189,7 +190,7 @@ Each field names a method; each value is a callable. A designated-initializer-st
 
 You can keep using gmock for complex cases (expectations, matchers, etc.) and reach for `reflect_mocks` when you just want a quick stub. They compose — a `reflect_mocks` mock can be `dynamic_cast`-ed, captured by a `gmock::EXPECT_CALL`, whatever. Reflection isn't replacing gmock; it's removing the boilerplate for the 80% case.
 
-<GodboltEmbed id="TODOmocks" title="reflect_mocks — interface → test double" />
+<GodboltEmbed id="jbeWEa3ex" title="reflect_mocks — interface → test double" />
 
 ## What's next
 
