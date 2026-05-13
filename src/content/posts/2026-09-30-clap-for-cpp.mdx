@@ -233,6 +233,43 @@ int main(int argc, char** argv) {
 
 The variant branch is chosen by the first non-flag token. `reflect_cli` walks the variant alternatives (via `template_arguments_of(^^std::variant<...>)`) and routes accordingly.
 
+## Sidebar: design alternatives for the annotation surface
+
+The `[[=cli::positional{0}]]` / `[[=cli::option{"-n", "--count"}]]` pattern uses **value-carrying structs per axis** — the shape Barry Revzin's [reference example](https://brevzin.github.io/c++/2024/09/30/annotations/) ships and that the [P3394R4](https://isocpp.org/files/papers/P3394R4.html) examples canonise (empty tag struct for boolean markers, value-carrying struct for parameters). It's the same split serde-rs settled on after years of evolution.
+
+An equally valid alternative is **`enum class : unsigned` bitflags** for orthogonal boolean modifiers:
+
+```cpp
+enum class cli_flags : unsigned {
+    none       = 0,
+    required   = 1 << 0,
+    hidden     = 1 << 1,
+    env        = 1 << 2,
+    repeatable = 1 << 3,
+};
+constexpr cli_flags operator|(cli_flags a, cli_flags b) {
+    return cli_flags(unsigned(a) | unsigned(b));
+}
+
+// Pre-named combinations stay short at call sites:
+inline constexpr cli_flags required_env = cli_flags::required | cli_flags::env;
+
+struct Args {
+    [[=cli::option{"--token"}, =required_env]]            std::string api_token;
+    [[=cli::option{"--include", "-i"}, =cli_flags::repeatable]]
+                                                          std::vector<std::string> includes;
+};
+```
+
+Bitflags **win** when the modifier set is closed, the combinations recur, and the consumer wants the whole mask as a value -- the canonical examples are `std::ios::fmtflags` and `std::filesystem::perms`. They **lose** on:
+
+- **Documentation surface** — each combination is implicit; clap-rs's most-cited derive pain ([discussion #4090](https://github.com/clap-rs/clap/discussions/4090)) is exactly this open-endedness.
+- **Per-bit lookup** — `(get_annotation<cli_flags>(m) & required) != 0` reads worse than `has_annotation<required>(m)`.
+- **Type-distinct queries** — `annotations_of_with_type(M, ^^required)` is purpose-built for tag types; bitfields force a single combined value through the same channel.
+- **Invalid-combination rejection** — overload resolution + `static_assert` can reject impossible tag pairs at compile time; every bit combination is syntactically valid.
+
+And there's a **third orthogonal axis you should use first: the type signature.** `std::optional<int> count` says "optional" without any annotation; `std::vector<std::string> includes` says "repeatable". Clap-rs's `Option<T>` / `Vec<T>` convention encodes those modifiers in the type system, not the attribute system, leaving the annotation surface for the genuinely declarative parts (flag names, defaults, env-var bindings). The C++ version follows the same lesson — your annotation taxonomy should cover only what the type system can't say.
+
 ## What about CLI11 / cxxopts?
 
 They're fine libraries. The reflection version gives you:
