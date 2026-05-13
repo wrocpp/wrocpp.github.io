@@ -10,7 +10,8 @@ series_order: 16
 audience: working-cpp
 tags: [reflection, cpp26, type-synthesis, define_aggregate]
 summary: "TypeScript's Pick, Omit, and Partial have direct C++26 equivalents. define_aggregate lets you construct a new type from a list of member specs — opening up type-level programming that was previously pure metaprogramming wizardry."
-draft: true
+draft: false
+discussion: https://github.com/wrocpp/wrocpp.github.io/discussions/62
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -211,7 +212,7 @@ Compile-time cost scales with the number of `data_member_spec`s — linear in fi
 
 Combined with the serialization, CLI, ORM, DI, and mocking machinery from earlier posts, `define_aggregate` closes the loop. You can describe data **shapes** declaratively — by filtering, transforming, or combining existing types — and every surface (wire formats, database columns, help text, test doubles) follows. That's the programming model TypeScript has offered since 2016. C++ has it now, at compile time, zero-cost.
 
-<GodboltEmbed id="TODOdefineag" title="Pick / Omit / Partial in C++26" />
+<GodboltEmbed id="3o8T5h1od" title="Pick / Omit / Partial in C++26" />
 
 ## What's next
 
