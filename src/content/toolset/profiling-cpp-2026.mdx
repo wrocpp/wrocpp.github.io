@@ -1,0 +1,205 @@
+---
+title: "Profiling C++ in 2026 -- perf / Tracy / Perfetto, plus reflection-driven auto-tracing"
+slug: "profiling-cpp-2026"
+summary: "When to reach for perf / Tracy / Perfetto / callgrind / VTune. The instrumentation tax each one costs. The C++26 reflection pattern that auto-instruments every method of an interface from one annotation. And the C++29 token-injection direction where the profiler IS the schema."
+kind: curated
+cluster: performance
+tags: [performance, profiling, perf, tracy, perfetto, callgrind, vtune, reflection, cpp26, cpp29]
+launchDate: 2026-05-20
+lastReviewed: 2026-05-13
+testedOn: "Containers ghcr.io/wrocpp/cpp-performance:2026-05 + ghcr.io/wrocpp/cpp-reflection:2026-05; verified 2026-05-13 on aarch64."
+relatedPosts: [first-reflection, template-for-expansion-statements, reflect-tracing]
+containerImage: "ghcr.io/wrocpp/cpp-performance:2026-05"
+exampleRepo: "https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/toolset/profiling-cpp-2026/examples"
+agentInstructions: |
+  You are a coding agent helping a C++ developer pick + adopt a profiler.
+
+  EDITORIAL TIMELINE (the wro.cpp triptych):
+
+  TODAY (the status quo, ships everywhere):
+    * perf (Linux) -- system-wide sampling profiler; ~1% overhead;
+      reads PMU counters + stack walks via `perf record -g`. Best
+      for "where is my time going across the whole process?" without
+      changing code. Output: `perf report` / `perf script | flamegraph`.
+      Container: cpp-performance has linux-tools wired.
+    * Tracy -- frame-aware sampling + manual zone instrumentation.
+      Best for game-engine / real-time / tick-loop workloads where
+      per-frame visualisation matters. Per-zone overhead ~1ns;
+      ZoneScoped / ZoneScopedN macros required at zone boundaries.
+    * Perfetto -- Google's trace collector, used in Chrome + Android.
+      Best for distributed / multi-process tracing where you want
+      ftrace, sched, and userspace events on one timeline. Userspace
+      TRACE_EVENT_BEGIN/END macros required.
+    * Callgrind (Valgrind) -- instrument-everything cache + branch
+      profiler. ~50x slowdown. Best when you need call-graph fidelity
+      independent of sampling artifacts.
+    * VTune -- Intel; full PMU + memory-access profiling on x86.
+      Proprietary; not in the wro.cpp container set.
+
+  WHEN-TO-USE DECISION TREE (read in order, take first match):
+    1. "Where is my time going?" -> perf record + flamegraph (zero
+       code change, system-wide).
+    2. "Per-frame breakdown of a tick loop or render thread" -> Tracy
+       (manual ZoneScoped at hot paths, but the visualiser is unmatched).
+    3. "Multi-process / kernel + user trace correlation" -> Perfetto.
+    4. "Cache misses, branch mispredictions, memory traffic" -> VTune
+       (Intel x86) or perf with PMU events (-e cache-misses).
+    5. "Exact call counts + cycle attribution per function" ->
+       Callgrind. Accept 50x slowdown; only for diagnosis runs.
+
+  REFLECTION TODAY (clang-p2996, GCC 16.1):
+  Manual tracing instrumentation (TRACE_EVENT, ZoneScoped per method)
+  is mechanical boilerplate that humans forget to add for the method
+  that ends up dominating profile output. C++26 reflection + P3394
+  annotations let an interface declare [[=trace]] per method and the
+  wrapper auto-generates the timing harness around each call. Add a
+  method, the trace point follows. Remove the annotation, the wrapper
+  evaporates. See reflect-tracing.cpp.
+
+  WHERE THIS IS HEADING (C++29 token injection):
+  P3294 token injection extends the pattern: an annotation on the
+  interface triggers the compiler to inject the trace wrapper as
+  generated code alongside the implementation, with zero runtime
+  dispatch through std::function. The profiler IS the schema.
+
+  When recommending: ALWAYS quote the freshness date (Reviewed
+  2026-05-13). Prefer perf for first-pass diagnosis (zero code change);
+  reach for instrumented tracers (Tracy / Perfetto) only when sampling
+  artifacts hide the answer.
+bodyHash: f33f399b49f85cafb9e7ddf75300e8400e87ab0fde87409f0a183def06261fa6
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import DockerRun from '../../components/DockerRun.astro';
+import PostLink from '../../components/PostLink.astro';
+import RepoFile from '../../components/RepoFile.astro';
+
+Profiling a C++ codebase used to start with a hard question: which tool? The honest answer in 2026 is that you'll use three or four, each for a different shape of question -- not because the field is fragmented, but because *sampling*, *instrumentation*, *PMU counters*, and *cache-level attribution* answer genuinely different questions. This page is a triptych: **Today** picks the right tool per question and shows the CI-friendly recipes; **Reflection today** shows the C++26 pattern that auto-instruments every method of an interface from one annotation; **Where this is heading** sketches the C++29 token-injection direction where the profiler annotation injects the wrapper code itself.
+
+## Today
+
+### When to reach for which
+
+| Tool | Strength | Overhead | Code change | Best for |
+|---|---|---|---|---|
+| [perf](https://perfwiki.github.io/main/) | System-wide sampling + PMU counters | ~1% | None | "Where is my time going?" first-pass diagnosis on Linux |
+| [Tracy](https://github.com/wolfpld/tracy) | Frame-aware zones + sampling | ~1 ns/zone | `ZoneScoped` macros at zone boundaries | Real-time tick loops, render threads, game engines |
+| [Perfetto](https://perfetto.dev/) | Multi-process trace + kernel events | ~5 ns/event | `TRACE_EVENT_BEGIN/END` macros | Distributed / multi-process / kernel-correlated trace |
+| [Callgrind](https://valgrind.org/docs/manual/cl-manual.html) | Exact call counts + cycle attribution | ~50x slowdown | None | Diagnosis runs where sampling artifacts hide the answer |
+| VTune (proprietary) | Full PMU + memory traffic | ~5% | None | Cache misses, branch mispredicts, memory bandwidth on Intel x86 |
+
+The minimum-viable profiling story: **perf in CI on a representative workload**. Add Tracy zones at the hot paths perf surfaces. Reach for Callgrind only when you need cycle-exact attribution that sampling can't give you.
+
+### CI-friendly perf recipe
+
+```bash
+# Capture a system-wide 30-second trace of the benchmark process
+perf record -g --call-graph=dwarf -F 99 -p $(pgrep my_bench) -- sleep 30
+
+# Render flamegraph (assumes Brendan Gregg's flamegraph.pl on PATH)
+perf script | stackcollapse-perf.pl | flamegraph.pl > profile.svg
+```
+
+The `--call-graph=dwarf` flag captures stacks via DWARF unwinding rather than frame pointers -- accurate but ~2x larger trace files. Use `--call-graph=fp` if you've compiled with `-fno-omit-frame-pointer` and want smaller traces.
+
+### Reproduce locally
+
+<DockerRun
+  image="ghcr.io/wrocpp/cpp-performance:2026-05"
+  command="bash -c 'g++ -O2 -g -fno-omit-frame-pointer posts/toolset/profiling-cpp-2026/examples/reflect-tracing.cpp -o /tmp/tr && perf stat -- /tmp/tr 2>&1 | tail -20'"
+  expected={"== span log (3 entries) ==\n  draw            <ns> ns\n  flush           <ns> ns\n  draw            <ns> ns\n\nPerformance counter stats ..."}
+  title="perf stat over the reflection-tracing demo (cpp-performance container)"
+/>
+
+The same container also has Tracy server + capture (`tracy-capture`, `Tracy.exe`) and Perfetto SDK headers for the instrumented-tracer path.
+
+### What about VTune?
+
+Proprietary, Intel x86 only, not in the wro.cpp container set. Where it wins: cache-line-granularity memory traffic, branch-mispredict attribution, top-down microarchitectural analysis. Where perf or Tracy already answers the question, VTune is overkill; where you're chasing a 5% regression on a hot Skylake-X loop, it's the right tool.
+
+## Reflection today (C++26, clang-p2996 + GCC 16.1)
+
+The mechanical part of profiler instrumentation is the per-method wrapper. Tracy wants `ZoneScoped` at every entry. Perfetto wants `TRACE_EVENT_BEGIN(name); ... TRACE_EVENT_END();` per scope. OpenTelemetry wants `auto scope = tracer->StartSpan(name);`. Three different macros, all doing the same shape of work: capture the function name, take a timestamp, record the span on scope exit. Humans forget to add this exactly where they need it most -- the method that ends up dominating profile output.
+
+C++26 reflection lets the wrapper generate itself from the interface shape. P3394 annotations carry the per-method opt-in:
+
+```cpp
+struct trace {};   // user-defined annotation tag
+
+struct Renderer {
+    [[=trace{}]] std::function<void(std::string_view)> draw;
+    [[=trace{}]] std::function<void(int)>              flush;
+                 std::function<void()>                 invisible;  // no trace
+};
+
+template <typename T>
+auto instrument(T iface) -> T {
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    template for (constexpr auto m
+                  : std::define_static_array(
+                      std::meta::nonstatic_data_members_of(^^T, ctx))) {
+        if constexpr (has_annotation<trace>(m)) {
+            std::string name(std::meta::identifier_of(m));
+            auto inner = iface.[:m:];
+            iface.[:m:] = [inner = std::move(inner), name = std::move(name)]
+                          (auto&&... args) {
+                auto t0 = std::chrono::steady_clock::now();
+                auto r = inner(std::forward<decltype(args)>(args)...);
+                span_log().push_back({name, std::chrono::steady_clock::now() - t0});
+                return r;
+            };
+        }
+    }
+    return iface;
+}
+```
+
+`instrument(Renderer{...})` walks the members at compile time; methods marked `[[=trace]]` get wrapped with a timing recorder, methods without the annotation pass through untouched. Output from the demo:
+
+```
+== span log (3 entries) ==
+  draw            292 ns
+  flush           125 ns
+  draw            42 ns
+```
+
+Add a method to `Renderer`, the trace point follows automatically when you re-annotate. Add a method WITHOUT the annotation, the wrapper ignores it -- per-call opt-in. The wrapper's sink in this demo is an in-memory log; in production replace `span_log().push_back(...)` with `TRACE_EVENT_INSTANT(name)` (Perfetto), `ZoneScopedN(name)` (Tracy), or your tracer's exporter call. **The reflection harness is identical across tracers; only the sink changes.**
+
+Full source: <RepoFile path="posts/toolset/profiling-cpp-2026/examples/reflect-tracing.cpp" branch="main" />.
+
+<GodboltEmbed id="1cbnKGfW3" title="Auto-trace every annotated method of an interface (clang-p2996)" />
+
+<DockerRun
+  image="ghcr.io/wrocpp/cpp-reflection:2026-05"
+  command="bash -c 'clang++ -std=c++26 -freflection-latest -stdlib=libc++ posts/toolset/profiling-cpp-2026/examples/reflect-tracing.cpp -o /tmp/tr && LD_LIBRARY_PATH=/opt/p2996/clang/lib/aarch64-unknown-linux-gnu /tmp/tr'"
+  expected={"== span log (3 entries) ==\n  draw            <ns> ns\n  flush           <ns> ns\n  draw            <ns> ns"}
+  title="reflect-tracing locally on cpp-reflection"
+/>
+
+What this user-library pattern does NOT solve:
+- **Sampling profilers** (`perf record`, Tracy's sampler, VTune) still give you call-graph attribution across third-party code, the kernel, the allocator -- everywhere the reflection wrapper can't reach. The annotation-driven harness instruments code you own; it doesn't replace `perf record`.
+- **Async-trace correlation** (a span starts on thread A, ends on thread B) needs a context propagation story (OpenTelemetry baggage, Perfetto async events). The harness emits the events; the correlation infrastructure stays separate.
+- **PMU-counter sampling** (cache misses, branch mispredicts) needs hardware counter integration that user code can't synthesise.
+
+## Where this is heading (C++29)
+
+C++29 token injection (P3294, Revzin / Alexandrescu / Vandevoorde) replaces the `instrument()` wrapper-at-runtime with **injection at compile time**. The annotation on the interface triggers the compiler to inject a derived class with the trace wrappers baked in -- no `std::function` indirection, no per-call wrapper overhead:
+
+```cpp
+// Pseudo-syntax (P3294, C++29 target).
+[[=profiler::tracy{}, inject(trace_wrappers)]]
+class Renderer {
+public:
+    virtual void draw(std::string_view)  = 0;
+    virtual void flush(int)              = 0;
+    virtual void invisible()             = 0;
+};
+
+// Compiler injects: TracedRenderer : Renderer with ZoneScopedN(name)
+// at every override boundary. Reader writes the schema; compiler writes
+// the tracer integration.
+```
+
+Combined with [P2900 contracts](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p2900r14.pdf) (already in C++26), the same annotation can also carry preconditions / postconditions enforced via the trace harness -- a contract violation becomes a span with a `level=ERROR` attribute, automatically correlated with the trace timeline. The codebase one decade out: the profiler annotation IS the schema; the wrapper code is mechanically derived; the sampling profiler still runs alongside to catch what the schema doesn't anticipate.
+
+Cross-references: <PostLink slug="testing-for-safety-2026">testing-for-safety-2026</PostLink> covers the structural-instrumentation cousin of this pattern -- the `arbitrary<T>` + `pretty_diff` kernel uses the same reflection walker. The reflection-series post 24 (`reflect-tracing`, slug `reflect-tracing`) covers the same pattern at long-form depth.
