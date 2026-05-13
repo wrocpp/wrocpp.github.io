@@ -369,11 +369,8 @@ profiling-cpp-2026:
     title: Auto-trace every annotated method (clang-p2996)
     id: 1cbnKGfW3
     url: https://godbolt.org/z/1cbnKGfW3
-    expected_output: |-
-      == span log (3 entries) ==
-        draw            <ns> ns
-        flush           <ns> ns
-        draw            <ns> ns
+    expected_output: "== span log (3 entries) ==\n  draw            <ns> ns\n  flush           <ns> ns\n  draw           \
+      \ <ns> ns"
 memory-safety-cpp26-and-beyond:
   reflect_profile:
     title: Reflection-driven basic safety profile (clang-p2996)
@@ -430,6 +427,19 @@ clap-for-cpp:
     id: bas17xKqj
     url: https://godbolt.org/z/bas17xKqj
     expected_output: verbose=true count=5 input=input.txt
+  cli_bitflag:
+    title: Cli bitflag
+    id: rsaqjGjPE
+    url: https://godbolt.org/z/rsaqjGjPE
+    expected_output: "Args fields with their modifier masks:\n  --input        required \n  --api_token    required env \n\
+      \  --debug        hidden \n  --include      repeatable \n  --verbose      (none)"
+  cli_type_axis:
+    title: Cli type axis
+    id: o5dM6z79c
+    url: https://godbolt.org/z/o5dM6z79c
+    expected_output: "Args fields, shape derived from type alone (no annotations):\n  input       required   (must appear)\n\
+      \  count       optional   (default = nullopt)\n  output      optional   (default = nullopt)\n  includes    repeatable\
+      \ (default = empty)\n  verbose     required   (must appear)"
 tiny-orm:
   sql_gen:
     title: Sql gen
