@@ -261,6 +261,10 @@ struct Args {
 };
 ```
 
+The bitflag pattern actually works as advertised — the demo below walks the struct and prints which modifier bits each field carries:
+
+<GodboltEmbed id="rsaqjGjPE" title="enum-class bitflag annotations -- modifier set per field" />
+
 Bitflags **win** when the modifier set is closed, the combinations recur, and the consumer wants the whole mask as a value -- the canonical examples are `std::ios::fmtflags` and `std::filesystem::perms`. They **lose** on:
 
 - **Documentation surface** — each combination is implicit; clap-rs's most-cited derive pain ([discussion #4090](https://github.com/clap-rs/clap/discussions/4090)) is exactly this open-endedness.
@@ -269,6 +273,10 @@ Bitflags **win** when the modifier set is closed, the combinations recur, and th
 - **Invalid-combination rejection** — overload resolution + `static_assert` can reject impossible tag pairs at compile time; every bit combination is syntactically valid.
 
 And there's a **third orthogonal axis you should use first: the type signature.** `std::optional<int> count` says "optional" without any annotation; `std::vector<std::string> includes` says "repeatable". Clap-rs's `Option<T>` / `Vec<T>` convention encodes those modifiers in the type system, not the attribute system, leaving the annotation surface for the genuinely declarative parts (flag names, defaults, env-var bindings). The C++ version follows the same lesson — your annotation taxonomy should cover only what the type system can't say.
+
+The demo below runs a `shape_of<T>()` consteval helper across the fields of an `Args` struct and prints the per-field shape derived from the type alone — no annotations involved:
+
+<GodboltEmbed id="o5dM6z79c" title="Type-signature as third axis -- optional/repeatable/required from the type" />
 
 ## What about CLI11 / cxxopts?
 
