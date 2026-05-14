@@ -88,6 +88,30 @@ def build_message(fm: dict, slug: str, kind: str) -> str:
     return "\n".join(lines)
 
 
+def verify_live(url: str, title: str) -> None:
+    """Refuse to post unless the URL returns 200 AND the title appears in the
+    page body. The title check guards against deploy-pipeline edge cases
+    where a stale CDN cache or fallback page returns 200 with the wrong
+    content. Astro is static-site so there's no SPA-fallback risk, but the
+    extra check costs nothing.
+    """
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            if resp.status != 200:
+                sys.exit(f"error: {url} returned HTTP {resp.status}; refusing to post")
+            body = resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        sys.exit(f"error: {url} returned HTTP {e.code}; refusing to post")
+    except urllib.error.URLError as e:
+        sys.exit(f"error: cannot reach {url} ({e.reason}); refusing to post")
+    # The title is HTML-escaped in the rendered page; check for a robust
+    # substring rather than the full title (titles often contain --, &, etc).
+    needle = title.split(" -- ")[0].split(":")[0].strip()
+    if needle and needle not in body:
+        sys.exit(f"error: {url} returned 200 but title fragment {needle!r} "
+                 f"not found in body; deploy may be stale -- refusing to post")
+
+
 def post_to_slack(webhook: str, message: str) -> None:
     payload = json.dumps({"text": message}).encode()
     req = urllib.request.Request(
@@ -106,11 +130,16 @@ def main() -> None:
     p.add_argument("--slug", required=True)
     p.add_argument("--kind", required=True, choices=("toolset", "post"))
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--skip-verify", action="store_true",
+                   help="emergency override: skip the live-URL check (default: verify)")
     args = p.parse_args()
 
     mdx = find_mdx(args.slug, args.kind)
     fm = parse_frontmatter(mdx)
     message = build_message(fm, args.slug, args.kind)
+    url_prefix = "toolset" if args.kind == "toolset" else "posts"
+    url = f"https://wrocpp.github.io/{url_prefix}/{args.slug}/"
+    title = fm.get("title", args.slug)
 
     print("--- message ---")
     print(message)
@@ -119,6 +148,12 @@ def main() -> None:
     if args.dry_run:
         print("(dry-run, not posting)")
         return
+
+    if args.skip_verify:
+        print("(skip-verify, NOT checking live URL)")
+    else:
+        verify_live(url, title)
+        print(f"verified live: {url}")
 
     webhook = load_webhook()
     post_to_slack(webhook, message)
