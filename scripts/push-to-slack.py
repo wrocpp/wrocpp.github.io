@@ -113,7 +113,22 @@ def verify_live(url: str, title: str) -> None:
 
 
 def post_to_slack(webhook: str, message: str) -> None:
-    payload = json.dumps({"text": message}).encode()
+    # Slack quirk: the "Customize Name / Customize Icon" settings on the
+    # webhook config page are honored only by legacy Custom Integrations,
+    # and even then only if the payload does NOT override them. Modern
+    # app-based webhooks post as "incoming-webhook" regardless of the UI.
+    # Sending username + icon_emoji explicitly is the robust path: it
+    # works on classic webhooks and is harmless when the app type ignores
+    # it (Slack returns the same `ok` either way).
+    # Note: NO icon_emoji / icon_url override -- that would replace the
+    # custom wro.cpp logo uploaded in the webhook's Customize Icon
+    # setting. Username is sent explicitly because the modern app-based
+    # webhook ignores the Customize Name field, but the configured icon
+    # IS honored as long as the payload doesn't override it.
+    payload = json.dumps({
+        "text": message,
+        "username": "Wro.cpp News",
+    }).encode()
     req = urllib.request.Request(
         webhook,
         data=payload,
