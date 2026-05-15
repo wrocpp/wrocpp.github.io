@@ -10,7 +10,7 @@ series_order: 20
 audience: working-cpp
 tags: [reflection, cpp26, testing, quickcheck, rapidcheck, fuzztest, reflect_arbitrary]
 summary: "QuickCheck in Haskell, mockall in Rust, jqwik in Java — every major language auto-derives Arbitrary<T> from a struct declaration. C++ was last. Reflection fixes that: reflect the struct, recurse into field types, emit a generator. RapidCheck and FuzzTest adapters included."
-draft: true
+draft: false
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -165,7 +165,7 @@ FUZZ_TEST(RoundTrip, [](User u) {
 
 The `arb::fuzztest_domain<T>` helper produces a FuzzTest `Domain<T>` from the same reflection walk. Your fuzz harness is declarative.
 
-<GodboltEmbed id="TODOarbitrary" title="reflect_arbitrary — property test generator from a struct" />
+<GodboltEmbed id="h9Mx51Ke8" title="reflect_arbitrary — property test generator from a struct" />
 
 ## Comparison with other languages
 
