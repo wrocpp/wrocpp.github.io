@@ -10,7 +10,7 @@ series_order: 24
 audience: working-cpp
 tags: [reflection, cpp26, tracing, perfetto, chrome-trace, reflect_tracing]
 summary: "Tracing and metrics split into sibling libraries: reflect_telemetry for aggregates over time, reflect_tracing for spans at microsecond resolution. The engine is Maciek Gajewski's 2021 Wro.cpp technique — thread-local ring buffers, ~200 ns per span, function address as payload, DWARF resolution at dump time. Reflection contributes the instrumentation layer, which today is one explicit scope-guard line per function and tomorrow (C++29, P3294/P3157) becomes a pure annotation."
-draft: true
+draft: false
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -272,7 +272,7 @@ Perfetto's flamegraph view turns this into a million-span zoomable timeline. Use
 - Lock contention (threads waiting).
 - Thread-pool imbalances.
 
-<GodboltEmbed id="TODOtracing" title="reflect_tracing — scope_guard<^^Fn>, address-only hot path, compile/runtime disable" />
+<GodboltEmbed id="nvh6vTxP1" title="reflect_tracing — scope_guard<^^Fn>, address-only hot path, compile/runtime disable" />
 
 ## What the library ships
 
