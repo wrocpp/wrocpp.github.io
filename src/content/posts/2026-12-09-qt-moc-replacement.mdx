@@ -10,7 +10,7 @@ series_order: 17
 audience: working-cpp
 tags: [reflection, cpp26, qt, moc, properties]
 summary: "Qt's Meta-Object Compiler parses Q_OBJECT/Q_PROPERTY declarations and emits glue code. With C++26 reflection, Q_PROPERTY-equivalent becomes a library pattern — no external compiler, no generated files."
-draft: true
+draft: false
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -169,7 +169,7 @@ Net result over time: MOC stays for QML boundary classes; everything else is pla
 
 The full MOC replacement would take months of engineering. This post is an architectural sketch showing the *primitive* (reflection walks properties) rather than a drop-in library. `rqt::Object` isn't a library you can use today — it's the direction you'd take if starting a Qt-adjacent framework in 2026.
 
-<GodboltEmbed id="TODOqtmoc" title="rqt::Object — property registry via reflection" />
+<GodboltEmbed id="vqn9Y4Ex5" title="rqt::Object — property registry via reflection" />
 
 ## What's next
 
