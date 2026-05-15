@@ -10,7 +10,7 @@ series_order: 22
 audience: working-cpp
 tags: [reflection, cpp26, debugger, lldb, gdb, natvis, docs, reflect_dx]
 summary: "Every C++ shop writes .natvis files by hand and they go stale. Every C++ shop wishes their headers were documented but can't face Doxygen XML. reflect_dx ships as a build-step tool: walk your headers with reflection, emit LLDB / GDB / Visual Studio pretty-printers + markdown docs. Your struct is your documentation and its debugger visualisation."
-draft: true
+draft: false
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -164,7 +164,7 @@ One function walks the fields, emits the visualisation. `reflect-pretty` compose
 | Rust `#[derive(Debug)]` | The struct | No (auto) | Yes |
 | **reflect_dx** | **The struct** | **No (reflection)** | **Yes (re-run on change)** |
 
-<GodboltEmbed id="TODOdx" title="reflect_dx — natvis emission from a reflection walk" />
+<GodboltEmbed id="75fzcaoTv" title="reflect_dx — natvis emission from a reflection walk" />
 
 ## Why both tools in one repo
 
