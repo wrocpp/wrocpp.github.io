@@ -10,7 +10,7 @@ series_order: 19
 audience: working-cpp
 tags: [reflection, cpp26, llm, openai, anthropic, mcp, reflect_llmschema]
 summary: "In the AI agent era every tool you expose to Claude/GPT needs a JSON-Schema description. Today you write it by hand next to the C++ function. With C++26 reflection, a single consteval call emits the tool-use JSON at compile time — parameter names, types, docstrings, dispatch, done."
-draft: true
+draft: false
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -148,7 +148,7 @@ Four lines register four tools. Each registration:
 2. Registers a runtime dispatch that deserialises the incoming JSON (using the `reflect_json` library from post 10) into the typed struct, calls the function, serialises the return value back.
 3. Publishes on the `/tools` MCP endpoint.
 
-<GodboltEmbed id="TODOlllmschema" title="reflect_llmschema — OpenAI tool-use from C++ function" />
+<GodboltEmbed id="oTbbWW1TG" title="reflect_llmschema — OpenAI tool-use from C++ function" />
 
 ## Why this was impossible before 2026
 
