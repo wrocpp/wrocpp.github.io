@@ -1,0 +1,73 @@
+---
+title: "Sutter's BeCPP keynote: C++ added more developers in 4 years than any other language"
+slug: "cpp-fastest-growing-2025"
+pubDate: 2026-05-19
+author: filip-sajdak
+language: en
+kind: short
+audience: mixed
+tags: [news, cpp, growth, slashdata, sutter, becpp, rust]
+summary: "Herb Sutter's keynote at the BeCPP Symposium 2026 (March 30, Howest, Belgium) opened with a SlashData chart almost nobody outside the room has seen yet: C++ developer population grew 72% from Q1 2022 to Q1 2025 -- from 9.5M to 16.3M. That is the biggest absolute net gain of any general-purpose language over the period. Rust grew faster in percentage (137%) but on a smaller base (5.1M total). Here is the chart, the numbers behind it, and the thesis Sutter built on top -- plus an honest read on what 'fastest growing' means when JavaScript is still bigger than the second + third place combined."
+draft: false
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+Herb Sutter's BeCPP Symposium keynote ([video](https://www.youtube.com/watch?v=QWqfJtjTAdw), Howest, March 30 2026) opened with a chart that has been quietly travelling through C++ Slack channels for the past six weeks. SlashData's Q1 2025 *Developer Population* report puts C++ at **16.3M developers**, up from 9.5M in Q1 2022 -- a **72% gain in three years**. JavaScript is still #1 at 28.0M. But here is the line everyone in the room reposted on the way out:
+
+> *"There are more C++ developers today than the #1 language had four years ago."*
+
+That is one slide, two numbers. The interesting part is what those numbers do (and do not) mean.
+
+## The chart in plain numbers
+
+SlashData polls developers globally each quarter. The 2025 *State of the Developer Nation* puts the top of the league table like this (Q1 2025, sized in millions):
+
+| # | Language | Q1 2025 | Q1 2022 | Net add | % growth (3y) |
+|---|---|---:|---:|---:|---:|
+| 1 | JavaScript | 28.0 | ~22 | +6.0 | ~27% |
+| 2 | Java | 23.2 | ~16 | +7.2 | ~45% |
+| 3 | Python | 22.9 | ~16 | +6.9 | ~43% |
+| 4 | **C++** | **16.3** | **~9.5** | **+6.8** | **72%** |
+| 5 | PHP | 11.5 | -- | -- | -- |
+| 6 | C# | 11.1 | -- | -- | -- |
+| 7 | C | 9.1 | ~5.2 | +3.9 | ~75% |
+| 11 | Rust | 5.1 | ~2.1 | +3.0 | **137%** |
+
+(Q1 2022 totals reconstructed from SlashData's annual deltas. The chart shape, growth-arrow callouts, and the 16.3M C++ figure are directly from the deck Sutter showed; older quarters are estimated from the bars in slide 5.)
+
+Two honest reads of this table, both true:
+
+- **Rust grew fastest in percentage**: 137% over three years. If your prior was "Rust is rising rapidly", the data backs it.
+- **C++ grew fastest in absolute developer count among the perf/Watt-honest languages**: +6.8M added in three years. JavaScript added similar absolute numbers, but it started 13M ahead. The languages targeting durable perf-per-Watt -- Sutter's framing -- are C, C++, and Rust, and C++ added more developers in absolute terms than C and Rust combined.
+
+The "fastest growing" headline depends on which axis you privilege. Sutter, unsurprisingly, leans on the absolute one. The slide title was "We're growing gangbusters for a reason."
+
+## The thesis Sutter hung off the data
+
+The second slide that got the room's attention came near the end. The reasoning chain:
+
+1. **Compute demand keeps outstripping supply.** "The size of new computing problems we want to solve has routinely outstripped our computing capacity and human developer supply for the past 80 years -- I know of no reason why that would change in the next 80." (slide 37)
+2. **Perf-per-Watt is the durable language axis.** Hardware scaling is hitting physics; the languages whose runtime cost stays close to the metal will keep paying off as workloads grow.
+3. **The list of general-purpose languages targeting that axis is short**: C, C++, Rust. (DSLs, ASICs, FPGAs always get used at the leading edge -- they fill the gaps between general-purpose runs.)
+4. **Therefore the developer-population data is a downstream signal of (1) + (2) + (3).** Languages that map onto the durable perf-per-Watt thesis get a steady tailwind. Java and Python grew fast in absolute numbers because they sit on enormous app + data ecosystems; C++, Rust, and C grew because the compute thesis demands the metal.
+
+That is a tendentious reading -- it is a C++ keynote -- but it is internally consistent and the data does fit it.
+
+## What the data does NOT say
+
+Three things worth being honest about, since this chart is going to be quoted out of context:
+
+1. **It is not "C++ overtook X"**. JavaScript is still bigger by 11M developers; Java by 7M; Python by 7M. C++ closed the gap on the trio above it; it did not pass any of them.
+2. **It is not "Rust is shrinking" or "Rust is in trouble"**. Rust's 137% growth on a 2.1M base is a stronger signal of language health than C++'s 72% on a 9.5M base. The two stories are complementary, not competing.
+3. **SlashData polls the developer population, not lines of code or new project starts**. A polled figure is "do you write C++ at least sometimes" -- not "is C++ your primary language" or "did you start a new C++ project this year". The number is real but it is a coarser signal than commit graphs.
+
+## So what does this mean for the C++ work in 2026?
+
+If you are picking C++ for a new system, the population data is one more data point that the talent pool is growing, not shrinking. If you are arguing internally that "C++ is dying", the chart is a hard rebuttal -- 6.8M developers added in three years is not a dying language. If you are building tooling, libraries, or training material in this space, the demand signal is favourable.
+
+The wro.cpp angle: the [Memory safety in C++26 and beyond](/toolset/memory-safety-cpp26-and-beyond/) toolset entry, the [Hardened standard library](/toolset/hardened-stdlib/) entry, and the [reflection-driven schema lints](/toolset/qualified-compilers/) all sit on top of this thesis. C++ is moving fast on safety and ergonomics because the population of developers shipping production C++ is moving fast. The keynote is worth the 60 minutes if you have not seen it yet.
+
+**Watch:** [Herb Sutter -- C++: Growing in a world of competition, safety, and AI (BeCPP Symposium, March 30 2026)](https://www.youtube.com/watch?v=QWqfJtjTAdw).
+
+**Read next:** the [vector-consteval / constexpr news short](/posts/vector-consteval-or-constexpr/) for the C++26 + reflection-flavoured side, or the [april-2026 roundup](/posts/april-2026-roundup/) for the rest of last month's reflection-arc news.
