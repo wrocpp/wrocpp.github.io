@@ -10,7 +10,7 @@ series_order: 23
 audience: working-cpp
 tags: [reflection, cpp26, telemetry, prometheus, opentelemetry, observability, reflect_telemetry]
 summary: "Every microservice has hand-registered counter() lines that drift from the variable they count. Annotate a field [[=metric(counter)]] and let reflection emit the Prometheus exposition + OpenTelemetry OTLP exporter, keeping names in lockstep with code. Genuinely novel — nobody is doing this yet."
-draft: true
+draft: false
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -161,7 +161,7 @@ stats.requests_total.with("GET", "/api/users", 200).fetch_add(1);
 
 The `labeled_counter<Labels...>` type receives the label spec via CTAD + reflection annotations; runtime label values are hashed into a lock-free map of sub-counters.
 
-<GodboltEmbed id="TODOtelemetry" title="reflect_telemetry — annotated fields to /metrics" />
+<GodboltEmbed id="sTh3McY5v" title="reflect_telemetry — annotated fields to /metrics" />
 
 ## Comparison
 
