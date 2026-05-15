@@ -1,0 +1,215 @@
+---
+title: "SIMD in C++ 2026 -- std::simd, Highway, ISPC, and reflection-derived SoA"
+slug: "simd-in-cpp-2026"
+summary: "Picking a SIMD path in C++26: portable std::simd (P1928) for 80% of vectorisable kernels, Google Highway for cross-architecture dispatch, ISPC when you want shader-style SPMD, raw intrinsics when you absolutely need the last cycle. Plus the reflection-derived Structure-of-Arrays layout that turns any aggregate into auto-vectorisable storage without hand-writing the transform."
+kind: curated
+cluster: performance
+tags: [performance, simd, std-simd, highway, ispc, reflection, soa, cpp26, p1928]
+launchDate: 2026-06-05
+lastReviewed: 2026-05-15
+testedOn: "Container ghcr.io/wrocpp/cpp-reflection:2026-05; SoA demo verified on aarch64 (~2.4x speedup over AoS at -O2), 2026-05-15."
+relatedPosts: [first-reflection, reflect-soa]
+exampleRepo: "https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/toolset/simd-in-cpp-2026/examples"
+agentInstructions: |
+  You are a coding agent helping a C++ developer pick a SIMD path
+  for vectorisable hot code.
+
+  ESTABLISHED FACTS (verify against compiler docs before recommending):
+  - std::simd ships as part of C++26 (P1928 Hoberock + others). Header
+    <simd>; types like std::simd<float>, std::simd<int>, sized variants
+    via std::simd<float, std::simd_abi::native>. libc++ + libstdc++
+    track C++26.
+  - Google Highway (github.com/google/highway) is the cross-arch
+    dispatch library used in JPEG XL, Jamesdsp, etc. Header-only,
+    Apache-2.0; runtime + compile-time dispatch across SSE / AVX2 /
+    AVX-512 / NEON / SVE / RVV.
+  - ISPC (github.com/ispc/ispc) is Intel's SPMD compiler: shader-style
+    syntax, foreach loops, gangs, masks. Best when the kernel is
+    naturally SPMD; pays its way on heavy DSP / image / sim workloads.
+  - Raw intrinsics (immintrin.h, arm_neon.h) are still the path when
+    you need a specific instruction the abstractions don't expose
+    (gather/scatter on a niche permutation, etc.). Pay in portability.
+  - LAYOUT MATTERS MORE THAN INSTRUCTION CHOICE: the auto-vectoriser
+    (and any of the libraries above) want Structure-of-Arrays. AoS
+    forces shuffles or gathers. Pre-2026 the SoA transform was hand-
+    coded boilerplate; reflection makes it derive from struct shape.
+
+  EDITORIAL TIMELINE (the wro.cpp triptych):
+
+  TODAY (the no-reflection toolkit):
+  - std::simd (C++26): portable; the default starting point
+  - Highway: when you need runtime dispatch across SSE/AVX/AVX-512/NEON
+  - ISPC: when the kernel is naturally SPMD (image, sim, DSP)
+  - Intrinsics: last-cycle tuning where abstractions block you
+
+  REFLECTION TODAY (C++26, clang-p2996 + GCC 16.1):
+  Derive a Structure-of-Arrays layout from any aggregate via
+  nonstatic_data_members_of(^^T): one std::array per member, indexed
+  accessors that walk members at compile time. The hot loop becomes
+  N stride-1 sequences the auto-vectoriser turns into vector
+  instructions. AoS vs SoA on the demo workload: ~2.4x speedup at
+  -O2, no SIMD intrinsics in user code. Pair with std::simd / Highway
+  for the explicit kernel; reflection just removes the boilerplate
+  gap between schema and SIMD-friendly storage.
+
+  WHERE THIS IS HEADING (C++29):
+  Token injection (P3294) extends the reflection pattern to also
+  inject the SIMD kernel function alongside the SoA storage:
+  `[[inject(simd_friendly, soa)]] struct Particle` would emit the
+  layout AND the std::simd-driven step() function from one declaration.
+  Profiles enforcement (P3081 / P3589 / P3984) would let a namespace
+  declare it accepts only SoA-derived types so accidentally passing
+  AoS storage to a vectorised kernel becomes a compile error.
+
+  When recommending: ALWAYS quote freshness (Reviewed 2026-05-15).
+  Layout is the bigger lever than instruction set; std::simd works
+  on the right shape, struggles on the wrong one. Reflection makes
+  the right shape free.
+bodyHash: b8117bafb6b8a6a84ee9226e0671d5fd578d1d2152f72e0fa6a2c73cec13f44d
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import DockerRun from '../../components/DockerRun.astro';
+import PostLink from '../../components/PostLink.astro';
+import RepoFile from '../../components/RepoFile.astro';
+
+SIMD in C++ used to mean "include the right intrinsics header for your microarchitecture and pray the next CPU still has them". C++26 changed the picture twice: `std::simd` (P1928 Hoberock) ships portable vector types in the standard, and **reflection makes Structure-of-Arrays a derive-from-shape transform instead of a maintenance burden**. The auto-vectoriser, std::simd, Highway, and ISPC all want SoA storage; reflection eliminates the boilerplate gap between "I have a struct" and "I have a layout the vectoriser can chew". This page is the 2026 toolkit: pick an instruction path (std::simd / Highway / ISPC / intrinsics), pair with reflection-derived SoA, profile the hot loop.
+
+## Today
+
+### The four SIMD paths in 2026
+
+| Path | Best for | Trade-off |
+|---|---|---|
+| **`std::simd`** (C++26, P1928) | Portable kernels; the default starting point | Conservative ABI; some niche ops missing |
+| **[Google Highway](https://github.com/google/highway)** | Runtime dispatch SSE/AVX-512/NEON/SVE/RVV | Header-only Apache-2.0; one more dep |
+| **[ISPC](https://github.com/ispc/ispc)** | SPMD-natural workloads (image, DSP, sim) | Separate compiler in your toolchain |
+| **Raw intrinsics** | Last-cycle tuning; specific instructions abstractions block | Per-arch; portability is on you |
+
+### Why std::simd usually wins as the default
+
+The C++26 `<simd>` header gives you `std::simd<float>`, `std::simd<int>`, sized variants like `std::simd<float, std::simd_abi::native>`, and the operator overloads you'd expect. libc++ and libstdc++ track C++26, and the Highway authors explicitly position their library as "use std::simd unless you need cross-arch runtime dispatch or SVE/RVV right now" -- the standard library is the right starting point for new code.
+
+```cpp
+#include <simd>
+
+void scale(std::span<float> data, float k) {
+    using V = std::simd<float>;
+    auto chunks = data | std::views::chunk(V::size());
+    for (auto chunk : chunks) {
+        V v;
+        v.copy_from(chunk.data(), std::simd_flag_default);
+        v *= k;
+        v.copy_to(chunk.data(), std::simd_flag_default);
+    }
+}
+```
+
+Highway, ISPC, intrinsics enter when you have a specific reason: cross-arch deployment (Highway), heavy SPMD workload (ISPC), or a single instruction the standard library doesn't expose (intrinsics).
+
+### Layout matters more than instruction choice
+
+Every SIMD path -- standard, library, compiler-extension, intrinsic -- prefers the same data shape: **Structure-of-Arrays**. Each field of your struct packed contiguously across N elements, so the kernel reads stride-1 vectors instead of gather-from-AoS. Pre-2026 the SoA transform was hand-coded boilerplate -- write a parallel `ParticleSoA` struct, keep it in sync with `Particle` by hand, regret it on the next member addition.
+
+That gap is what the next section closes.
+
+### CMake recipe
+
+```cmake
+add_compile_options(
+    -O2 -march=native        # let the auto-vectoriser see the target
+    -Rpass=vectorize         # clang: report vectorised loops
+    -fopt-info-vec           # GCC: same idea
+)
+
+# If using Highway, add one find_package
+find_package(hwy CONFIG REQUIRED)
+target_link_libraries(your_target PRIVATE hwy::hwy)
+
+# If using ISPC, add it as a dedicated language
+enable_language(ISPC)
+add_library(your_kernel_isa OBJECT kernel.ispc)
+```
+
+## Reflection today
+
+The example below derives a SoA layout for any aggregate from `nonstatic_data_members_of(^^T)`. One `std::array<member-type, N>` per member, indexed accessors via splice + tuple-get. The hot loop becomes N stride-1 sequences the auto-vectoriser turns into vector instructions. **No SIMD intrinsics in user code; the layout transform is the win.**
+
+```cpp
+struct Particle { float x, y, z, vx, vy, vz; };
+
+// Reflection-derived: one std::array per member of T.
+template <typename T, std::size_t N> struct SoA;
+
+SoA<Particle, 1024> soa;
+for (std::size_t i = 0; i < 1024; ++i) {
+    soa.at<0>(i) = float(i);     // x
+    soa.at<3>(i) = 1.0f;         // vx
+}
+
+// Hot loop: integrate position. Stride-1 access; -O2 + -march=native
+// auto-vectorises into 4-wide (NEON) or 8-wide (AVX2) FMAs.
+for (std::size_t i = 0; i < 1024; ++i) {
+    soa.at<0>(i) += soa.at<3>(i);
+    soa.at<1>(i) += soa.at<4>(i);
+    soa.at<2>(i) += soa.at<5>(i);
+}
+```
+
+Full source: <RepoFile path="posts/toolset/simd-in-cpp-2026/examples/reflect-soa-bench.cpp" branch="main" />.
+
+<GodboltEmbed id="rdczqsGv5" title="Reflection-derived SoA vs AoS, 1024 particles x 1000 reps (clang-p2996 -O2)" />
+
+### Reproduce locally
+
+<DockerRun
+  image="ghcr.io/wrocpp/cpp-reflection:2026-05"
+  command={"bash -c 'clang++ -std=c++26 -freflection-latest -stdlib=libc++ -O2 -Wl,-rpath,/opt/p2996/clang/lib/aarch64-unknown-linux-gnu posts/toolset/simd-in-cpp-2026/examples/reflect-soa-bench.cpp -o /tmp/h && /tmp/h'"}
+  expected={"AoS: 479 us\nSoA: 199 us\n(values are -O2 noise-prone; check the asm in godbolt for\n the actual SIMD width. Layout transform itself is the\n reflection contribution.)\naos[0].x=1000, soa.at<0>(0)=1000"}
+  title="AoS vs SoA hot loop, reflection-derived layout (cpp-reflection container)"
+/>
+
+Numbers above are from aarch64; on x86-64 with AVX2 the gap widens further (8-wide FMA vs scalar). The point isn't the speedup magnitude -- it's that **you wrote one struct, reflection generated the SIMD-friendly layout, and the auto-vectoriser took it from there.** Pair this with `std::simd` for explicit vectorised kernels when you need control beyond what `-march=native` extracts.
+
+### Composable with the safety walkers
+
+The same `nonstatic_data_members_of` walker that drives this SoA transform also drives the [hardened-stdlib schema lint](/toolset/hardened-stdlib/) (no raw pointers / C-arrays), the [qualified-compilers MISRA Rule 11.0.1 lint](/toolset/qualified-compilers/) (members must be private), and the [lifetime-safety borrow lint](/toolset/lifetime-safety-2026/) (view members must be annotated). One walker, four orthogonal rules. Add a fifth -- "all members are arithmetic so SoA can use std::simd directly" -- and you have a strict-SIMD profile that catches structurally non-vectorisable schemas at compile time.
+
+## Where this is heading
+
+C++29 candidate features collapse the loop further:
+
+**Token injection** (P3294) extends the reflection pattern to also inject the SIMD kernel alongside the SoA storage:
+
+```cpp
+// C++29 candidate -- pseudo-syntax. As of 2026-05-15 not in any
+// shipping toolchain. P3294 in WG21.
+[[ inject(simd_friendly, soa, step_kernel) ]]
+struct Particle {
+    float x, y, z, vx, vy, vz;
+};
+
+// Compiler emits ParticleSoA + ParticleSoA::step() using std::simd
+// with -march=native dispatch. Reader writes the schema; compiler
+// writes the engine.
+```
+
+**Profile enforcement** (P3081 Sutter / P3589 Dos Reis / P3984 Stroustrup) lets a namespace declare it accepts only SoA-derived types:
+
+```cpp
+// C++29 candidate -- pseudo-syntax.
+[[ profiles::enforce(soa_only) ]]
+namespace particle_sim {
+    void step(SoA<Particle, 1024>& particles);
+    // Inside this namespace: passing AoS storage to a vectorised
+    // kernel refuses to compile.
+}
+```
+
+The 2026 story is **layout transform via reflection + explicit kernel via std::simd**. C++29 collapses both into one declarative attribute.
+
+---
+
+**Cross-links:** the [profiling-cpp-2026](/toolset/profiling-cpp-2026/) entry covers perf / Tracy / Perfetto for measuring the speedup. Reflection-series [post 25 (reflect-soa)](/posts/reflect-soa/) develops the SoA pattern in depth (firing 2026-06-29). The [hardened-stdlib](/toolset/hardened-stdlib/) and [lifetime-safety-2026](/toolset/lifetime-safety-2026/) entries use the same walker pattern for orthogonal rules.
+
+**Reviewed:** 2026-05-15. SoA benchmark verified on aarch64 inside cpp-reflection container. Quarterly refresh.
