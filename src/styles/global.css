@@ -561,9 +561,19 @@ a:hover { color: var(--orange); }
   vertical-align: top;
   /* Long inline-code spans (CMake macros, env-var names, etc.) should
    * break across lines instead of forcing the whole table out of the
-   * viewport. The .table-scroll wrapper below is the explicit escape
-   * hatch when even per-word wrapping isn't enough. */
-  overflow-wrap: anywhere;
+   * viewport. `break-word` only splits a word when no other wrap point
+   * fits (vs `anywhere`, which split words mid-character even when the
+   * cell had room and pulverised short identifiers like "Catch2 v3").
+   * The .table-scroll wrapper below is the explicit escape hatch when
+   * even per-word wrapping isn't enough. */
+  overflow-wrap: break-word;
+}
+/* First column carries identifiers (framework names, vendor names,
+ * rule slugs). Reserve enough room so auto-layout doesn't squeeze it
+ * to one character wide when sibling cells are long. */
+.prose th:first-child,
+.prose td:first-child {
+  min-width: 9ch;
 }
 .prose th {
   font-family: "Quicksand", system-ui, sans-serif;
