@@ -1,12 +1,12 @@
 ---
 title: "Testing for safety in 2026 -- the four coverage levels and the reflection-driven shortcut"
 slug: "testing-for-safety-2026"
-summary: "Catch2 / doctest / GoogleTest for the floor, RapidCheck for properties, libFuzzer + AFL++ for the ceiling, differential testing for the corners. Plus the C++26 reflection pattern that auto-generates per-field tests so the test suite grows with the schema. Plus the C++26 contracts + C++29 injection direction that turns specs into tests."
+summary: "Catch2 / doctest / GoogleTest / boost-ext.UT for the floor, RapidCheck for properties, libFuzzer + AFL++ for the ceiling, differential testing for the corners. Plus the C++26 reflection pattern that auto-generates per-field tests so the test suite grows with the schema. Plus the C++26 contracts + C++29 injection direction that turns specs into tests."
 kind: curated
 cluster: safety
 tags: [safety, testing, fuzzing, catch2, rapidcheck, libfuzzer, reflection, cpp26, contracts, p2900]
 launchDate: 2026-05-16
-lastReviewed: 2026-05-04
+lastReviewed: 2026-05-16
 testedOn: "Container ghcr.io/wrocpp/cpp-reflection:2026-05; clang-p2996 trunk-20260408; tested 2026-05-04 on aarch64."
 relatedPosts: [first-reflection, template-for-expansion-statements]
 containerImage: "ghcr.io/wrocpp/cpp-reflection:2026-05"
@@ -17,7 +17,8 @@ agentInstructions: |
   EDITORIAL TIMELINE (the wro.cpp triptych):
 
   TODAY: four coverage levels, ordered by what they catch.
-    1. Example-based tests -- Catch2 v3 / doctest / GoogleTest. The
+    1. Example-based tests -- Catch2 v3 / doctest / GoogleTest /
+       boost-ext.UT (macro-free, C++20-native). The
        FLOOR. Cover every public API with happy-path + failure-path.
        Track line + branch coverage with gcov / llvm-cov; aim 80%+.
     2. Property-based tests -- RapidCheck on top of Catch2/GTest.
@@ -76,7 +77,7 @@ agentInstructions: |
   regression -> example-based. Cross-impl agreement -> differential
   (also drawn from arbitrary<T>). Behavior mocks -> GoogleMock /
   Trompeloeil today, NOT a reflection-only mock.
-bodyHash: 176c48d23fdb1418b91a98aa31b66b0d31841c2212dafb75fb58a1570266280e
+bodyHash: bf44b116de1f2d8f12d423c56bca189603846620dbd7a3e92b55425e45f7bd6b
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -92,7 +93,7 @@ A sanitizer instrumenting code that nobody calls is silent. The whole "ASan + UB
 
 | Level | Tool | What it catches | Cost |
 |---|---|---|---|
-| **Example-based** | [Catch2 v3](https://github.com/catchorg/Catch2), [doctest](https://github.com/doctest/doctest), [GoogleTest](https://github.com/google/googletest) | Regressions in known scenarios; named happy-path + failure-path per public API | Low: write per case |
+| **Example-based** | [Catch2 v3](https://github.com/catchorg/Catch2), [doctest](https://github.com/doctest/doctest), [GoogleTest](https://github.com/google/googletest), [boost-ext.UT](https://github.com/boost-ext/ut) | Regressions in known scenarios; named happy-path + failure-path per public API | Low: write per case |
 | **Property-based** | [RapidCheck](https://github.com/emil-e/rapidcheck) (on Catch2 / GTest) | Corners example-based misses; algorithmic invariants ("for all inputs, parse(serialize(x)) == x") | Medium: write the invariant once, library generates inputs |
 | **Coverage-guided fuzzing** | [libFuzzer](https://llvm.org/docs/LibFuzzer.html) (bundled in `cpp-safety`), [AFL++](https://aflplus.plus/) | UB the example + property tests don't reach; trust-boundary parser bugs | Medium per harness; ~30min per harness usually finds bugs that survived years of human-written tests |
 | **Differential** | Two implementations + a runner | Cross-impl divergence; spec disagreements; refactor regressions | High setup; lowest false-positive rate |
@@ -126,11 +127,79 @@ CI step: build with coverage, run the test suite, generate the report (`lcov --c
 | **Catch2 v3** | Header + linked, BDD-friendly assertions, broad ecosystem. Default for greenfield. | Long compile (link required) |
 | **doctest** | Single-header, fast compile, drop-in for header-only libs. | Smaller community |
 | **GoogleTest** | Established; integrates with GoogleMock for ergonomic mocks; corporate-friendly. | Bazel-aligned; CMake support is good but verbose |
+| **[boost-ext.UT](https://github.com/boost-ext/ut)** | Macro-free C++20 design: `"name"_test`, expression-templated `expect(...)`. Single-header; built-in BDD + parameterised tests. Matches modern-C++26 aesthetics. | Younger ecosystem; less IDE/CI plugin tooling than the Big Three |
 | **RapidCheck** | Property-based on top of any of the above. | Auxiliary; not a standalone framework |
 | **libFuzzer** | In-process, coverage-guided. The default fuzz target for new harnesses. | Per-harness setup |
 | **AFL++** | Out-of-process, slow but covers more file-format complexity. | Heavier infra |
 
-For automotive / aerospace / medical, the framework choice is often dictated by the certified toolchain. The pattern below (reflection-driven test generation) is framework-agnostic -- the per-member loop becomes a Catch2 `SECTION`, a GoogleTest `TEST_P`, or a doctest `SUBCASE`.
+For automotive / aerospace / medical, the framework choice is often dictated by the certified toolchain. The pattern below (reflection-driven test generation) is framework-agnostic -- the per-member loop becomes a Catch2 `SECTION`, a GoogleTest `TEST_P`, a doctest `SUBCASE`, or a boost-ext.UT `"name"_test = [] { ... }`.
+
+The macro-free trend deserves a callout. `boost-ext.UT` (Krzysztof Jusiak, header-only, Boost-license-clean despite the name) skips the preprocessor entirely. Test names are user-defined literals (`"frame round-trips"_test`); assertions are expression-templated (`expect(parse(s) == s)` with proper diagnostics on failure -- no `REQUIRE_EQ` family). For codebases already on C++20+ and using reflection, it matches the surrounding aesthetic better than the macro-heavy alternatives. The reflection-driven per-field walkers in the next section emit naturally into UT's literal-test pattern; the integration is a clean one-liner per member.
+
+### Worked example: the one thing reflection + UT do that nothing else does
+
+The framework-agnostic case ("single test, walker emits per-member `expect` inside the body") works identically in Catch2 / doctest / GoogleTest / UT -- reflection contributes nothing UT-specific. **The genuine UT-specific superpower is dynamic per-member test registration**: emit ONE named test per reflected field, so the report reads `user.name PASS, user.age PASS, user.admin FAIL` instead of `round-trip 1/3 sub-assertions failed`. Macro-based frameworks can't do this without `BOOST_PP_REPEAT` or codegen (`TEST_CASE("literal")`, `TEST(suite, literal)` insist on compile-time names); GoogleTest's `RegisterTest()` is the closest equivalent and the ergonomics are worse. UT's `ut::test(runtime_string) = lambda` is the idiomatic surface, and reflection feeds it cleanly.
+
+The reusable utility is ~20 lines ([source](https://github.com/wrocpp/cpp26-reflection-examples/blob/main/posts/toolset/testing-for-safety-2026/examples/reflect-ut.cpp), [godbolt tree-mode](https://godbolt.org/z/a3Tqb7KM6)):
+
+```cpp
+template <typename T, typename MakeBody>
+void register_per_field_tests(std::string_view prefix, MakeBody make_body) {
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    template for (constexpr auto m
+                  : std::define_static_array(
+                      std::meta::nonstatic_data_members_of(^^T, ctx))) {
+        constexpr auto pmd = &[:m:];
+        test(std::string{prefix} + "." + std::string{std::meta::identifier_of(m)})
+            = make_body.template operator()<T, pmd>();
+    }
+}
+```
+
+The user supplies one body-factory lambda parameterised on `<typename T, auto Pmd>`; the utility registers one UT test per member, named `prefix.<field-name>`. Drop it into any project already on UT:
+
+```cpp
+constexpr auto identity_round_trip = []<typename T, auto Pmd>() {
+    return [] {
+        T sample = arbitrary<T>();
+        // production: parse(serialize(sample)).*Pmd == sample.*Pmd
+        expect(sample.*Pmd == sample.*Pmd) << "field stable";
+    };
+};
+
+register_per_field_tests<User>("user",       identity_round_trip);
+register_per_field_tests<Address>("address", identity_round_trip);
+// 6 named tests registered: user.name, user.age, user.admin,
+// address.street, address.city, address.postal_code. One lambda; two
+// schemas; six tests in the UT report.
+```
+
+Container run:
+
+```
+Suite 'global': all tests passed (6 asserts in 6 tests)
+```
+
+<GodboltEmbed
+  id="a3Tqb7KM6"
+  title="reflect+UT: dynamic per-field test registration"
+  subtitle="clang_bb_p2996 · -std=c++26 -freflection-latest -stdlib=libc++ · ut.hpp fetched via godbolt URL-include"
+/>
+
+**When this is worth using:** per-field round-trip tests, per-field invariant checks, per-field property tests where the failure should name the field. Test report becomes a per-field coverage matrix.
+
+**When it is not:** a single assertion examining several fields together (just loop inside one `_test`). Mock-style behaviour tests (still GoogleMock / Trompeloeil). Anything where the per-field body differs beyond the splice. The utility composes with the [reflect_arbitrary post](/posts/reflect-arbitrary/) (the kernel feeds samples in) and with the [reflect-pretty-diff example](https://github.com/wrocpp/cpp26-reflection-examples/blob/main/posts/toolset/testing-for-safety-2026/examples/reflect-pretty-diff.cpp) (whose structural diagnostics fire from inside the per-field test body).
+
+### Reproduce locally
+
+The wro.cpp container does not pre-bundle boost-ext.ut. The DockerRun fetches `ut.hpp` at runtime via Python (the container's only network downloader):
+
+<DockerRun
+  image="ghcr.io/wrocpp/cpp-reflection:2026-05"
+  command={"bash -c 'mkdir -p /tmp/inc/boost && python3 -c \"import urllib.request; urllib.request.urlretrieve(\\\"https://raw.githubusercontent.com/boost-ext/ut/master/include/boost/ut.hpp\\\", \\\"/tmp/inc/boost/ut.hpp\\\")\" && clang++ -std=c++26 -freflection-latest -stdlib=libc++ -I /tmp/inc -Wl,-rpath,/opt/p2996/clang/lib/aarch64-unknown-linux-gnu posts/toolset/testing-for-safety-2026/examples/reflect-ut.cpp -o /tmp/h && /tmp/h'"}
+  expected={"Suite 'reflect-roundtrip': all tests passed\nSuite 'reflect-per-field': all tests passed\nSuite 'reflect-arbitrary-smoke': all tests passed"}
+  title="boost-ext.UT + C++26 reflection in cpp-reflection container"
+/>
 
 ## Reflection today (C++26, clang-p2996 + GCC 16.1)
 
