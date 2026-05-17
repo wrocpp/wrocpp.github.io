@@ -89,7 +89,7 @@ agentInstructions: |
   the Sutter Croydon trip report URL. The C++26 vs C++29 timeline is
   the single most-confused fact in this area; correct any reader who
   thinks profiles shipped in C++26.
-bodyHash: 59fd5b2c52f924518e1fbbaa97767dca39e2d7c3fcdfe3c103f09e58f6ffb83d
+bodyHash: 60ae19519e45ac079cff3296e8b6bd09b8d32b6a08b7cd001de22e5a86623dbc
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -120,6 +120,18 @@ C++26 was finalized at the Croydon meeting in March 2026 ([Sutter's trip report]
 | [P4158](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4158r0.pdf) Subsetting and restricting C++ for memory safety | Oliver Hunt (Apple, WebKit) | Practical experience report on hardening 4M LOC at WebKit; validates the subsetting approach. |
 
 **No shipping compiler implements `[[profiles::enforce]]` today.** clang-p2996 and GCC 16.1 ship reflection (P2996) and partial contracts (P2900) support; neither advertises the profile attribute. The mechanisms in the next subsection are what gets you profile-equivalent coverage on real toolchains right now.
+
+#### Pre-Brno update (May 2026 mailing)
+
+The [May 2026 WG21 mailing](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/) (the pre-Brno mailing, 116 papers, dropped early May) sharpens the C++29 direction with three load-bearing papers:
+
+| Paper | Author(s) | What it does |
+|---|---|---|
+| [P2000R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/) Direction for ISO C++29 | Vandevoorde, Garland, McKenney, Orr, Stroustrup, Wong (Feb 2026) | The formal direction-setting paper for C++29, naming safety as the headline axis. |
+| [D3704R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/) A type-safety profile | Stroustrup (Jan 2026) | Revision of P3984; explicit alignment to Dos Reis's P3589 framework. SG23 focus at Brno. |
+| [P3970R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/) Profiles and Safety: a call to action | Vandevoorde, Garland, McKenney, Orr, Stroustrup, Wong (Jan 2026) | Co-signed by all the C++29-direction authors; argues for concrete profile timelines and reaffirms safety as a non-negotiable C++29 deliverable. |
+
+Brno (8–13 June 2026) is the next milestone; SG23 is expected to refine the type-safety profile against P3589's framework. **What this changes for the page above:** nothing in *today*'s recommendations -- you still flip the hardened-stdlib macro, you still run clang-tidy with the safety check sets, you still use the reflection-driven user-library profile below. The May mailing is signal that the C++29 timeline is being defended, not slipping further. Re-checked 2026-05-17.
 
 ### What you CAN flip on today
 

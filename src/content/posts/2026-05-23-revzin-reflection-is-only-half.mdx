@@ -1,0 +1,63 @@
+---
+title: "Revzin at C++Now: 'Reflection Is Only Half the Story' -- what generation looks like next"
+slug: "revzin-reflection-is-only-half"
+pubDate: 2026-05-23
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, cpp26, cpp29, reflection, codegen, p3294, revzin, cppnow]
+summary: "Barry Revzin's C++Now 2026 keynote (Mon 4 May, Aspen) landed the line the C++ reflection community has been circling for two years: C++26 reflection lets you OBSERVE -- the next question is what it looks like to GENERATE. The 90-minute talk is a tour of source-code-generation design space (macros, templates, Rust proc-macros, Swift macros, D mixins) and reads as the natural sequel to wro.cpp's whole 'Where this is heading' triptych framing."
+draft: false
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+Barry Revzin keynoted [C++Now 2026](https://cppnow.org/announcements/2026/03/cppnow-2026-first-keynote/) (Mon 4 May, Aspen Center for Physics) with a talk wro.cpp readers will recognise as the natural sequel to everything the reflection arc has been building toward: **["Reflection Is Only Half the Story"](https://schedule.cppnow.org/session/2026/reflection-is-only-half-the-story/)**. The premise, in his own framing:
+
+> *"C++26 gives us reflection, the culmination of decades of work building up support for more and more compile-time programming in C++. But reflection primarily only lets us observe. The important next question is: what might it look like if we were to generate?"*
+
+The talk is not a pitch for any specific C++29 paper. It's a tour of the design space, with the bar of "what would make code generation in C++ feel as native as the rest of the language" -- and an honest accounting of which existing C++ mechanisms hit which walls.
+
+## What the talk covers
+
+Revzin's outline (per the conference abstract and the talk's structure as it landed in the room):
+
+1. **What today's mechanisms give you and where they break.** Macros (`#define`) are textual, untyped, and unscopeable. Templates are types-of-things-yes but not new-declarations-yes. Both work; both have well-known ceilings.
+2. **What peers in the programming language world did.** Rust's [`proc_macro`](https://doc.rust-lang.org/reference/procedural-macros.html) crates. Swift's [macro system](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/macros/) (formal, type-checked, declared in separate modules). D's [`mixin` template + `__traits`](https://dlang.org/spec/template-mixin.html) machinery. Each made a different trade-off; each makes a different set of mistakes easier or harder.
+3. **The axes of evaluation.** Capability. Composability. Cohesion (do the generator and the generated code live in the same translation unit?). Debuggability (can you step through generated code? attribute errors to the source?). Ergonomics. Error quality. Teachability. Tooling support.
+4. **Where C++ has low-hanging fruit.** Not a single specific paper, but a sensitivity test: which 80% of common code-gen requests could be served by a small targeted extension on top of reflection, vs which 20% genuinely need full token injection?
+
+The talk does not stake a position on [P3294](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3294r3.pdf) (token injection, Revzin / Alexandrescu / Vandevoorde) vs alternatives. It explicitly frames the design space as one any future paper -- including P3294's eventual descendants -- has to navigate.
+
+## Why this matters for code wro.cpp readers are already writing
+
+Every `meets_<rule><T>()` predicate in the toolset cluster pages -- the [hardened-stdlib schema lint](/toolset/hardened-stdlib/), the [qualified-compilers MISRA Rule 11.0.1](/toolset/qualified-compilers/) lint, the [lifetime-safety borrow lint](/toolset/lifetime-safety-2026/), the [SBOM emit](/toolset/cpp-supply-chain-2026/), the [coding-standards bundle](/toolset/cpp-coding-standards/) -- is **observation**. They walk `nonstatic_data_members_of(^^T)`, read each member, and refuse to compile (or emit JSON) based on what they see. None of them generate new code alongside the observed type.
+
+The cases where reflection-only hits a ceiling are exactly the cases where wro.cpp has had to write "Where this is heading: C++29 token injection (P3294)" honesty stamps. Reflection cannot:
+
+- Synthesise a `MOCK_METHOD`-equivalent class alongside an interface declaration ([reflect-arbitrary post 20](/posts/reflect-arbitrary/) covers the limit explicitly).
+- Emit a `safe_index_at()` accessor next to a raw `data[]` member (the C++29 direction in [memory-safety-cpp26-and-beyond](/toolset/memory-safety-cpp26-and-beyond/)).
+- Inject `safe_format` / `redact_secret` annotation-driven boilerplate on a struct (see the C++29 sketches across the cluster).
+
+Each of these is "I want to make a NEW declaration based on what reflection sees." That's generation, not observation. Revzin's talk is the careful tour of where generation could reasonably go next.
+
+## What the talk is NOT
+
+- **Not a P3294 advocacy talk.** Revzin co-authored P3294 -- he's been studious about presenting alternatives, including ones that would compete with his own paper. The keynote framing is "give yourself better questions for evaluating future code-gen proposals," not "vote yes on this one."
+- **Not a Rust-is-better talk.** Rust's `proc_macro` ecosystem is studied as one data point among several; the talk also pulls from Swift's strict-type macro design and D's `mixin` integration. Each is praised and criticised on its own merits.
+- **Not a "C++29 will ship this" talk.** Revzin is clear: the most ambitious code-gen extensions are multi-cycle work. C++29 might land a narrow targeted piece; the full sequel-to-reflection story is plausibly C++32+ territory.
+
+## Practical takeaway for wro.cpp readers right now
+
+If you're writing reflection-heavy C++26 code today and finding you keep wanting to **emit** something rather than just **read** something, the talk is the highest-quality framing of that gap available. The video isn't out yet (C++Now typically posts keynotes ~3-4 weeks after the conference; check [the C++Now YouTube channel](https://www.youtube.com/c/CppNow) around mid-June). Until then:
+
+- The [conference page abstract](https://schedule.cppnow.org/session/2026/reflection-is-only-half-the-story/) covers the structure.
+- Attendees on the C++ Slack and Reddit `/r/cpp` posted detailed notes within 24 hours of the talk -- worth searching.
+- Revzin's own [blog](https://brevzin.github.io/) typically gets a slide-deck-companion post within a week or two of any conference talk he gives.
+
+**Also worth a click** from the same conference: Mark Hoemmen's "Making C++ Standard Parallelism Multidimensional" (relevant for [simd-in-cpp-2026](/toolset/simd-in-cpp-2026/)) and Matt Godbolt's "Benchmarking - It's About Time" (relevant for [profiling-cpp-2026](/toolset/profiling-cpp-2026/)).
+
+---
+
+**Pre-Brno context:** Revzin's keynote landed three weeks before WG21 reconvenes in Brno (8-13 June 2026). The [May 2026 mailing](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/) is out (116 papers, pre-Brno). The C++ Foundation's [2026 Annual Developer Survey "Lite"](https://isocpp.org/blog/2026/04/2026-annual-cpp-developer-survey-lite1) is open through mid-May -- if you ship C++, taking the 10-minute survey is the highest-leverage feedback channel into both the standards committee and the tool vendors.
