@@ -14,7 +14,14 @@ on:
   push:
     branches: [main]
   schedule:
+    # Primary daily build at 07:00 UTC. GitHub-Actions free-tier
+    # scheduled runners drift up to ~2 hr late under load, which
+    # repeatedly missed Buffer fires at 08:00 UTC for posts whose
+    # `pubDate` rolled over at 00:00 UTC the same day. The defensive
+    # 05:30 UTC backup absorbs that drift so even a ~2 hr late run
+    # rebuilds before any cron guard hits at 07:45 UTC.
     - cron: '0 7 * * *'
+    - cron: '30 5 * * *'
   workflow_dispatch: {}
 
 concurrency:
