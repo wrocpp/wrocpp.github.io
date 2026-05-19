@@ -1,0 +1,12 @@
+template: social/linkedin-post
+
+size:
+  width: 1200
+  height: 1200
+  dpr: 2
+
+project:
+  name: "social/linkedin/cpp-fastest-growing-2025"
+  author: "Filip Sajdak, Founder & CEO"
+  email: "office@scudoai.com"
+  date: "2026-01-01"
