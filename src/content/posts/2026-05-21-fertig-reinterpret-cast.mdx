@@ -1,0 +1,68 @@
+---
+title: "What reinterpret_cast doesn't do: Fertig on std::start_lifetime_as and the C++23 escape hatch"
+slug: "fertig-reinterpret-cast"
+pubDate: 2026-05-21
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, cpp23, reinterpret-cast, start-lifetime-as, type-punning, object-lifetime, fertig, memory-safety]
+summary: "Andreas Fertig's 2026-05-18 post (re-shared on isocpp.org) makes a pointed case: reinterpret_cast and std::start_lifetime_as look interchangeable -- but only if you don't read the abstract-machine fine print. reinterpret_cast is a POINTER operation; std::start_lifetime_as is an OBJECT-LIFETIME operation. The 5-line difference between UB-then-it-works-on-my-compiler and defined-behavior."
+draft: false
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+Andreas Fertig's post **"[What reinterpret_cast doesn't do](https://isocpp.org/blog/2026/05/what-reinterpret-cast-doesnt-do-andreas-fertig)"** (re-shared on isocpp.org 2026-05-18) opens with the line C++ teachers have been waiting two decades to say cleanly: "This is not the cast you're looking for!" The punchline: `reinterpret_cast` and C++23's `std::start_lifetime_as` look interchangeable, but only if you don't read the abstract-machine fine print. They do different things; the difference is the gap between "undefined behaviour that happens to work on your compiler today" and "the standard guarantees this works."
+
+## What `reinterpret_cast` actually does
+
+`reinterpret_cast<T*>(p)` re-interprets the bit pattern at an address as a pointer of a different type. That is a **pointer operation**, not an object-lifetime operation. The compiler still believes whatever object was previously at that address is whatever it was before. Accessing the new type through the `reinterpret_cast`-derived pointer is undefined behaviour under [strict aliasing](https://en.cppreference.com/w/cpp/language/reinterpret_cast#Type_aliasing) for nearly every non-pointer-character type pair.
+
+In practice "it works" because most compilers tolerate the pattern most of the time. Until they don't -- usually after an unrelated optimisation pass, on a release build, on a customer's machine. The standard never promised it would; you got away with it because the compiler chose not to exercise its license to do something else.
+
+## The case Fertig builds for `std::start_lifetime_as`
+
+C++23's `std::start_lifetime_as<T>(ptr)` returns a `T*` **and** tells the abstract machine "an object of type T now begins its lifetime at this address." That second half is precisely what `reinterpret_cast` cannot do.
+
+The cases where this matters in production C++:
+
+- **Binary protocol parsers** -- read N bytes from a socket into a buffer, `start_lifetime_as` the buffer as a `Header`. The reflection arc's [JSON deserializer](/posts/json-deserialize/) and [SBOM emitter](/toolset/cpp-supply-chain-2026/) both cross this boundary every call.
+- **Embedded MMIO** -- map a hardware register region into a buffer, `start_lifetime_as` it as a peripheral struct. Fertig's stated motivation: "embedded training audiences where 'we know the bytes are right, why does the compiler care?' is the most common pushback."
+- **Shared-memory IPC** -- the producer placement-news a struct into the segment; the consumer needs to legally treat the segment as that struct without re-running the constructor.
+- **Custom allocators** -- populate raw storage, then formally begin the object's lifetime there before handing the pointer out.
+
+The before/after pattern in five lines:
+
+```cpp
+// UB (strict aliasing): reinterpret_cast says "trust me" to the compiler,
+// which never agreed to trust you.
+char buffer[sizeof(Header)];
+recv(sock, buffer, sizeof(buffer), 0);
+Header* h = reinterpret_cast<Header*>(buffer);     // <-- UB on access below
+process(*h);
+
+// Defined (C++23): start_lifetime_as actually begins the Header's
+// lifetime at the buffer address. The compiler's model agrees.
+char buffer[sizeof(Header)];
+recv(sock, buffer, sizeof(buffer), 0);
+Header* h = std::start_lifetime_as<Header>(buffer); // legal; the spec
+process(*h);                                        //   says so
+```
+
+## Why this matters for reflection-driven code
+
+wro.cpp's reflection arc emits a lot of "walk the bytes" patterns. The [JSON deserializer](/posts/json-deserialize/) (post 10) and the [`parse_struct` example](/toolset/sanitizers-2026/) in the sanitizers-2026 toolset entry both go through a buffer-to-struct transition. Today the wro.cpp examples sidestep the lifetime question by using `std::vector<std::byte>` plus member-by-member `memcpy` into a default-constructed `T`. That works, but the more idiomatic C++23-and-up form when you have a contiguous byte buffer that already holds the correct representation is `start_lifetime_as` on the buffer -- one call, no per-field copy.
+
+**This is a footnote we should ship across the safety cluster.** I'm flagging it as the next quarterly-refresh follow-up for the [memory-safety](/toolset/memory-safety-cpp26-and-beyond/), [hardened-stdlib](/toolset/hardened-stdlib/), and [lifetime-safety-2026](/toolset/lifetime-safety-2026/) pages. The current "What you CAN flip on today" tables don't yet have a C++23-stdlib row; `start_lifetime_as` belongs there alongside `[[clang::lifetimebound]]` and `gsl::not_null`.
+
+## Read next
+
+- Fertig's full post: [What reinterpret_cast doesn't do](https://isocpp.org/blog/2026/05/what-reinterpret-cast-doesnt-do-andreas-fertig).
+- His earlier "The correct way to do type punning in C++ -- The second act" introduces `start_lifetime_as` in depth.
+- [hardened-stdlib](/toolset/hardened-stdlib/) -- runtime catches for the UB class the `reinterpret_cast` pattern leaks; complement, not replacement, for `start_lifetime_as` at construction time.
+- [lifetime-safety-2026](/toolset/lifetime-safety-2026/) -- reflection-driven schema lint that operates one layer above the per-call analyzer where `start_lifetime_as` lives.
+
+---
+
+**Also from this week**: isocpp.org re-shared Bjarne Stroustrup's CppCon 2025 "[Concept-based Generic Programming](https://isocpp.org/blog/2026/05/cppcon-2025-concept-based-generic-programming-bjarne-stroustrup1)" talk on 5/19 (registration for CppCon 2026 in Aurora, CO is open). Tomorrow's news short covers Barry Revzin's C++Now keynote *"Reflection Is Only Half the Story"* (Sat 2026-05-23). Fertig's same-week sibling posts on [`std::launder`](https://andreasfertig.com/blog/) (2026-05-05) and noexcept-move requirements (2026-05-20) are further reading on the same object-lifetime theme.
