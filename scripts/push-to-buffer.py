@@ -247,7 +247,12 @@ def create_post(
     inp: dict = {
         "text": text,
         "channelId": channel_id,
-        "assets": {"images": [{"url": image_url}]},
+        # Buffer API breaking change 2026-05-12 -> 2026-05-25:
+        # assets moved from {"images": [{"url"...}]} to an ordered array
+        # of {"image": {"url"...}}. Old shape rejected after 2026-05-25.
+        # (Single-image post for our use case; the array shape unlocks
+        # carousels we don't need.)
+        "assets": [{"image": {"url": image_url}}],
     }
     # Per-platform metadata: Facebook requires PostTypeFacebook (post / story
     # / reel). LinkedIn / Twitter / Instagram have their own optional inputs;
