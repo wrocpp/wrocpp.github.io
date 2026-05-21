@@ -99,30 +99,37 @@ def pick(channels: list[dict], platform: str) -> dict | None:
     return matches[0]
 
 
-def sent_posts_for_channel(token: str, org_id: str, channel_id: str, since_iso: str) -> list[dict]:
-    """List sent posts on a channel since ISO timestamp. Buffer's schema:
+def posts_for_channel(
+    token: str, org_id: str, channel_id: str, since_iso: str,
+    statuses: list[str],
+) -> list[dict]:
+    """List posts on a channel with any of the given statuses. For `sent`
+    posts we filter by sentAt >= since_iso; for other statuses (scheduled,
+    sending) we keep all (pre-fire posts have sentAt=null). Buffer schema:
        posts(input: { organizationId, filter: { channelIds, status } }, first)
-    `first` is a top-level argument; `channelIds` + `status` live under
-    PostsFiltersInput. Status is a list (e.g. ["sent"]). Returns a flat
-    array of Post nodes (no edge wrapper)."""
+    Status is a list of strings from the PostStatus enum
+    (draft, needs_approval, scheduled, sending, sent, error)."""
     data = gql(
         token,
         "query($input: PostsInput!, $first: Int) {\n"
         "  posts(input: $input, first: $first) {\n"
-        "    edges { node { id text status sentAt updatedAt channelService } }\n"
+        "    edges { node { id text status sentAt dueAt updatedAt channelService } }\n"
         "  }\n"
         "}",
         {
             "input": {
                 "organizationId": org_id,
-                "filter": {"channelIds": [channel_id], "status": ["sent"]},
+                "filter": {"channelIds": [channel_id], "status": statuses},
             },
             "first": 50,
         },
     )
     edges = ((data.get("posts") or {}).get("edges") or [])
     nodes = [e["node"] for e in edges]
-    return [n for n in nodes if (n.get("sentAt") or "") >= since_iso]
+    # Only filter sent posts by since_iso; pre-fire posts have no sentAt.
+    return [n for n in nodes
+            if n.get("status") != "sent"
+            or (n.get("sentAt") or "") >= since_iso]
 
 
 def url_for(slug: str, kind: str) -> str:
@@ -159,31 +166,42 @@ def main() -> None:
     org_id = get_organization_id(token)
     channels = list_channels(token, org_id)
 
+    # Both `sent` and pre-fire states count as "in good shape": if Buffer
+    # has the post queued for the expected fire time, the guard's job is
+    # done -- Buffer will deliver. Without this, every guard would return
+    # MISSING in the T-15 pre-Buffer-fire window, training operators to
+    # ignore the verification entirely.
+    statuses = ["sent", "scheduled", "sending"]
     result = {"slug": args.slug, "kind": args.kind, "url": url,
               "window_hours": args.window_hours, "platforms": {}}
-    all_sent = True
+    all_ok = True
     for platform in ("linkedin", "facebook"):
         ch = pick(channels, platform)
         if not ch:
             result["platforms"][platform] = {"status": "no-channel-configured"}
-            all_sent = False
+            all_ok = False
             continue
-        posts = sent_posts_for_channel(token, org_id, ch["id"], since)
+        posts = posts_for_channel(token, org_id, ch["id"], since, statuses)
         match = find_match(posts, args.slug, url)
         if match:
-            result["platforms"][platform] = {
-                "status": "sent",
+            ms = match.get("status")
+            entry = {
+                "status": ms,
                 "post_id": match.get("id"),
-                "sent_at": match.get("sentAt"),
                 "channel": ch.get("displayName"),
             }
+            if ms == "sent":
+                entry["sent_at"] = match.get("sentAt")
+            else:
+                entry["due_at"] = match.get("dueAt")
+            result["platforms"][platform] = entry
         else:
             result["platforms"][platform] = {
                 "status": "not-found",
                 "channel": ch.get("displayName"),
                 "considered": len(posts),
             }
-            all_sent = False
+            all_ok = False
 
     if args.json:
         print(json.dumps(result, indent=2))
@@ -194,12 +212,14 @@ def main() -> None:
             extra = ""
             if stat == "sent":
                 extra = f" at {info['sent_at']} (channel {info.get('channel')})"
+            elif stat in ("scheduled", "sending"):
+                extra = f" for {info['due_at']} (channel {info.get('channel')})"
             elif stat == "not-found":
-                extra = f" (considered {info['considered']} recent sent posts on {info.get('channel')})"
+                extra = f" (considered {info['considered']} recent posts on {info.get('channel')})"
             print(f"  {plat:8s}: {stat}{extra}")
-        print("ok" if all_sent else "MISSING")
+        print("ok" if all_ok else "MISSING")
 
-    sys.exit(0 if all_sent else 1)
+    sys.exit(0 if all_ok else 1)
 
 
 if __name__ == "__main__":
