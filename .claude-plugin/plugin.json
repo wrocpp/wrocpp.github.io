@@ -1,0 +1,7 @@
+{
+  "name": "wrocpp-ops",
+  "version": "1.0.0",
+  "description": "Mechanical shell-ops executor for the wro.cpp publishing pipeline. Runs on haiku in a separate context to save main-context tokens.",
+  "author": { "name": "Filip Sajdak" },
+  "license": "Proprietary"
+}
