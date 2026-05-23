@@ -1,0 +1,95 @@
+---
+title: "simdjson meets reflection: sb << my_struct at 6.8 GB/s"
+slug: "simdjson-reflection"
+pubDate: 2026-06-02
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, cpp26, p2996, simdjson, json, serialization, cppcon, lemire, benchmark]
+summary: "simdjson now ships a C++26 reflection backend: define SIMDJSON_STATIC_REFLECTION, and sb << my_struct serializes any aggregate at SIMD speed. The CITM Catalog benchmark hits 6.8 GB/s. Combined with P3394 annotations for rename/skip, this is the production JSON path the reflection series has been building toward."
+draft: false
+relatedPosts: [json-naive, json-deserialize, one-codegen-many-formats, glaze-vs-handrolled, annotations, reflection-compile-time-cost]
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+The wro.cpp reflection series built a [40-line JSON serializer](</posts/json-naive/>) from scratch to teach the API. simdjson took the same API and wrapped it around a SIMD-tuned write engine. The result: `sb << my_struct` at 6.8 GB/s.
+
+## The API
+
+Enable with one define before including simdjson:
+
+```cpp
+#define SIMDJSON_STATIC_REFLECTION 1
+#include "simdjson.h"
+
+struct Car {
+    std::string make;
+    std::string model;
+    int64_t year;
+    std::vector<double> tire_pressure;
+};
+
+Car c{"Toyota", "Corolla", 2017, {30.0, 30.2, 30.5, 30.8}};
+
+// Option 1: string_builder (zero-allocation hot path)
+simdjson::builder::string_builder sb;
+sb << c;
+std::string_view json{sb};
+
+// Option 2: convenience function
+std::string json = simdjson::to_json(c);
+
+// Option 3: selective field extraction
+std::string partial = simdjson::extract_from<"year", "model">(c);
+```
+
+No macros, no `NLOHMANN_DEFINE_TYPE_INTRUSIVE`, no `glz::meta` opt-ins. The compiler reflects the struct's fields at compile time using `nonstatic_data_members_of(^^T)` -- the same primitive from <PostLink slug="first-reflection">post 2</PostLink> of this series -- and simdjson generates the serialization loop with SIMD-width writes.
+
+## The numbers
+
+simdjson's [reflection serializer PR](https://github.com/simdjson/simdjson/pull/2708) (merged May 6, 2026) includes a register-level optimization that keeps the write position in a CPU register instead of reloading from memory after every byte:
+
+| Benchmark | Before optimization | After | Gain |
+|-----------|-------------------|-------|------|
+| CITM Catalog (497 KB) | 4.7 GB/s | **6.8 GB/s** | +45% |
+| Twitter (82 KB) | 6.5 GB/s | 6.4 GB/s | noise |
+
+For context: the blog's 40-line serializer from <PostLink slug="json-naive">post 8</PostLink> allocates a `std::string` per field and concatenates. It teaches the reflection API; it does not compete on throughput. simdjson's builder pre-allocates a buffer and writes directly, then the reflection loop unrolls at compile time into SIMD-width stores.
+
+## Annotations: rename and skip
+
+simdjson is [adding C++26 annotation support](https://github.com/simdjson/simdjson/issues/2660) (P3394R4) for field-level customization:
+
+```cpp
+struct User {
+    [[simdjson::rename("user_name")]] std::string name;
+    [[simdjson::skip]] std::string internal_id;
+    int age;
+};
+```
+
+This is the same annotation pattern from <PostLink slug="annotations">post 9</PostLink> of the reflection series. The blog showed how annotations compose with the reflection walker; simdjson is the first major library to ship it in production.
+
+## How it compares
+
+Three C++ JSON libraries now use P2996 reflection:
+
+| Library | Backend | Approach | Strength |
+|---------|---------|----------|----------|
+| **wro.cpp 40-liner** | `<meta>` | Pedagogical | Teaches the API in 40 lines |
+| **Glaze v7.2** | P2996 | Schema-first | Compile-time validation, private members |
+| **simdjson** | P2996 + SIMD | Parse/serialize-first | Raw throughput (GB/s) |
+
+Glaze (covered in <PostLink slug="glaze-vs-handrolled">Glaze vs hand-rolled</PostLink>) and simdjson optimize different things. Glaze validates the schema at compile time and catches mismatches before you run. simdjson optimizes the byte-level I/O path for maximum throughput. Both use the same `nonstatic_data_members_of` + `identifier_of` walk under the hood.
+
+The ecosystem signal is clear: the two fastest C++ JSON libraries independently chose reflection as their integration path. The API is stable enough to build on.
+
+## The compile-time cost
+
+simdjson's `#include "simdjson.h"` is already heavy (~300ms). Adding `<meta>` via `SIMDJSON_STATIC_REFLECTION` adds the reflection header cost documented in <PostLink slug="reflection-compile-time-cost">the compile-time cost post</PostLink>. The mitigation is the same: add `<meta>` to your PCH. simdjson's own header should be in your PCH anyway if you include it in more than one TU.
+
+---
+
+**Sources**: [simdjson builder docs](https://github.com/simdjson/simdjson/blob/master/doc/builder.md), [reflection serializer PR #2708](https://github.com/simdjson/simdjson/pull/2708) (+45% CITM, merged May 6, 2026), [annotations issue #2660](https://github.com/simdjson/simdjson/issues/2660), Daniel Lemire's [CppCon 2025 talk](https://lemire.me/blog/2026/03/26/json-and-c26-compile-time-reflection-a-talk/).
