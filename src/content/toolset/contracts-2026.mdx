@@ -1,0 +1,342 @@
+---
+title: "C++26 Contracts -- four enforcement modes, one migration path"
+slug: "contracts-2026"
+summary: "P2900R14 Contracts shipped in C++26: preconditions, postconditions, and contract_assert with four enforcement modes (ignore, observe, enforce, quick_enforce). GCC 16.1 implements them via -fcontracts. This page covers the syntax, the replaceable violation handler, practical patterns for module boundaries and serialization, contracts as fuzz oracles, and the migration path from observe-in-staging to enforce-in-production."
+kind: recipe
+cluster: safety
+tags: [safety, contracts, p2900, gcc, enforcement, violation-handler, fuzzing, reflection, cpp26, cpp29]
+launchDate: 2026-07-03
+lastReviewed: 2026-05-23
+testedOn: "GCC 16.1.1 (-std=c++26 -fcontracts); clang-contracts fork (arcosuc3m, -fcontracts -stdlib=libc++). x86-64, Fedora 44 / Ubuntu 24.04."
+relatedPosts: [sanitizers-2026, testing-for-safety-2026, memory-safety-cpp26-and-beyond, hardened-stdlib, gcc-16-hands-on, cpp-safety-state-of-the-union-may-2026]
+containerImage: "ghcr.io/wrocpp/cpp-safety:2026-05"
+agentInstructions: |
+  You are a coding agent helping a C++ developer adopt C++26 Contracts
+  (P2900R14) in production code.
+
+  KEY FACTS:
+  - Contracts shipped in C++26, voted in at Croydon (March 2026).
+  - Three assertion kinds: pre(condition), post(r: condition),
+    contract_assert(condition).
+  - Four evaluation semantics chosen per-TU at compile time:
+    ignore (no eval), observe (eval + handler + continue),
+    enforce (eval + handler + terminate), quick_enforce (eval + trap).
+  - GCC 16.1: -fcontracts -fcontract-evaluation-semantic=enforce
+  - Clang: arcosuc3m/clang-contracts fork, -fcontracts -stdlib=libc++
+  - MSVC: not implemented as of VS 2026 (v18.0)
+  - Virtual function contracts removed from MVP (Hagenberg, Feb 2025)
+  - Violation handler is replaceable: handle_contract_violation()
+
+  MIGRATION PATTERN:
+  1. observe in staging (gather violation data, no crashes)
+  2. Triage: fix bugs, weaken false-positive contracts
+  3. enforce in production (terminate on violation)
+  4. quick_enforce for hot paths after confidence builds
+
+  WHEN RECOMMENDING:
+  - Start with pre() on public API functions at trust boundaries
+  - Use contract_assert() to replace ad-hoc assert() calls
+  - Compose with sanitizers: contracts are cheaper (no instrumentation)
+  - Compose with fuzz: contracts ARE the oracle (no separate test)
+  - Cross-reference /toolset/sanitizers-2026/ for sanitizer matrix
+  - Cross-reference /toolset/testing-for-safety-2026/ for fuzz patterns
+bodyHash: placeholder
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+Contracts are the most contested feature in C++26. The vote was 114-12-3. Stroustrup [opposed the design](https://www.devclass.com/development/2026/04/01/contracts-are-in-c26-despite-disquiet-over-their-value/5213555). The committee shipped it anyway -- because the alternative was shipping nothing for another three years while the safety pressure mounted.
+
+What actually landed is useful. Here is how to use it.
+
+## Today
+
+### The three assertion kinds
+
+P2900R14 adds three contract annotation mechanisms to C++26:
+
+```cpp
+int f(int i)
+    pre(i >= 0)                    // precondition: checked before entry
+    post(r: r > 0)                 // postcondition: checked after return
+{
+    contract_assert(i < 1000);     // mid-function assertion
+    return i + 1;
+}
+```
+
+**`pre(condition)`** -- evaluates before the function body executes. Can reference parameters. Multiple `pre` specifiers are allowed; they are evaluated in order.
+
+**`post(r: condition)`** -- evaluates after the function returns. The identifier before the colon (`r`) names the return value. Can reference both parameters and the result.
+
+**`contract_assert(condition)`** -- replaces `assert()` inside function bodies. Unlike `assert()`, the enforcement mode is controlled by the compiler, not by `NDEBUG`.
+
+All three are context-sensitive keywords (`pre`, `post`) or a full keyword (`contract_assert`). They appear after the function declarator, before the body:
+
+```cpp
+std::string normalize(std::string_view input)
+    pre(!input.empty())
+    pre(input.size() <= max_input_size)
+    post(result: !result.empty())
+    post(result: result.size() <= input.size())
+{
+    contract_assert(is_valid_encoding(input));
+    // ...
+}
+```
+
+**Lambdas** work too:
+
+```cpp
+auto safe_div = [](int a, int b)
+    pre(b != 0)
+    post(r: r * b == a || a % b != 0)
+{
+    return a / b;
+};
+```
+
+**Virtual functions**: contract specifiers on virtual functions are **ill-formed** in the C++26 MVP. The design was removed at Hagenberg (Feb 2025) because the interaction with inheritance was not yet mature. Expect this in a future standard.
+
+**First-declaration rule**: contracts may only appear on the first declaration. A redeclaration must either repeat the same contracts or omit them entirely. Different contracts in different TUs is IFNDR.
+
+### The four evaluation semantics
+
+The enforcement mode is chosen **per-TU at compile time**, not per-assertion in source:
+
+| Semantic | Predicate evaluated? | Handler called? | Program terminates? | Use case |
+|----------|---------------------|-----------------|--------------------|----|
+| **ignore** | No | No | No | Max performance, trusted code |
+| **observe** | Yes | Yes | No (continues) | Staging, canary, data gathering |
+| **enforce** | Yes | Yes | Yes (after handler) | Production safety net |
+| **quick_enforce** | Yes | No | Yes (immediate trap) | Hard real-time, fail-fast |
+
+- **ignore**: zero runtime cost. The predicate must still type-check. Use this for code paths where you trust the caller and want no overhead.
+- **observe**: the handler runs, then execution **continues past the violation**. This is the key mode for introducing contracts into existing codebases -- you see violations in logs without risking false-positive crashes.
+- **enforce** (default): the handler runs, then the program is contract-terminated via `std::terminate()`. The handler can escape termination by throwing an exception (if not in a `noexcept` context).
+- **quick_enforce**: the program terminates **immediately without calling the handler** -- typically via `__builtin_trap()`. No diagnostic output. Minimal overhead. Use this for safety-critical "fail fast and reboot" scenarios where even the handler cost is unacceptable.
+
+### Compiler flags
+
+**GCC 16.1** (shipped April 30, 2026):
+
+```bash
+# Enable contracts with default enforcement (enforce)
+g++ -std=c++26 -fcontracts main.cpp
+
+# Observe mode (log violations, don't crash)
+g++ -std=c++26 -fcontracts -fcontract-evaluation-semantic=observed main.cpp
+
+# Quick-enforce mode (immediate trap)
+g++ -std=c++26 -fcontracts -fcontract-evaluation-semantic=quick_enforce main.cpp
+
+# Ignore all contracts
+g++ -std=c++26 -fcontracts -fcontract-evaluation-semantic=ignored main.cpp
+```
+
+Note: GCC uses `ignored` and `observed` (past tense) in its flag values.
+
+**Clang** (experimental fork): The [`arcosuc3m/clang-contracts`](https://github.com/arcosuc3m/clang-contracts) fork implements P2900. Available on [Compiler Explorer](https://contracts.efcs.ca/):
+
+```bash
+clang++ -std=c++23 -fcontracts -fcontract-evaluation-semantic=enforce -stdlib=libc++ main.cpp
+```
+
+**MSVC**: not implemented as of VS 2026 (v18.0). No public timeline.
+
+### The replaceable violation handler
+
+When a contract is violated under `observe` or `enforce`, the implementation calls:
+
+```cpp
+void handle_contract_violation(
+    const std::contracts::contract_violation& v);
+```
+
+The `contract_violation` object provides:
+
+| Member | Returns | Description |
+|--------|---------|-------------|
+| `kind()` | `assertion_kind` | `pre`, `post`, or `assert` |
+| `semantic()` | `evaluation_semantic` | Which mode was active |
+| `location()` | `std::source_location` | File, line, function |
+| `comment()` | string-like | Text of the predicate (impl-defined) |
+| `detection_mode()` | `detection_mode` | `predicate_false` or `evaluation_exception` |
+| `evaluation_exception()` | `std::exception_ptr` | If the predicate threw |
+
+Replace the handler like you replace `operator new` -- define your own version:
+
+```cpp
+#include <contracts>
+#include <print>
+
+void handle_contract_violation(
+    const std::contracts::contract_violation& v)
+{
+    std::println(stderr, "[CONTRACT] {} violated at {}:{}  predicate: {}",
+        v.kind() == std::contracts::assertion_kind::pre ? "pre" :
+        v.kind() == std::contracts::assertion_kind::post ? "post" : "assert",
+        v.location().file_name(),
+        v.location().line(),
+        v.comment());
+}
+```
+
+Under `observe`, the handler returns and execution continues. Under `enforce`, the handler returns and `std::terminate()` is called. Under `quick_enforce`, the handler is never called.
+
+### Practical patterns
+
+**Module boundaries** -- put contracts on public API functions:
+
+```cpp
+// public_api.h
+namespace mylib {
+
+std::expected<User, Error> parse_user(std::string_view json)
+    pre(!json.empty())
+    pre(json.size() <= max_json_size)
+    post(r: r.has_value() || r.error() != Error::none);
+
+void save_user(const User& u, Database& db)
+    pre(u.id > 0)
+    pre(db.is_connected());
+
+} // namespace mylib
+```
+
+**Serialization** -- validate parsed values before struct population:
+
+```cpp
+template <typename T>
+T deserialize(std::span<const std::byte> data)
+    pre(data.size() >= sizeof(uint32_t))
+    post(r: r.is_valid())
+{
+    auto header = read_header(data);
+    contract_assert(header.version <= current_version);
+    contract_assert(header.payload_size <= data.size() - sizeof(header));
+    return decode<T>(data.subspan(sizeof(header)));
+}
+```
+
+**FFI boundaries** -- catch invalid arguments before they cross into C or system calls:
+
+```cpp
+int safe_write(int fd, const void* buf, size_t count)
+    pre(fd >= 0)
+    pre(buf != nullptr || count == 0)
+    pre(count <= max_write_size)
+{
+    return ::write(fd, buf, count);
+}
+```
+
+**Contracts as fuzz oracles** -- the contract IS the test oracle:
+
+```cpp
+// Step 1: annotate the function
+Json parse_json(std::string_view input)
+    pre(input.size() <= max_input)
+    post(r: r.is_well_formed());
+
+// Step 2: write the fuzz harness (no oracle needed!)
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
+    auto input = std::string_view(reinterpret_cast<const char*>(data), size);
+    try {
+        auto result = parse_json(input);  // contracts check automatically
+    } catch (...) {}
+    return 0;
+}
+```
+
+Compile with `-fcontract-evaluation-semantic=enforce`. Any contract violation signals a bug -- the fuzzer catches it as a crash. No separate oracle, no manual property assertions. This pattern composes directly with the fuzzing workflows in <PostLink slug="testing-for-safety-2026">testing-for-safety-2026</PostLink>.
+
+### Migration strategy
+
+Contracts reward a staged rollout:
+
+1. **observe in staging**: compile your test suite and canary deployments with `-fcontract-evaluation-semantic=observed`. Violations are logged but don't crash. Gather data on which contracts fire.
+2. **Triage**: fix real bugs found by violations. Weaken contracts that are too strict (false positives from edge cases you intentionally allow). Remove contracts that are wrong.
+3. **enforce in production**: once the violation rate is zero in staging, flip to `enforce`. Now violations crash the program -- which is correct, because you've confirmed they indicate real bugs.
+4. **quick_enforce for hot paths**: after months of zero violations, switch latency-critical paths to `quick_enforce` to eliminate even the handler overhead.
+
+This is the same pattern that Google used for hardened-stdlib rollout (see <PostLink slug="hardened-stdlib">hardened-stdlib</PostLink>): observe first, enforce after confidence. The difference is that contracts are user-written checks at your API boundaries, not library-internal checks.
+
+## Reflection today (C++26)
+
+### Can reflection see contracts?
+
+No. P2996 (Reflection) does not currently provide the ability to introspect contract specifiers on functions. `std::meta::nonstatic_data_members_of` walks struct fields; there is no `std::meta::contracts_of` or similar facility. Contract specifiers are not part of the type system -- they are properties of declarations, and P2996's MVP focuses on type-level reflection.
+
+This means you cannot write a reflection-driven "verify all public functions have contracts" lint today. The check must be done with external tooling (clang-tidy rules, code review).
+
+### How contracts compose with reflection patterns
+
+Even without reflecting contracts themselves, contracts and reflection compose well at the application level:
+
+**Reflection-generated code gets contracts for free.** The serialization and deserialization functions from posts <PostLink slug="json-naive">8</PostLink>-<PostLink slug="one-codegen-many-formats">11</PostLink> generate field-walking code at compile time. Adding a `pre()` or `post()` to the generated function's declaration checks invariants on every reflected field automatically:
+
+```cpp
+template <typename T>
+std::string to_json(const T& obj)
+    post(r: !r.empty())
+    post(r: r.front() == '{')
+{
+    // reflection-generated field walk
+}
+```
+
+**Contracts complement sanitizers.** The cost hierarchy is:
+
+| Mechanism | Runtime cost | What it catches |
+|-----------|-------------|-----------------|
+| Contracts (`enforce`) | Near-zero (branch + trap) | Violated specifications |
+| Hardened stdlib (P3471) | ~0.3% | OOB, null deref, overruns |
+| ASan | 2-3x slowdown | Heap/stack buffer overflow, UAF |
+| UBSan | 1.2-1.5x slowdown | Signed overflow, alignment, shift |
+
+Contracts are the cheapest runtime safety mechanism. They belong in production; sanitizers belong in CI. See <PostLink slug="sanitizers-2026">sanitizers-2026</PostLink> for the full matrix.
+
+## Where this is heading
+
+### C++29 directions
+
+**Virtual function contracts** were removed from the C++26 MVP but remain a priority. The core question -- whether a derived class can weaken a precondition or strengthen a postcondition (Liskov substitution) -- needs a design that composes with multiple inheritance. Expect a proposal for C++29.
+
+**Contracts + profiles.** The profiles framework ([P3589](https://isocpp.org/files/papers/P3589R1.pdf), Dos Reis) envisions profile attributes as a layer on top of contracts. A `[[profiles::enforce(type_safety)]]` attribute would generate implicit contracts for type-safety violations. When profiles ship (targeting C++29), contracts become their enforcement substrate.
+
+**Contracts + code injection (P3294).** Token injection could auto-generate contracts from annotations:
+
+```cpp
+// hypothetical C++29
+template <typename T>
+consteval void inject_range_contracts(std::meta::info fn) {
+    for (auto param : std::meta::parameters_of(fn)) {
+        if (has_annotation<bounded>(param)) {
+            auto [lo, hi] = annotation_of<bounded>(param);
+            // inject: pre(param >= lo && param <= hi)
+        }
+    }
+}
+```
+
+This is speculative -- P3294 has no shipping compiler -- but the direction is clear: reflection observes, injection generates, and contracts enforce. The three features compose into a safety stack that C++26 started and C++29 will complete.
+
+### The bigger picture
+
+Contracts are one layer in the C++26 safety stack:
+
+| Layer | Standard | Status |
+|-------|----------|--------|
+| Contracts (P2900) | C++26 | Shipped, GCC 16.1 |
+| Hardened stdlib (P3471) | C++26 | Shipped, GCC/Clang/MSVC |
+| Erroneous behavior | C++26 | Shipped (no more UB for uninit reads) |
+| Profiles | C++29 target | SG23 framework at Brno (June 2026) |
+| Code injection (P3294) | C++29 target | No shipping compiler |
+
+The migration path: contracts today (user-written, at API boundaries), profiles tomorrow (compiler-generated, at type-system boundaries), injection eventually (reflection-driven, at annotation boundaries). Each layer is independently useful; together they close the gap that the <PostLink slug="cpp-safety-state-of-the-union-may-2026">safety state-of-the-union</PostLink> documented.
+
+---
+
+**References**: [P2900R14 Contracts for C++](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p2900r14.pdf), [P3321R0 Contracts Interaction With Tooling](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3321r0.pdf), [GCC 16.1 contracts flags](https://gcc.gnu.org/onlinedocs/gcc/C_002b_002b-Dialect-Options.html), [clang-contracts fork](https://github.com/arcosuc3m/clang-contracts), [Timur Doumler -- Contracts Explained in 5 Minutes](https://timur.audio/contracts_explained_in_5_mins), [Andreas Mueller -- Four Practical Use Cases](https://starsurgeon.medium.com/contracts-in-c-26-3916457f0ca2), [cppreference -- Contract assertions](https://en.cppreference.com/cpp/language/contracts).
