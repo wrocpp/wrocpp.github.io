@@ -7,7 +7,7 @@ language: en
 kind: short
 audience: working-cpp
 tags: [news, wg21, cpp29, profiles, coroutines, mailing, brno]
-summary: "WG21 dropped the pre-Brno mailing in early May -- 116 papers, the largest pre-meeting mailing since the C++20 design crunch. Five papers are doing the heavy lifting for C++29's safety story (the headline axis named in P2000R0 'Direction for ISO C++29'), plus the coroutines-for-I/O work that finally got first LEWG review on the schedule. This is the table of contents for what wro.cpp will be tracking through to Brno (8-13 June)."
+summary: "WG21 dropped the pre-Brno mailing in early May -- 116 papers, the largest pre-meeting mailing since the C++20 design crunch. Five papers are doing the heavy lifting for C++29's safety story (the headline axis named in P5000R1 'Direction for ISO C++29'), plus the coroutines-for-I/O work that finally got first LEWG review on the schedule. This is the table of contents for what wro.cpp will be tracking through to Brno (8-13 June)."
 draft: false
 ---
 
@@ -17,11 +17,11 @@ WG21's pre-Brno mailing landed in early May -- **116 papers**, the largest pre-m
 
 Five papers are doing the heavy lifting for the threads wro.cpp covers.
 
-## 1. P2000R0 -- "Direction for ISO C++29"
+## 1. P5000R1 -- "Direction for ISO C++29"
 
-**Authors:** Daveed Vandevoorde, John Garland, Paul E. McKenney, Roger Orr, Bjarne Stroustrup, Michael Wong (2026-02-18)
+**Authors:** Daveed Vandevoorde, John Garland, Paul E. McKenney, Roger Orr, Bjarne Stroustrup, Michael Wong (R0 2026-02-23, R1 2026-05-11)
 
-The formal direction-setting paper for C++29. **Safety is named as the headline axis** -- the line the committee adopted explicitly is that "C++29 must deliver on the safety story C++26 began but did not finish." Concurrency continues to evolve (`std::execution` is the framework C++26 shipped; C++29 builds on it), and the paper sketches incremental work on reflection, modules, and language ergonomics.
+The formal direction-setting paper for C++29 (not to be confused with P2000R5 "Direction for ISO C++," the general direction paper). **Safety is named as the headline axis** -- the line the committee adopted explicitly is that "C++29 must deliver on the safety story C++26 began but did not finish." Concurrency continues to evolve (`std::execution` is the framework C++26 shipped; C++29 builds on it), and the paper sketches incremental work on reflection, modules, and language ergonomics.
 
 For wro.cpp readers: this is the document that retroactively justifies the [memory-safety-cpp26-and-beyond](/toolset/memory-safety-cpp26-and-beyond/) toolset page's "deferred to C++29" framing. The direction paper makes that deferral non-negotiable -- you cannot ship C++29 without a profile attribute story.
 
@@ -62,7 +62,7 @@ Beyond the five above, the mailing has:
 - **P2300 / std::execution** ratification follow-ups -- a half-dozen LEWG-issued fixups
 - **Pattern matching** (`P1371`) revisions -- still alive, slowly grinding toward a complete-enough proposal
 - **Linear algebra** (`P1673` / `<linalg>`) maintenance papers -- the C++26 feature is shipping; the May mailing has bug fixes and a couple of small API revisions
-- **Reflection follow-ups** -- a handful of post-P2996 papers tightening edge cases (annotation lifetime, friend reflection, error-quality improvements)
+- **Reflection follow-ups** -- most notably P3687R0 "Final Adjustments to C++26 Reflection," which proposes deferring splice template arguments to C++29 (wording and implementation not fully baked for C++26). Additional papers tighten annotation lifetime, friend reflection, and error-quality edge cases
 - **Modules** -- continued progress on `import std;` ergonomics across implementations
 
 ## How to read along
