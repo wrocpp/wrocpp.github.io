@@ -46,7 +46,8 @@ def load_dotenv(path: Path) -> None:
         os.environ.setdefault(k.strip(), v)
 
 
-def gql(token: str, query: str, variables: dict | None = None) -> dict:
+def gql(token: str, query: str, variables: dict | None = None, *, _retries: int = 2) -> dict:
+    import time as _time
     body = json.dumps({"query": query, "variables": variables or {}}).encode()
     req = urllib.request.Request(
         BUFFER_GRAPHQL,
@@ -66,6 +67,13 @@ def gql(token: str, query: str, variables: dict | None = None) -> dict:
         with urllib.request.urlopen(req, timeout=20) as resp:
             out = json.loads(resp.read().decode())
     except urllib.error.HTTPError as e:
+        if e.code == 429 and _retries > 0:
+            retry_after = int(e.headers.get("retryAfter", e.headers.get("Retry-After", "60")))
+            retry_after = min(retry_after, 300)
+            print(f"  rate limited; waiting {retry_after}s ({_retries} retries left)...",
+                  file=sys.stderr, flush=True)
+            _time.sleep(retry_after)
+            return gql(token, query, variables, _retries=_retries - 1)
         body = e.read().decode(errors="replace")
         try:
             err = json.loads(body)
