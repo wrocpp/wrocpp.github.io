@@ -96,6 +96,7 @@ html, body {
 /* ---------------- INSIGHT card ---------------- */
 .card-insight {
   justify-content: center;
+  padding-top: 200px; /* reserve space for logo watermark (top:90px + 64px + safety) */
 }
 .card-insight .insight-content {
   display: flex;
@@ -111,6 +112,20 @@ html, body {
   letter-spacing: -0.025em;
   color: var(--ink);
   margin: 0;
+  max-height: 400px;
+  overflow: hidden;
+}
+.card-insight h1.title-long {
+  font-size: 72pt;
+  line-height: 1.06;
+  letter-spacing: -0.02em;
+  max-height: 420px;
+}
+.card-insight h1.title-xlong {
+  font-size: 56pt;
+  line-height: 1.10;
+  letter-spacing: -0.015em;
+  max-height: 440px;
 }
 /* Auto-accent: ++ in C++/C++26 turns orange, sentence-final period
  * (when wrapped in <span class="dot">) turns blue. The skill writes

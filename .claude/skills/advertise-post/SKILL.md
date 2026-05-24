@@ -127,7 +127,7 @@ template: social/linkedin-post
 ::::post{type=insight theme=dark logo=top-left}
 
 :::insight{citation="wro.cpp -- <pubDate-YYYY-MM-DD>"}
-# <hook headline (1 line, max 60 chars)>
+# <hook headline -- see step 6b for length limits>
 <1-2 sentence sub-claim drawn from the post's summary>
 :::
 
@@ -180,6 +180,37 @@ project:
   author: "wro.cpp -- Wroclaw C++ community"
   email: "office@wro.cpp"
   date: "<pubDate-YYYY-MM-DD>"
+```
+
+### 7b. Validate title length for social card
+
+After writing content.md, count the h1 line's character length (strip any
+`{.title-long}` class attr and `<span>` tags first). Apply the right font
+size class to prevent logo overlap:
+
+| H1 length | Action |
+|-----------|--------|
+| <= 65 chars | OK -- proceed with default 92pt (no class needed) |
+| 66-90 chars | Add `{.title-long}` after the h1 text for 72pt rendering |
+| 91-110 chars | Add `{.title-xlong}` after the h1 text for 56pt rendering |
+| > 110 chars | STOP -- rewrite the headline shorter. No font size can save this. |
+
+Example content.md with class applied:
+```markdown
+# Hardened stdlib in 2026 -- 1 CMake line, ~1000 bugs caught{.title-long}
+```
+
+brand-gen's remark-directive parser passes class attributes through to HTML
+as `<h1 class="title-long">`.
+
+If the original frontmatter title exceeds 90 chars, the social card headline
+MUST be rewritten shorter -- the skill already does this (e.g., "one" -> "1",
+dropping adjectives like "production"). Confirm the rewritten headline fits
+within the limits above.
+
+You can also run the standalone check:
+```bash
+python3 scripts/check-social-title.py
 ```
 
 ### 8. Write caption.md
@@ -235,9 +266,32 @@ grep -o 'viewBox="0 0 [0-9 ]*"' social/linkedin/<slug>/index.html | head -1
 wc -l social/linkedin/<slug>/assets/scudoai.css
 ```
 
-PNG sanity check: `file social/<platform>/<slug>/image.png` should
-report PNG, 2400x2400. `open social/linkedin/<slug>/image.png` to
-eyeball the wro.cpp magnet mark in the top-left before publishing.
+PNG sanity checks (run all three):
+
+```bash
+# 1. Dimensions must be 2400x2400
+DIMS=$(identify -format '%wx%h' social/linkedin/<slug>/image.png)
+[ "$DIMS" = "2400x2400" ] && echo "OK  dimensions" || echo "ERROR  dimensions: $DIMS"
+
+# 2. Logo zone must be clear (no title text overlapping the logo)
+# Sample a strip at y=300 (just below the logo at 2x DPR). Should be
+# paper-colored (#FCFAF5), not ink-colored (#1B1B1D).
+LOGO_ZONE=$(magick social/linkedin/<slug>/image.png \
+  -crop 800x4+220+300 +repage -resize 1x1! -format '%[hex:u]' info: 2>/dev/null)
+if [ -n "$LOGO_ZONE" ]; then
+  case "$LOGO_ZONE" in
+    FCFAF5*|FBFAF5*|FBF9F4*) echo "OK  logo zone clear" ;;
+    *) echo "WARN  content may overlap logo zone (sampled: #$LOGO_ZONE)" ;;
+  esac
+fi
+
+# 3. Visual check
+open social/linkedin/<slug>/image.png
+```
+
+If the logo zone check warns, either shorten the title or apply
+`.title-long` / `.title-xlong` (see step 7b), then re-run the
+build -> inject -> image sequence.
 
 ### 9b. Publish the image at a public URL
 
