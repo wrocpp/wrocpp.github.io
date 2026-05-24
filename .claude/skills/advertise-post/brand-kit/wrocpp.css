@@ -112,8 +112,6 @@ html, body {
   letter-spacing: -0.025em;
   color: var(--ink);
   margin: 0;
-  max-height: 400px;
-  overflow: hidden;
 }
 .card-insight h1.title-long {
   font-size: 72pt;
