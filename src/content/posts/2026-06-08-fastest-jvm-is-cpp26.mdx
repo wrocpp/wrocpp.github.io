@@ -1,0 +1,70 @@
+---
+title: "The fastest JVM is the C++26 compiler"
+slug: "fastest-jvm-is-cpp26"
+pubDate: 2026-06-08
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, cpp26, p2996, reflection, meta-substitute, java, bytecode, becpp, consteval]
+summary: "Koen Samyn's BeCPP talk used std::meta::substitute to transform Java bytecode into executable C++ at compile time. The compiler constant-folds the entire program. The loop doesn't run faster. It doesn't exist. This is reflection used not for serialization or enum-to-string, but as a compile-time metaprogramming substrate for building language interpreters."
+draft: false
+relatedPosts: [define-aggregate, cross-language-comparison, first-reflection, splicing]
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+Every post in the wro.cpp reflection series uses `nonstatic_data_members_of` to walk struct fields: JSON serialization, ORM, dependency injection. Useful patterns, all variations on the same theme. Koen Samyn's [BeCPP talk](https://becpp.org/blog/2026/05/20/slides-of-the-13th-of-may-2026-becpp-meeting/) (May 13, 2026) goes somewhere else entirely: he uses `std::meta::substitute` to transform Java bytecode into executable C++ at compile time.
+
+The compiler IS the JVM. And with `-O2`, the entire program constant-folds away.
+
+## The technique
+
+The core insight is a four-step pipeline that runs entirely at compile time:
+
+1. **Reflect** the `execute` function template using `^^execute`
+2. **Lift constants** from a constexpr bytecode array into reflections via `std::meta::reflect_constant`
+3. **Substitute** template arguments using `std::meta::substitute(^^execute, {reflected_opcode, reflected_args...})`
+4. **Splice** back into code with `[:spec:]` to get a callable function pointer
+
+Each Java bytecode opcode becomes a C++ template specialization. The bytecode stream becomes a variadic template expansion. The program counter is eliminated: instead of a runtime `switch` over opcodes, the compiler sees a flat sequence of function calls with constant arguments.
+
+The CPU model is minimal:
+
+```cpp
+struct CPU {
+    std::array<int32_t, 256> stack{};
+    std::array<int32_t, 256> locals{};
+    uint8_t sp{0};
+    int32_t result{0};
+    bool running{true};
+};
+```
+
+Three template primitives handle control flow: **Block** (sequential dispatch via fold expressions), **icmplt** (comparisons that branch into sub-blocks), and **Loop** (a while-loop structure that re-dispatches its body block). The Java bytecode for a simple loop compiles into a C++ template instantiation tree that the optimizer can see through completely.
+
+## The punchline
+
+With `-O2`, the compiler performs constant folding and dead code elimination on the entire instantiated program. A Java method that computes a factorial becomes a single constant in the compiled binary. As Samyn puts it: *"The loop doesn't just run faster. It doesn't exist."*
+
+The [ToaVM repository](https://github.com/samynk/ToaVM) has the full implementation. It compiles with clang-p2996 (`-std=c++26 -freflection-latest`).
+
+## Why this matters for the reflection story
+
+The wro.cpp series teaches reflection through the "walk a struct, do something with each field" pattern. That pattern covers 80% of practical use cases. But `std::meta::substitute` opens a different door: reflection as a compile-time metaprogramming substrate for building interpreters, DSLs, and language bridges.
+
+Barry Revzin's [blog post on `meta::substitute`](https://brevzin.github.io/c++/2026/03/02/power-of-substitute/) calls it "a hidden gem in P2996." The API takes a reflection of any template and a sequence of reflected arguments, and performs template substitution. Combined with `reflect_constant` (which lifts runtime values into the reflection domain) and the splice operator (which drops them back into code), you get a compile-time code generation pipeline that is Turing-complete.
+
+Samyn's talk demonstrates what that Turing-completeness looks like in practice: a bytecode interpreter where the compiler evaluates the entire program and emits only the result.
+
+## The consteval misconception
+
+Samyn's [LinkedIn article](https://www.linkedin.com/pulse/c26-reflection-stdmetasubstitute-koen-samyn-e9nee) addresses a common misconception: that `consteval` is a "sterile, static environment" limited to simple computations. In fact, consteval functions can allocate heap memory, generate pseudo-random numbers, and run complex loops. The only constraint is that results must be capturable as constexpr values.
+
+His metaphor: *"The consteval function can be a living and breathing butterfly, but once captured as a constexpr it becomes encased in amber."*
+
+This is the mindset shift C++26 reflection demands. The compile-time environment is not a calculator; it is a full programming language with access to the type system. The wro.cpp series has been building toward this insight since <PostLink slug="first-reflection">post 2</PostLink>. Samyn's talk is the most vivid demonstration so far.
+
+---
+
+**Sources**: Koen Samyn, ["The Fastest Java Virtual Machine is the C++26 Compiler"](https://becpp.org/blog/2026/05/20/slides-of-the-13th-of-may-2026-becpp-meeting/) (BeCPP, May 13, 2026). [ToaVM repository](https://github.com/samynk/ToaVM). LinkedIn: ["C++26 reflection: std::meta::substitute"](https://www.linkedin.com/pulse/c26-reflection-stdmetasubstitute-koen-samyn-e9nee), ["Bytecode to C++: the one where the compiler CAN optimize the loop"](https://www.linkedin.com/pulse/bytecode-c-one-where-compiler-can-optimize-loop-koen-samyn-ylhxe). Barry Revzin, ["Behold the power of meta::substitute"](https://brevzin.github.io/c++/2026/03/02/power-of-substitute/) (March 2, 2026).

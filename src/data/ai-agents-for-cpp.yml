@@ -1,7 +1,19 @@
 # AI coding agents evaluated for C++ work, surfaced on
 # /toolset/ai-coding-agents-for-cpp/. Editorial bias: premium
 # open-source first; premium picks live in the "Premium-OSS picks"
-# sub-section. Last refresh: 2026-05-02.
+# sub-section. Last refresh: 2026-05-27.
+
+grok-build:
+  title: Grok Build
+  url: https://grok.com/build
+  licence: proprietary (xAI)
+  cost_self: "n/a"
+  cost_cloud: "$99/mo intro, $300/mo regular (SuperGrok Heavy)"
+  mcp: yes (reuses Claude Code MCP + AGENTS.md conventions)
+  open_weights: no (grok-code-fast-1, 256K context)
+  cpp_verdict: "Launched May 25, 2026. 8 parallel sub-agents, local-first (no source upload to servers). 70.8% SWE-Bench. Deliberately compatible with Claude Code conventions (AGENTS.md, MCP, hooks). Too new to evaluate on hard C++ template work."
+  best_when: "you want multi-agent parallelism with local-first guarantees and already use Claude Code conventions"
+  skip_if: "you need proven C++ template / reflection reliability (too new, limited track record)"
 
 claude-code:
   title: Claude Code
@@ -11,9 +23,9 @@ claude-code:
   cost_cloud: "$20-200/mo Claude.ai or pay-per-token API"
   mcp: yes
   open_weights: no
-  cpp_verdict: "Best for hard multi-file C++ refactors, template debugging, ABI work, and undefined-behaviour hunts. Reaches for the right context (200K window + auto-compaction). Token-efficient (5.5x less than Cursor on identical tasks)."
-  best_when: "team works in the terminal, MCP servers wired, supervised review is the norm"
-  skip_if: "you need an inline IDE flow or a fully-local stack"
+  cpp_verdict: "Best for hard multi-file C++ refactors, template debugging, ABI work, and undefined-behaviour hunts. Now surface-agnostic (CLI, VS Code, JetBrains, web, mobile). Fast mode on Opus 4.7 by default. Token-efficient (5.5x less than Cursor on identical tasks)."
+  best_when: "team works in the terminal or VS Code/JetBrains, MCP servers wired, supervised review is the norm"
+  skip_if: "you need a fully-local stack"
 
 cursor:
   title: Cursor
@@ -23,7 +35,7 @@ cursor:
   cost_cloud: "$20 Pro / $60 Pro+ / $200 Ultra (heavy agent users typically need Pro+)"
   mcp: yes
   open_weights: no
-  cpp_verdict: "Best for inline pair-programming on routine C++ edits. Multi-provider routing (Claude / GPT / Gemini) is convenient. Watch the credit pool on agent mode -- $20 burns fast."
+  cpp_verdict: "Best for inline pair-programming on routine C++ edits. v2.5 (May 2026): 79.8% SWE-Bench Multilingual, cloud-agent multi-task mode. Multi-provider routing (Claude / GPT / Gemini). Watch the credit pool on agent mode."
   best_when: "IDE-first workflow, solo or small team"
   skip_if: "compliance forbids cloud egress or you need terminal automation"
 
@@ -71,8 +83,8 @@ codex-cli:
   cost_cloud: "n/a"
   mcp: yes
   open_weights: no (OpenAI models only)
-  cpp_verdict: "Open-source CLI from OpenAI. Strong on routine refactors and documented APIs; weaker than Claude Code on long-context template metaprogramming."
-  best_when: "you already pay for OpenAI API and want a free terminal harness"
+  cpp_verdict: "Open-source CLI from OpenAI. v0.133 (May 2026): 22+ releases in 2 weeks, persisted /goal workflows, plugin marketplace, remote daemon, codex doctor diagnostics. Strong on routine refactors; weaker than Claude Code on long-context template metaprogramming."
+  best_when: "you already pay for OpenAI API and want a free terminal harness with rapid iteration"
   skip_if: "you need top-tier reasoning for hard C++ template / lifetime issues"
 
 windsurf:

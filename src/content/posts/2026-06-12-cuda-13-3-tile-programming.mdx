@@ -1,0 +1,52 @@
+---
+title: "CUDA 13.3: tile programming in C++ without the boilerplate"
+slug: "cuda-13-3-tile-programming"
+pubDate: 2026-06-12
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, cuda, gpu, performance, cpp, nvidia, tiles, compileiq]
+summary: "NVIDIA CUDA 13.3 (May 26) adds C++ tile programming: declarative tile abstractions replace manual shared memory, synchronization, and indexing. CompileIQ autotuning uses evolutionary algorithms to tune tile sizes and memory layout per kernel (up to 15% speedup on GEMM/attention). Works on Hopper and all other supported architectures."
+draft: false
+relatedPosts: [simd-in-cpp-2026]
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+NVIDIA released [CUDA 13.3](https://developer.nvidia.com/blog/nvidia-cuda-13-3-enhances-gpu-development-with-tile-programming-in-c-compiler-autotuning-and-python-updates) on May 26. The headline for C++ developers: tile programming replaces the manual shared-memory boilerplate that makes GPU kernels painful to write and harder to optimize.
+
+## What tile programming changes
+
+Traditional CUDA kernels require the developer to manage shared memory allocation, thread synchronization, and tile indexing manually. Tile programming introduces declarative abstractions: you describe the tile shape and the operation, and the compiler handles memory staging, synchronization points, and index arithmetic.
+
+The model extends to all supported GPU architectures (not just Hopper), which means existing CUDA C++ codebases can adopt it without targeting the latest hardware.
+
+## CompileIQ autotuning
+
+The second headline feature is CompileIQ, a compiler auto-tuning framework that uses evolutionary and genetic algorithms to generate specialized compiler configurations per kernel. Instead of manually tuning tile sizes, memory layout, and register pressure, CompileIQ explores the configuration space automatically.
+
+Reported gains:
+- **Up to 15% speedup** on GEMM and attention kernels (the workhorses of ML inference)
+- **Up to 7x speedup** in CCCL 3.3 search operations vs CCCL 3.2
+- **~20% improvement** in cuSOLVER syevj for mid-sized and large matrices
+
+For teams running llama.cpp, vLLM, or custom inference engines, the attention-kernel speedup is directly relevant. For scientific computing, the cuSOLVER improvement matters for eigenvalue problems at scale.
+
+## Why C++ developers should care
+
+CUDA C++ has always been C++ with extensions. The language evolution (concepts, constexpr, ranges) flows into GPU code. Tile programming is the next step in that direction: higher-level abstractions that compose with modern C++ patterns.
+
+The connection to the wro.cpp ecosystem: the <PostLink slug="simd-in-cpp-2026">SIMD toolset page</PostLink> covers `std::simd`, Highway, and ISPC for CPU vectorization. CUDA tiles are the GPU counterpart. A codebase that uses `std::simd` for CPU-side work and CUDA tiles for GPU-side work gets high-level abstractions on both sides, with the compiler handling the low-level scheduling.
+
+Looking further ahead: C++26 reflection could eventually generate kernel configurations from annotated structs (tile shape, memory policy, precision as struct annotations), the same way it generates JSON schemas and SQL bindings today. That is speculative, but the pattern is familiar.
+
+## Other CUDA 13.3 highlights
+
+- **CUDA Python 1.0**: stable Python API for GPU programming
+- **Extended mmap()**: memory-mapped file access for discrete GPU memory
+- **NVIDIA Dynamo support**: improved integration with the PyTorch compiler stack
+
+---
+
+**Source**: NVIDIA, ["CUDA 13.3 Enhances GPU Development with Tile Programming in C++, Compiler Autotuning, and Python Updates"](https://developer.nvidia.com/blog/nvidia-cuda-13-3-enhances-gpu-development-with-tile-programming-in-c-compiler-autotuning-and-python-updates) (May 26, 2026).

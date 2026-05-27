@@ -1,0 +1,53 @@
+---
+title: "Could C++ handle an ABI break? The 2026 case"
+slug: "abi-break-debate-2026"
+pubDate: 2026-06-10
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, cpp26, abi, stdlib, performance, hft, abseil, folly, conan, vcpkg]
+summary: "Two pieces dropped in the same week: Luis Caro Campos' CppCon 2025 talk arguing package managers make ABI breaks manageable, and an HFT University article claiming a 58x P99 latency gap between Rust's and C++'s stdlib. The ABI debate is back. Here is what both sides are saying, and what C++26 shipped despite the constraint."
+draft: false
+relatedPosts: [hardened-stdlib, memory-safety-cpp26-and-beyond, cpp-safety-state-of-the-union-may-2026]
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+Two pieces dropped in the same week. Luis Caro Campos' CppCon 2025 talk ["Could C++ Developers Handle an ABI Break Today?"](https://www.youtube.com/watch?v=VbSKnvldtbs) (published May 22) argues the pain is overestimated. An HFT University [article](https://hftuniversity.com/post/the-c-standard-library-has-been-walking-itself-back-for-fifteen-years-and-the-receipts-are-public) (trending on Hacker News) claims 58x P99 latency gaps between Rust's and C++'s stdlib on identical workloads and calls the standard library "fifteen years of walking itself back."
+
+The ABI debate is back. Here is where it stands.
+
+## The case for breaking
+
+The argument has three prongs:
+
+**Performance is on the table.** The standard library carries layout decisions frozen in the C++11 era. `std::string` has a 32-byte SSO buffer on libstdc++ that pessimizes move operations. `std::unordered_map` uses a linked list of nodes that defeats the cache. `std::regex` is so slow that no production codebase uses it. The HFT University article documents these cases and argues that tier-one firms (trading, browsers, search engines) have already voted with their code: they build on Abseil, Folly, or EASTL, not `std`.
+
+**Package managers changed the equation.** Caro Campos' thesis is that Conan and vcpkg can now tag binary packages with ABI version metadata. A coordinated ABI break would require rebuilding the dependency tree, but package managers already do this for every major compiler release. The tooling exists; the committee just hasn't pulled the trigger.
+
+**The status quo has a cost.** Every workaround for an ABI-locked type (adding a `_v2` variant, deprecating the old one, documenting "don't use this in hot paths") is complexity that compounds. The committee spent years on `std::pmr` partly because the original allocator model was ABI-frozen. `std::format` exists partly because `std::iostream` performance was ABI-locked.
+
+## The case for stability
+
+The committee (EWG) has reaffirmed ABI stability multiple times. The reasons are not technical naivety:
+
+**The long tail is enormous.** The firms that would benefit most from a break (HFT, browsers) are also the firms most capable of absorbing one. The firms that would suffer most (embedded, automotive, enterprise shops with 20-year-old codebases, government contractors) are the ones that can't rebuild their dependency trees on a timeline the committee controls.
+
+**Distribution coordination is unsolved.** Conan and vcpkg handle project-level dependencies. But `libstdc++.so` ships with the OS. A break means every Linux distribution ships two standard libraries simultaneously, or forces a flag day. Neither Fedora nor Ubuntu has volunteered for that.
+
+**Incremental improvement works.** C++26 shipped the hardened standard library (P3471), contracts (P2900), and reflection (P2996) without breaking ABI. The committee found ways to deliver safety features within the constraint. <PostLink slug="hardened-stdlib">Hardened stdlib</PostLink> adds bounds checking to `vector::operator[]` via the existing contract-violation mechanism. No layout change. No ABI break. 0.3% overhead.
+
+## What this means for C++26 adoption
+
+The practical takeaway for working engineers: the ABI will not break in C++26 or C++29. Plan accordingly.
+
+If you are in the long tail (automotive, enterprise, embedded): the safety features in C++26 are designed to work within the ABI constraint. Flip the <PostLink slug="hardened-stdlib">hardened-stdlib macro</PostLink>, wire contracts at API boundaries, and start using reflection for compile-time validation. None of these require a library rebuild beyond your own code.
+
+If you are at a firm that already uses Abseil or Folly: you already opted out of the ABI constraint. The C++26 features that matter to you are language-level (reflection, contracts, `constexpr` improvements), not library-level. These are ABI-neutral by design.
+
+The debate will continue. The committee's position is defensible. The critics' frustration is legitimate. Both can be true at the same time.
+
+---
+
+**Sources**: Luis Caro Campos, ["Could C++ Developers Handle an ABI Break Today?"](https://www.youtube.com/watch?v=VbSKnvldtbs) (CppCon 2025, published May 22, 2026). HFT University, ["The C++ Standard Library Has Been Walking Itself Back for Fifteen Years"](https://hftuniversity.com/post/the-c-standard-library-has-been-walking-itself-back-for-fifteen-years-and-the-receipts-are-public) (~May 23, 2026).
