@@ -1,18 +1,19 @@
 # Replacing Qt's MOC with reflection
 
 ## Body
-Qt's Meta-Object Compiler emits glue code for `Q_PROPERTY` / `Q_INVOKABLE` / `signals` / `slots`. Project ships a second compiler, IDEs need MOC awareness, headers carry near-but-not-quite-C++ syntax. C++26 reflection makes the property-introspection half a regular library: walk `nonstatic_data_members_of(^^T)`, filter by P3394 annotations, build a runtime registry. No .moc files, no codegen pass, no extra build step. signals/slots and QML wiring still benefit from MOC's other halves -- but the metadata emit is now just C++.
+Q_OBJECT and the moc compiler exist because C++ could not see inside your class. Properties, signals, and slots needed a preprocessor pass to generate the meta-object boilerplate.
 
-Series post 17 of 25 in the wro.cpp C++26 reflection arc.
+C++26 reflection sees inside the class. nonstatic_data_members_of, annotations, and define_aggregate together give you properties, signal/slot wiring, and dynamic property access without a separate code generation step.
+
+100 lines of header replace moc for the common case. Qt itself is exploring this (their QRangeModel hackathon). Full replacement still needs P3294 token injection (C++29 territory), but the property layer ships in C++26.
 
 https://wrocpp.github.io/posts/qt-moc-replacement/
 
 ## Hashtags
-#cpp #cpp26 #reflection #qt #moc #wrocpp #moderncpp
+#cpp #cpp26 #qt #moc #reflection #p2996 #signals #properties #wrocpp
 
 ## Alt-text
-Dark editorial card with the wro.cpp magnet wordmark. Headline: "Replacing Qt's MOC with reflection". Subhead: Property registry from struct shape; no .moc files, no second compiler. Citation: wro.cpp 2026-06-11.
+Editorial card: "Replacing Qt MOC with reflection". 100 lines of header replace the meta-object preprocessor.
 
 ## Suggested post time
 Thursday 2026-06-11, 10:00 CET
-Reason: Mid-week morning EU audience.

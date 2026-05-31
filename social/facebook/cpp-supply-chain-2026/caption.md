@@ -1,16 +1,19 @@
 # C++ supply chain in 2026
 
 ## Body
-Shipping C++ in 2026 means vcpkg or Conan, a CycloneDX SBOM on every build, grype `--fail-on critical` as a CI gate, in-toto attestations, sigstore signing. The conventional SBOM workflow leaks because the YAML manifest drifts from the code. C++26 reflection closes the gap: components as P3394 annotations on their integration type; consteval walker emits the CycloneDX fragment AND refuses to compile if a vendored member lacks the annotation. SBOM cannot drift from source.
+Six things every C++ project should have wired by end of 2026: vcpkg or Conan with version pins, SBOMs in CycloneDX format (one per build), CVE feeds matched against your SBOM, signed releases (sigstore / cosign), reproducible builds where possible, and dependency review at PR time.
+
+The wro.cpp reflection-driven SBOM is the bonus: walk your linked dependencies via reflection, emit the component manifest directly from the source of truth. No drift between what your build manifest claims and what your binary actually contains.
+
+This page is the matrix: which tool covers what, what to pick if you have to pick one, and how to get from zero to compliant.
 
 https://wrocpp.github.io/toolset/cpp-supply-chain-2026/
 
 ## Hashtags
-#cpp #cpp26 #supplychain #sbom #vcpkg #reflection #wrocpp
+#cpp #cpp26 #supplychain #sbom #cyclonedx #vcpkg #conan #cve #wrocpp #security
 
 ## Alt-text
-Dark editorial card with the wro.cpp magnet wordmark. Headline: "C++ supply chain in 2026". Subhead: vcpkg + SBOM + CVE feeds + reflection-driven manifest. Citation: wro.cpp 2026-06-09.
+Editorial card: "C++ supply chain in 2026". vcpkg, Conan, SBOM, CVE feeds, and the reflection-driven component manifest.
 
 ## Suggested post time
 Tuesday 2026-06-09, 10:00 CET
-Reason: Tuesday morning EU audience.

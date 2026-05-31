@@ -1,0 +1,10 @@
+template: social/linkedin-post
+size:
+  width: 1200
+  height: 1200
+  dpr: 2
+project:
+  name: "abi-break-debate-2026"
+  author: "wro.cpp -- Wroclaw C++ community"
+  email: "office@wro.cpp"
+  date: "2026-06-10"
