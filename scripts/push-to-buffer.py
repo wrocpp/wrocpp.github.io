@@ -308,12 +308,33 @@ def main() -> int:
     p.add_argument("--hour", type=int, default=10,
                    help="local hour (Europe/Warsaw) for the default schedule (default: 10)")
     p.add_argument("--dry-run", action="store_true", help="resolve channels + show payloads, don't push")
+    p.add_argument("--skip-render-check", action="store_true",
+                   help="skip the pre-flight social card render integrity check (NOT recommended)")
     args = p.parse_args()
 
     load_dotenv(REPO_ROOT / ".env")
     token = os.environ.get("BUFFER_API_KEY")
     if not token and not args.dry_run:
         sys.exit("error: BUFFER_API_KEY not set (put it in .env or export it)")
+
+    # Pre-flight: refuse to push a card that looks broken (giant logo / no CSS).
+    # We learned this the hard way when lifetime-safety-2026 shipped on 2026-06-01
+    # with the magnet PNG filling the whole 2400x2400 card. See check-social-render.py.
+    if not args.skip_render_check:
+        platforms_to_check = [s.strip() for s in args.platforms.split(",") if s.strip()]
+        check_script = REPO_ROOT / "scripts" / "check-social-render.py"
+        if check_script.exists():
+            import subprocess as _subprocess
+            for plat in platforms_to_check:
+                rc = _subprocess.run(
+                    [sys.executable, str(check_script), "--slug", args.slug, "--platform", plat],
+                    cwd=REPO_ROOT,
+                ).returncode
+                if rc != 0:
+                    sys.exit(
+                        f"error: social card for {plat}/{args.slug} failed render check. "
+                        f"Fix the card and re-run, or pass --skip-render-check if you know what you're doing."
+                    )
 
     platforms = [s.strip() for s in args.platforms.split(",") if s.strip()]
     overrides = {"linkedin": args.linkedin_channel, "facebook": args.facebook_channel}

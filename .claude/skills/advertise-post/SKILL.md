@@ -261,31 +261,50 @@ After both platforms render, **verify the swap actually happened**:
 # is still the ScudoAI shield. STOP and re-run the sequence.
 grep -o 'viewBox="0 0 [0-9 ]*"' social/linkedin/<slug>/index.html | head -1
 
-# MUST report ~287 lines (wrocpp.css standalone). If ~1189, you appended
-# instead of replacing -- delete assets/scudoai.css, re-run inject.sh.
+# MUST report 300 lines (wrocpp.css standalone). If 0, the assets
+# directory was empty when Chrome rendered -> giant logo bug.
+# If ~1189, you appended instead of replacing -- delete the file and
+# re-run inject.sh.
 wc -l social/linkedin/<slug>/assets/scudoai.css
 ```
 
-PNG sanity checks (run all three):
+PNG sanity checks (all bundled into one script):
 
 ```bash
-# 1. Dimensions must be 2400x2400
-DIMS=$(identify -format '%wx%h' social/linkedin/<slug>/image.png)
-[ "$DIMS" = "2400x2400" ] && echo "OK  dimensions" || echo "ERROR  dimensions: $DIMS"
+# Runs the full render-integrity check: image dimensions, file size,
+# assets/scudoai.css presence + line count, logo-symbol.svg presence,
+# and a title-area pixel sample. Exits non-zero on any ERROR.
+python3 scripts/check-social-render.py --slug <slug>
+```
 
-# 2. Logo zone must be clear (no title text overlapping the logo)
-# Sample a strip at y=300 (just below the logo at 2x DPR). Should be
-# paper-colored (#FCFAF5), not ink-colored (#1B1B1D).
-LOGO_ZONE=$(magick social/linkedin/<slug>/image.png \
-  -crop 800x4+220+300 +repage -resize 1x1! -format '%[hex:u]' info: 2>/dev/null)
-if [ -n "$LOGO_ZONE" ]; then
-  case "$LOGO_ZONE" in
-    FCFAF5*|FBFAF5*|FBF9F4*) echo "OK  logo zone clear" ;;
-    *) echo "WARN  content may overlap logo zone (sampled: #$LOGO_ZONE)" ;;
-  esac
-fi
+The script catches the **"giant magnet logo, no CSS"** failure mode that
+shipped a broken lifetime-safety-2026 card on 2026-06-01: when Chrome
+renders the index.html with an empty `assets/` directory, the magnet PNG
+expands to fill the entire 2400x2400 card and the title text falls
+back to default browser styles. The PNG file size jumps from ~210 KB
+(correct) to ~450 KB (broken). The script flags any file outside the
+150-400 KB band as suspect and verifies assets/scudoai.css matches the
+300-line wrocpp.css standalone.
 
-# 3. Visual check
+If the script reports ERROR for a card, the fix is always the same:
+delete the card directory and re-init from scratch:
+
+```bash
+# Save content first, then nuke + re-init + restore + rebuild
+cp social/linkedin/<slug>/{content.md,config.yaml,caption.md} /tmp/
+rm -rf social/linkedin/<slug>
+brand-gen init social/linkedin-post social/linkedin/<slug> --dir .
+cp /tmp/{content.md,config.yaml,caption.md} social/linkedin/<slug>/
+( cd social/linkedin/<slug> \
+  && brand-gen build \
+  && bash $(git rev-parse --show-toplevel)/.claude/skills/advertise-post/brand-kit/inject.sh . \
+  && brand-gen image )
+mv social/linkedin/<slug>/<slug>.png social/linkedin/<slug>/image.png
+```
+
+After the script passes, do the final visual check:
+
+```bash
 open social/linkedin/<slug>/image.png
 ```
 
