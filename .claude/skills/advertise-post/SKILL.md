@@ -184,29 +184,30 @@ project:
 
 ### 7b. Validate title length for social card
 
-After writing content.md, count the h1 line's character length (strip any
-`{.title-long}` class attr and `<span>` tags first). Apply the right font
-size class to prevent logo overlap:
+After writing content.md, count the h1 line's character length and check
+for any single un-breakable word longer than ~13 chars (snake_case
+identifiers like `reflect_llmschema:` are the usual culprit since they
+do not wrap). Either constraint forces a rewrite:
 
-| H1 length | Action |
-|-----------|--------|
-| <= 65 chars | OK -- proceed with default 92pt (no class needed) |
-| 66-90 chars | Add `{.title-long}` after the h1 text for 72pt rendering |
-| 91-110 chars | Add `{.title-xlong}` after the h1 text for 56pt rendering |
-| > 110 chars | STOP -- rewrite the headline shorter. No font size can save this. |
+| H1 constraint | Action |
+|---------------|--------|
+| <= 60 chars AND no word > 13 chars | OK at default 92pt |
+| Otherwise | REWRITE the headline shorter and move the long identifier into the subtitle, where it renders at 30pt and hyphenates normally |
 
-Example content.md with class applied:
-```markdown
-# Hardened stdlib in 2026 -- 1 CMake line, ~1000 bugs caught{.title-long}
-```
+**Do NOT try `{.title-long}` markdown directive syntax.** brand-gen's
+remark parser does NOT recognise it and will render the literal text
+`{.title-long}` as part of the h1. Verified on 2026-06-07 with the
+reflect-llmschema card. If a smaller font is genuinely needed, edit
+the rendered `index.html` between `brand-gen build` and `brand-gen image`
+to add `class="title-long"` to the `<h1>` directly. Easier: shorten
+the headline.
 
-brand-gen's remark-directive parser passes class attributes through to HTML
-as `<h1 class="title-long">`.
-
-If the original frontmatter title exceeds 90 chars, the social card headline
-MUST be rewritten shorter -- the skill already does this (e.g., "one" -> "1",
-dropping adjectives like "production"). Confirm the rewritten headline fits
-within the limits above.
+Example of a workable rewrite:
+- BAD (overflows + bare-word does not wrap):
+  `# reflect_llmschema: C++ functions to LLM tool-use schemas`
+- GOOD (short headline, identifier moved to subtitle):
+  `# C++ to LLM tool-use schemas, at compile time`
+  with the library name `reflect_llmschema` mentioned in the subtitle.
 
 You can also run the standalone check:
 ```bash
