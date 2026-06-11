@@ -29,6 +29,12 @@ interface Props {
   subtitle?: string;
   /** Subtitle for the GCC button. */
   gcc_subtitle?: string;
+  /**
+   * GCC-16-only example: the primary button points at the `id` link but is
+   * labelled GCC 16.1, and the badge reads "Tested: GCC 16.1 only". Use for
+   * features clang-p2996 does not implement yet (e.g. `std::meta::current_function`).
+   */
+  gccOnly?: boolean;
 }
 const {
   id,
@@ -37,19 +43,25 @@ const {
   subtitle = 'clang_bb_p2996 · -std=c++26 -freflection-latest -stdlib=libc++',
   gcc_subtitle = 'g161 (GCC 16.1) · -std=c++26 -freflection',
   fallbackHref = 'https://github.com/wrocpp/cpp26-reflection-examples',
+  gccOnly = false,
 } = Astro.props;
 
 const isPlaceholder = id.startsWith('TODO') || id === 'placeholder';
 const href = `https://godbolt.org/z/${id}`;
 const gccHref = gcc_id ? `https://godbolt.org/z/${gcc_id}` : null;
+// Primary-button labelling: GCC-only examples flip the compiler name + subtitle.
+const primaryCompiler = gccOnly ? 'GCC 16.1' : 'clang-p2996';
+const primarySubtitle = gccOnly ? gcc_subtitle : subtitle;
 // Compiler-support badge: only meaningful for real (non-placeholder) ids.
 // "+ GCC 16.1" when a gcc_id was wired; otherwise the example is currently
 // known to run on clang-p2996 only (per docs/gcc-16-1-compatibility.md).
-const badgeLabel = !isPlaceholder
-  ? gcc_id
-    ? 'Tested: clang-p2996 + GCC 16.1'
-    : 'Tested: clang-p2996 only'
-  : null;
+const badgeLabel = isPlaceholder
+  ? null
+  : gccOnly
+    ? 'Tested: GCC 16.1 only'
+    : gcc_id
+      ? 'Tested: clang-p2996 + GCC 16.1'
+      : 'Tested: clang-p2996 only';
 ---
 {isPlaceholder ? (
   <div class="ce-cta ce-cta--placeholder">
@@ -68,12 +80,12 @@ const badgeLabel = !isPlaceholder
         <span aria-hidden="true">&#9642;</span> {badgeLabel}
       </div>
     )}
-    <a class="ce-cta" href={href} target="_blank" rel="noopener" aria-label={`Run on Compiler Explorer (clang-p2996): ${title}`}>
+    <a class="ce-cta" href={href} target="_blank" rel="noopener" aria-label={`Run on Compiler Explorer (${primaryCompiler}): ${title}`}>
       <span class="ce-cta__play" aria-hidden="true">▸</span>
       <span class="ce-cta__main">
         <span class="ce-cta__eyebrow">Run on Compiler Explorer</span>
         <span class="ce-cta__title">{title}</span>
-        <span class="ce-cta__sub">{subtitle}</span>
+        <span class="ce-cta__sub">{primarySubtitle}</span>
       </span>
       <span class="ce-cta__arrow" aria-hidden="true">↗</span>
     </a>
