@@ -116,16 +116,25 @@ def is_prepared(slug: str) -> bool:
     ])
 
 
-def push(slug: str, date: str, dry: bool) -> None:
+def due_at(date: str) -> datetime:
+    return datetime.strptime(date + "T08:00:00+0000", "%Y-%m-%dT%H:%M:%S%z")
+
+
+def push(slug: str, date: str, dry: bool) -> bool:
     at = f"{date}T08:00:00Z"
     url = f"https://wrocpp.github.io/og/{slug}.png"
     cmd = ["python3", str(REPO / "scripts/push-to-buffer.py"),
            "--slug", slug, "--image-url", url, "--at", at]
     if dry:
         print(f"  DRY-RUN would run: {' '.join(cmd)}")
-        return
+        return True
     print(f"  scheduling {slug} at {at}")
-    subprocess.run(cmd, cwd=REPO, check=True)
+    # Do NOT check=True: a single push failure must not abort the run.
+    r = subprocess.run(cmd, cwd=REPO)
+    if r.returncode != 0:
+        print(f"  ERROR: push-to-buffer failed for {slug} (exit {r.returncode})")
+        return False
+    return True
 
 
 def main() -> int:
@@ -152,9 +161,13 @@ def main() -> int:
         print("no free slot -- nothing to do")
         return 0
 
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    now = datetime.now(timezone.utc)
+    today = now.strftime("%Y-%m-%d")
+    # Only entries whose 08:00Z fire time is still in the FUTURE -- a post
+    # dated today that already fired is gone from the queue but would still
+    # match date>=today; scheduling it at a past dueAt makes Buffer reject it.
     ready = [(d, s, k) for (d, s, k) in candidates(today)
-             if s not in already and is_prepared(s)]
+             if s not in already and is_prepared(s) and due_at(d) > now]
     if not ready:
         print("no prepared, unscheduled future post -- nothing to do")
         return 0
