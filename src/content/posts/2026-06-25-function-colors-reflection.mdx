@@ -1,0 +1,210 @@
+---
+title: "Define your own function colors: compile-time caller checks with C++26 reflection"
+slug: "function-colors-reflection"
+pubDate: 2026-06-25
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, cpp26, reflection, p2996, p3795, current_function, function-coloring, consteval, annotations]
+summary: "C++ already enforces function colors -- consteval, CUDA's __device__, Clang's [[clang::nonblocking]] -- but every one of them needed a compiler change. C++26's std::meta::current_function() (P3795R1) lets a callee reflect on its caller at compile time, so you can paint your own colors as a 20-line library: audio-thread safety, capability tokens, or architectural layers that refuse to compile when called from the wrong place. Here is the pattern, three professional uses, and exactly where it breaks."
+draft: false
+relatedPosts: [annotations, annotations-for-hashing, first-reflection]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+A proof-of-concept made the rounds on [r/cpp](https://www.reddit.com/r/cpp/comments/1u1eca5/we_have_colored_functions_at_home/) last week under the title "We have colored functions at home." It is a nod to Bob Nystrom's [What Color Is Your Function?](https://journal.stuffwithstuff.com/2015/02/01/what-color-is-your-function/) (2015), the essay that framed async/sync incompatibility as a design wart: paint every function red (async) or blue (sync), add rules about which color may call which, and you have split your codebase in two.
+
+The joke in the title is that you do not need `async` to have colored functions. C++ has had them for years. And with C++26 reflection, you can now paint your own.
+
+## C++ already colors your functions
+
+A "color" is just a constraint on which functions may call which, checked by the compiler. C++ enforces several:
+
+- **`consteval`** -- a `consteval` function may only be called from a constant-evaluated context. Call it at runtime and the program is ill-formed.
+- **CUDA `__host__` / `__device__`** -- a `__host__` function that calls a `__device__` function is a compile error. Execution space is a color.
+- **Clang `[[clang::nonblocking]]`** -- a function marked nonblocking that calls anything which might block, allocate, or throw is a diagnostic. The audio and safety-critical crowd uses it (paired with [RealtimeSanitizer](https://clang.llvm.org/docs/RealtimeSanitizer.html)) to keep `malloc` and locks off the audio thread.
+
+Some colors are weaker promises rather than enforced constraints -- `noexcept` lets you call a throwing function, it just terminates if one actually throws. But the strong ones above are real, compile-time caller checks.
+
+Every one of them required a compiler change. `consteval` is a language keyword; `__device__` is an NVCC extension; `[[clang::nonblocking]]` is a Clang [function-effect analysis](https://clang.llvm.org/docs/FunctionEffectAnalysis.html) pass. If you want a color the compiler does not ship -- "this may only run on the render thread," "this needs the crypto capability," "this belongs to the data layer" -- you have historically been out of luck.
+
+Reflection changes that.
+
+## A callee that can see its caller
+
+C++26 added `std::meta::current_function()`. It returns the reflection of the function the call lexically sits in. It arrived in [P3795R1](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3795r1.html) (a reflection-cleanup paper -- before it, you spelled this `std::meta::access_context::current().scope()`).
+
+The interesting part is what happens when you use it as a **default argument**. Like `std::source_location::current()`, a default argument is evaluated at the *call site*, not at the declaration. So a parameter whose default is `current_function()` reflects whoever is calling -- the caller, not the callee:
+
+```cpp
+#include <meta>
+#include <print>
+#include <string_view>
+
+consteval std::string_view who(std::meta::info caller = std::meta::current_function()) {
+    return std::meta::identifier_of(caller);
+}
+
+void log_event(std::string_view from = who()) {
+    std::println("called from: {}", from);
+}
+
+void render_frame() { log_event(); }   // called from: render_frame
+void handle_input() { log_event(); }   // called from: handle_input
+```
+
+`log_event` never names its callers, yet each one is identified at compile time. The callee can see who called it.
+
+<GodboltEmbed id="cGdqcx333" title="current_function() reflects the caller" gccOnly={true} />
+
+> A note on compilers: `current_function()` ships in **GCC 16** today. clang-p2996 has `reflect_function` but not `current_function` yet, so every Godbolt link in this post is pinned to GCC 16.1 (`-std=c++26 -freflection`).
+
+Now make that `consteval` evaluation do more than read a name. Make it *reject* the call. C++26 lets a `consteval` function throw ([P3068](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3068r6.html)), and reflection ships a `std::meta::exception` for exactly this ([P3560](https://isocpp.org/files/papers/P3560r2.html)). An uncaught throw during constant evaluation is a compile error whose `what()` becomes the diagnostic.
+
+## Painting a color as a library
+
+Here is the whole thing -- about twenty lines, reused verbatim for every color you want:
+
+```cpp
+#include <meta>
+#include <algorithm>
+#include <string>
+
+template <auto Color> struct color_tag {};                        // what we look for
+template <auto Color> inline constexpr color_tag<Color> paint{};  // [[= paint<X> ]]
+
+template <auto Color>
+struct needs {                                                    // a guard parameter
+    consteval needs(std::meta::info caller = std::meta::current_function()) {
+        // (a) caller forwards the color via its own guard parameter -> propagated
+        if (std::ranges::contains(std::meta::parameters_of(caller),
+                                  ^^needs<Color>, std::meta::type_of)) return;
+        // (b) caller is annotated with the color
+        if (not std::ranges::empty(
+                std::meta::annotations_of_with_type(caller, ^^color_tag<Color>))) return;
+        throw std::meta::exception(
+            std::string("`") + std::meta::identifier_of(caller) +
+            "` is not painted " + std::meta::identifier_of(^^decltype(Color)), {});
+    }
+    needs(const needs&) = delete;
+};
+```
+
+Four reflection primitives carry it, all C++26: `current_function()` for the caller ([P3795](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3795r1.html)), `parameters_of` for its parameters ([P3096](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3096r6.pdf)), `annotations_of_with_type` for its annotations ([P3394](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3394r1.html)), and the splice/reflect core from [P2996](https://isocpp.org/files/papers/P2996R13.html).
+
+To use it, define a color and hang a `needs<...>` parameter off the function you want to protect. Take audio-thread safety:
+
+```cpp
+struct audio_safe_t {};
+inline constexpr audio_safe_t audio_safe;
+
+// A primitive that may only run on the audio thread.
+void write_samples(float* buf, int n, needs<audio_safe> = {}) {
+    std::println("wrote {} samples", n);
+}
+
+// An interior helper. The guard parameter makes the color PROPAGATE:
+// `mix` may only be called from code that is itself audio_safe.
+void mix(float* buf, int n, needs<audio_safe> = {}) {
+    write_samples(buf, n);                 // OK: forwarded via mix's own guard
+}
+
+// The trust boundary. The annotation marks `process_block` audio_safe
+// WITHOUT forcing its own callers to be audio_safe.
+[[= paint<audio_safe> ]]
+void process_block(float* buf, int n) {
+    write_samples(buf, n);                 // OK: process_block is annotated
+    mix(buf, n);                           // OK: annotation satisfies mix's guard
+}
+```
+
+There are two ways to satisfy the guard, and the difference matters:
+
+- **An annotation** (`[[= paint<audio_safe> ]]`) marks a function colored, but says nothing about *its* callers. It is a trust boundary -- the entry point where you assert "everything below here runs on the audio thread."
+- **A guard parameter** (`needs<audio_safe>`) marks a function colored *and* propagates: because its defaulted guard re-evaluates at every call site, the color flows onto whoever calls it. `mix` may only be called from audio-safe code.
+
+Call `write_samples` from a function that is neither, and it does not compile:
+
+```text
+error: uncaught exception of type 'std::meta::exception'; 'what()':
+       '`load_preset` is not painted audio_safe_t'
+```
+
+<GodboltEmbed id="dnT6v4K48" title="audio_safe: annotation, propagation, and rejection" gccOnly={true} />
+
+## The same guard, three jobs
+
+The mechanism is indifferent to what the color *means*. Swap the tag type and you have a different policy with the same twenty lines.
+
+**A capability token.** Signing a release may only happen in code that was granted the capability:
+
+```cpp
+struct crypto_cap_t {};
+inline constexpr crypto_cap_t crypto_cap;
+
+void sign_release(std::string_view artifact, needs<crypto_cap> = {}) { /* ... */ }
+
+[[= paint<crypto_cap> ]]
+void publish_release(std::string_view a) { sign_release(a); }   // OK: granted
+
+// void dump_state(std::string_view a) { sign_release(a); }     // error:
+//   `dump_state` lacks capability crypto_cap_t
+```
+
+<GodboltEmbed id="P479baofK" title="crypto_cap: a compile-time capability token" gccOnly={true} />
+
+**An architectural layer.** Raw SQL belongs to the data layer; the HTTP controller must not reach past the repository:
+
+```cpp
+struct data_layer_t {};
+inline constexpr data_layer_t data_layer;
+
+void execute_sql(std::string_view query, needs<data_layer> = {}) { /* ... */ }
+
+[[= paint<data_layer> ]]
+void user_repository_find(int id) { execute_sql("SELECT ..."); }  // OK
+
+// void handle_request(int id) { execute_sql("SELECT ..."); }     // error:
+//   `handle_request` is outside data_layer_t
+```
+
+<GodboltEmbed id="Wh3W9oqdf" title="data_layer: compile-time layering" gccOnly={true} />
+
+This is the same idea Java modules (`exports ... to`), [ArchUnit](https://www.archunit.org/), and .NET's `InternalsVisibleTo` chase -- "this code may only be reached from there" -- but checked by the C++ compiler with no extra tooling, and with a message you wrote.
+
+## Where it breaks
+
+Be honest about what this is. It is a clever use of reflection, not a production effect system, and it has hard limits.
+
+**The annotation is a promise, not a proof.** The guard checks that the caller is *annotated* `audio_safe`. It cannot inspect what the caller actually *does*. A painted function that blocks compiles without complaint:
+
+```cpp
+[[= paint<audio_safe> ]]
+void process_block(float* buf, int n) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));  // BLOCKS. Not caught.
+    write_samples(buf, n);
+}
+```
+
+<GodboltEmbed id="bqMno5cTE" title="The limit: a painted function that blocks compiles fine" gccOnly={true} />
+
+This is the line between this trick and `[[clang::nonblocking]]`: Clang's pass analyzes the body and rejects the `sleep_for`. The reflection guard only trusts the label. For real audio work, `[[clang::nonblocking]]` plus RealtimeSanitizer is the production tool today -- not this.
+
+**Propagation is opt-in.** Effect systems (Koka, Scala 3's `CanThrow`) and `[[clang::nonblocking]]` propagate automatically: color one function and the requirement flows up the entire call graph on its own. Here, every function in the chain must opt in by hand, with either the annotation or the guard parameter. Forget one and the color simply stops.
+
+**Only the direct lexical caller is checked.** `current_function()` sees the function the call sits in -- nothing further up, and nothing reached through a layer of indirection. A lambda body, a virtual override, or a `std::function` target cannot carry the annotation ergonomically, so the moment a call goes through a pointer or an interface, the color is gone.
+
+## The bigger pattern
+
+The interesting thing is not function coloring. It is that reflection turned a *compiler feature* into a *library feature*. `consteval`, `__device__`, and `[[clang::nonblocking]]` each took a compiler patch and a standards process. A domain-specific color -- render thread, transaction scope, tenant boundary, audited-for-PII -- took twenty lines and an afternoon, and it ships its own diagnostics.
+
+That is the same arc the rest of this series keeps tracing: the <PostLink slug="annotations">annotations post</PostLink> moved serialization config out of macros and into the type; the <PostLink slug="annotations-for-hashing">hashing post</PostLink> put field-level policy next to the field. This puts call-site policy next to the function. None of it needed a new keyword.
+
+It is a proof-of-concept, and the limits above are real. But it is a genuinely new shape -- the callee inspecting and rejecting its caller at compile time -- and it only became possible the moment `current_function()` landed.
+
+---
+
+**Sources**: ["We have colored functions at home"](https://www.reddit.com/r/cpp/comments/1u1eca5/we_have_colored_functions_at_home/), r/cpp (original PoC, [godbolt](https://godbolt.org/z/fsenMderz)). Bob Nystrom, [What Color Is Your Function?](https://journal.stuffwithstuff.com/2015/02/01/what-color-is-your-function/) (2015). P3795R1 [Miscellaneous Reflection Cleanup](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3795r1.html) (`current_function`). P2996R13 [Reflection for C++26](https://isocpp.org/files/papers/P2996R13.html). P3096 [Function Parameter Reflection](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3096r6.pdf). P3394 [Annotations for Reflection](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3394r1.html). P3068 [Allowing exception throwing in constant-evaluation](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3068r6.html). P3560 [Error Handling in Reflection](https://isocpp.org/files/papers/P3560r2.html). Clang [Function Effect Analysis](https://clang.llvm.org/docs/FunctionEffectAnalysis.html) and [RealtimeSanitizer](https://clang.llvm.org/docs/RealtimeSanitizer.html). All examples tested on GCC 16.1 (`-std=c++26 -freflection`).

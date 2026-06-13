@@ -1,0 +1,204 @@
+---
+title: "reflect_telemetry: compile-time Prometheus metrics from annotated fields"
+slug: "reflect-telemetry"
+pubDate: 2026-06-27
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 23
+audience: working-cpp
+tags: [reflection, cpp26, telemetry, prometheus, opentelemetry, observability, reflect_telemetry]
+summary: "Every microservice has hand-registered counter() lines that drift from the variable they count. Annotate a field [[=metric(counter)]] and let reflection emit the Prometheus exposition + OpenTelemetry OTLP exporter, keeping names in lockstep with code. Genuinely novel — nobody is doing this yet."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+> **Library repo:** [github.com/wrocpp/reflect_telemetry](https://github.com/wrocpp/reflect_telemetry) · v0.1.0 · MIT.
+
+Prometheus is the observability default. Every production C++ service you run has code like this, once per metric:
+
+```cpp
+auto& http_requests = prometheus::BuildCounter()
+    .Name("http_requests_total")
+    .Help("Total HTTP requests")
+    .Register(*registry)
+    .Add({});
+
+// Elsewhere, in the request handler:
+http_requests.Increment();
+```
+
+Add `.Labels({"method", "GET"})`, histograms, gauges — each is lines of boilerplate. Worse: **the metric name is a string literal, and the variable name is a C++ identifier**. They drift. Rename `http_requests_total` to `api_requests_total` in the registry, forget to rename the variable, and you have a pipeline of dashboards watching an orphan metric.
+
+`reflect_telemetry`'s answer: annotate the field, let reflection do the rest.
+
+```cpp
+#include <reflect_telemetry/metrics.hpp>
+
+struct [[=metrics::namespace_("http")]] HttpStats {
+    [[=metrics::counter, =metrics::help("Total HTTP requests.")]]
+        std::atomic<std::uint64_t> requests_total;
+
+    [[=metrics::gauge, =metrics::help("Currently open connections.")]]
+        std::atomic<std::int64_t> open_connections;
+
+    [[=metrics::histogram{.buckets = {0.1, 1, 10, 100, 1000}},
+      =metrics::help("Request duration in ms.")]]
+        metrics::histogram_value request_duration_ms;
+};
+
+HttpStats stats{};   // default-constructed, auto-registered on first scrape
+
+// In the handler:
+stats.requests_total.fetch_add(1);
+stats.open_connections.fetch_add(1);
+stats.request_duration_ms.observe(duration.count());
+
+// /metrics endpoint emits:
+//   # HELP http_requests_total Total HTTP requests.
+//   # TYPE http_requests_total counter
+//   http_requests_total 42
+//   # HELP http_open_connections Currently open connections.
+//   # TYPE http_open_connections gauge
+//   http_open_connections 7
+//   # HELP http_request_duration_ms Request duration in ms.
+//   # TYPE http_request_duration_ms histogram
+//   http_request_duration_ms_bucket{le="0.1"} 3 ...
+```
+
+Field name `requests_total` + type `atomic<uint64_t>` + annotation `counter` ⇒ Prometheus metric `http_requests_total` of type `counter`. Zero plumbing.
+
+## The walk
+
+Walking a metrics struct and emitting Prometheus exposition:
+
+```cpp
+template <typename T>
+std::string expose_prometheus(T const& obj) {
+    std::string out;
+    constexpr auto type_ns = std::meta::annotation_of_type<metrics::namespace_tag>(^^T);
+    constexpr std::string_view ns = type_ns ? type_ns->value : "";
+    constexpr auto ctx = std::meta::access_context::unchecked();
+
+    template for (constexpr auto m
+                  : std::define_static_array(
+                      std::meta::nonstatic_data_members_of(^^T, ctx))) {
+        // Determine metric type via annotation
+        constexpr bool is_counter =
+            std::meta::annotation_of_type<metrics::counter_tag>(m).has_value();
+        constexpr bool is_gauge =
+            std::meta::annotation_of_type<metrics::gauge_tag>(m).has_value();
+        constexpr bool is_histo =
+            std::meta::annotation_of_type<metrics::histogram_tag>(m).has_value();
+
+        if constexpr (is_counter || is_gauge || is_histo) {
+            // Build the metric name: "<namespace>_<field>"
+            constexpr auto full_name = [&]() {
+                std::string name{ns};
+                if (!name.empty()) name += '_';
+                name += std::meta::identifier_of(m);
+                return std::define_static_string(name);
+            }();
+
+            // Emit HELP + TYPE lines from the annotation
+            if constexpr (auto h
+                          = std::meta::annotation_of_type<metrics::help_tag>(m)) {
+                out += "# HELP "; out += full_name; out += ' ';
+                out += h->text;   out += '\n';
+            }
+            out += "# TYPE "; out += full_name; out += ' ';
+            out += is_counter ? "counter" : is_gauge ? "gauge" : "histogram";
+            out += '\n';
+
+            // Emit the current value (dispatched on metric type)
+            emit_value(out, full_name, obj.[:m:]);
+        }
+    }
+    return out;
+}
+```
+
+The HELP text, metric type, and even the metric name all derive from compile-time reflection. At runtime, `/metrics` scraping is a constant-time walk over a couple of atomics.
+
+## Why compile-time matters here
+
+Runtime registration (what the Prometheus C++ client library does today) has three costs you may not notice until they bite:
+
+1. **Startup overhead.** Building the registry costs tens of microseconds and grows with metric count. For serverless workloads with cold-start SLOs, that matters.
+2. **Memory overhead.** Each metric carries its metadata (name + help + label-set) in heap. Hundreds of metrics is nontrivial.
+3. **Divergence.** The name lives in a string literal next to the code; reflection ties it to the identifier.
+
+`reflect_telemetry` has zero startup cost (registration is compile time; exposition is a walk), zero metadata heap (all strings are `define_static_string` literals in `.rodata`), and zero divergence (rename the field, rename the metric).
+
+## OpenTelemetry OTLP export
+
+For the other big observability backend — OTLP over HTTP/gRPC — the same walk emits protobuf messages instead of text:
+
+```cpp
+#include <reflect_telemetry/otlp.hpp>
+
+otlp::exporter exporter{"https://otel-collector:4318"};
+exporter.export_(stats);   // pushes all fields as OTLP metrics
+```
+
+The protobuf shape is derived from the same annotations + field reflection. No duplicate registration; one source of truth.
+
+## Dynamic labels
+
+Labels get annotated too:
+
+```cpp
+struct HttpStats {
+    [[=metrics::counter,
+      =metrics::labels("method", "path", "status")]]
+    labeled_counter<std::string, std::string, int> requests_total;
+};
+
+stats.requests_total.with("GET", "/api/users", 200).fetch_add(1);
+```
+
+The `labeled_counter<Labels...>` type receives the label spec via CTAD + reflection annotations; runtime label values are hashed into a lock-free map of sub-counters.
+
+<GodboltEmbed id="sTh3McY5v" title="reflect_telemetry — annotated fields to /metrics" />
+
+## Comparison
+
+| Framework | Source of truth | Startup cost | Drift-proof |
+|---|---|---|---|
+| Prometheus C++ client | Runtime registration code | O(metrics) | No |
+| Rust `prometheus` | Macro + struct fields | Startup | Partial |
+| Java Micrometer | `@Timed` annotations | Runtime reflection | Yes |
+| **C++26 reflect_telemetry** | **Annotated struct fields** | **Zero** | **Yes (compile-time tied)** |
+
+Among runtime-reflection-using frameworks this matches Java's Micrometer ergonomics. Among compile-time approaches it goes further than Rust's `prometheus` macros because it can consume arbitrary annotations — chaos-injection, owners, SLIs — with the same reflection walk.
+
+## Chaos / fault-injection sibling
+
+A companion annotation vocabulary:
+
+```cpp
+struct Database {
+    [[=chaos::fault_point("db_read", .probability = 0.01)]]
+    connection conn;
+};
+```
+
+When compiled with `-DCHAOS_ENABLED=1`, every access to `conn` goes through a probabilistic fault injector that returns an error 1% of the time. Off by default, on in staging chaos runs. Reflection walks the struct, wraps annotated fields. Ship as `reflect_telemetry`'s `chaos` sub-namespace in v0.2.
+
+## What the library ships
+
+Under [github.com/wrocpp/reflect_telemetry](https://github.com/wrocpp/reflect_telemetry):
+
+- `metrics::counter`, `metrics::gauge`, `metrics::histogram` annotations.
+- `metrics::help`, `metrics::namespace_`, `metrics::labels` modifiers.
+- `expose_prometheus(obj)` — text exposition for the `/metrics` endpoint.
+- `otlp::exporter` — OTLP over HTTP/gRPC.
+- `labeled_counter<Labels...>` — multi-dimensional counters.
+- Benchmark: ~15 ns per increment on modern x86, ~5 ns per gauge read, ~250 ns per exposition walk over 50 metrics.
+
+## What's next
+
+- **[Post 24 — reflect_tracing](/posts/reflect-tracing/)** — span tracing on Maciek Gajewski's low-overhead engine.
+- Companion Monday short: *"Chaos engineering, annotation-driven"*.

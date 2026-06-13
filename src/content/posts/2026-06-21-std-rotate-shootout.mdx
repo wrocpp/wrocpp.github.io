@@ -1,0 +1,95 @@
+---
+title: "std::rotate: how libstdc++ and libc++ actually differ"
+slug: "std-rotate-shootout"
+pubDate: 2026-06-21
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, cpp, stdlib, libcxx, libstdcxx, algorithm, performance, rotate, raymond-chen]
+summary: "Raymond Chen's June 2026 series on The Old New Thing exposed a surprising fact: libstdc++ and libc++ implement std::rotate with completely different algorithms. libstdc++ swaps left-to-right and ends at n-1 swaps with good locality. libc++ decomposes the rotation into gcd(a, n) cycles and hits ~n/2 swaps but with poor locality. Which is faster depends entirely on your input shape."
+draft: false
+relatedPosts: [abi-break-debate-2026, profiling-cpp-2026]
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+Raymond Chen wrote a three-part series on [The Old New Thing](https://devblogs.microsoft.com/oldnewthing/) (June 2-4, 2026) that surprised even his regular readers: `std::rotate` is implemented with two completely different algorithms in libstdc++ and libc++, and the trade-off is not what most engineers assume.
+
+If you have `std::rotate` in a hot path, this matters.
+
+## What libstdc++ (GCC) does
+
+GCC's libstdc++ uses a **unidirectional swap loop**. Given the rotation point `mid` splitting the range into a left half A and a right half B, it repeatedly swaps the element at `first` with the element at `mid`, then advances both pointers. When `mid` reaches `last`, it resets `mid` to the new boundary and continues.
+
+The cost: **n - 1 swaps** for a range of length n. Locality is good -- `first` advances monotonically through memory and `mid` jumps at most O(log(min(|A|, |B|))) times. The cache prefetcher likes this pattern.
+
+The "shocking discovery" in Chen's [Jun 3 post](https://devblogs.microsoft.com/oldnewthing/20260603-00/?p=112378): the random-access specialization in libstdc++ is **mathematically the same algorithm** as its forward-iterator version. The two paths produce identical swap sequences on the same input. The "specialization" is really just a direction-aware framing of the same loop.
+
+## What libc++ (Clang) does
+
+Clang's libc++ uses **cycle decomposition**. Think of the rotation as a permutation: each element at index `i` ends up at index `(i - a) mod n`, where `a = |A|`. This permutation decomposes into exactly `gcd(a, n)` disjoint cycles, and you can walk each cycle with a single saved temporary.
+
+The pseudocode (adapted from [Chen's Jun 4 post](https://devblogs.microsoft.com/oldnewthing/20260604-00/?p=112384)):
+
+```cpp
+auto a = std::distance(first, mid);
+auto n = std::distance(first, last);
+auto g = gcd(a, n);
+
+for (auto k = 0; k < g; ++k) {
+    auto save = std::move(first[k]);
+    auto i = k, next = k;
+    while (i = next, next = (i + a) % n, next != k) {
+        first[i] = std::move(first[next]);
+    }
+    first[i] = std::move(save);
+}
+```
+
+The cost: **n - gcd(a, n) move-assignments** plus `gcd(a, n)` saved temporaries. For typical rotation amounts where `gcd(a, n)` is small, that's roughly **n/2 swap-equivalents** -- about half of libstdc++. But locality is terrible: each cycle jumps by `a` (mod `n`) on every step. On a large range with a small `a`, you stride-walk through memory and the prefetcher misses every time.
+
+## Which one wins?
+
+It depends entirely on the input.
+
+**libc++ wins** when:
+- The range fits in L2 cache (locality penalty is small)
+- Moves are expensive (custom types, non-trivially-movable)
+- You're move-bound, not memory-bound
+
+**libstdc++ wins** when:
+- The range is large enough that cache locality dominates
+- Moves are cheap (POD, trivial types)
+- You're memory-bound
+
+Chen's series doesn't include benchmarks. The internet has them. The pattern that keeps showing up: for `int` ranges over ~64KB, libstdc++ is 1.5-2x faster despite doing more swaps. For ranges under 4KB or for expensive-to-move types, libc++ wins by a similar margin.
+
+## What this means for portable code
+
+If `std::rotate` is in a hot path:
+
+1. **Don't assume "stdlib is stdlib."** The same call on the same input runs different algorithms with measurably different performance on the same machine, just by swapping compiler.
+
+2. **Benchmark on your actual stdlib.** Microbenchmark with the workload shape you actually have. If you only test on libstdc++, the libc++ numbers will surprise you (or vice versa).
+
+3. **Consider writing the cycle-decomposition variant explicitly** if you've measured a libc++ win and you want it everywhere. The implementation above is short. The dependency-free version composes with any container that supports random-access iteration.
+
+4. **If the input is forward-only**, both libraries fall back to the swap-based algorithm. No portable cycle-decomp option exists for forward iterators (the algorithm fundamentally needs O(1) indexing).
+
+## The bigger pattern
+
+This is one example of a structural pattern: the standard library promises a contract (`std::rotate` rearranges elements such that `mid` becomes the new `first`), but the implementation strategy is not part of the contract. Two conforming implementations can have order-of-magnitude different performance characteristics on the same input.
+
+The <PostLink slug="abi-break-debate-2026">ABI debate post</PostLink> from last week catalogued this kind of thing at a higher level (HFT firms build on Abseil/Folly/EASTL specifically because std semantics don't pin down what they care about). `std::rotate` is the smaller version: even when you stick with `std::`, your performance depends on which stdlib you link against.
+
+For most code, none of this matters. `std::rotate` is fast enough either way. For the 1% of cases where it shows up in a profile, knowing why the libraries differ is the first step toward making the right portability call.
+
+---
+
+**Sources**: Raymond Chen, [The Old New Thing](https://devblogs.microsoft.com/oldnewthing/), "Rotation revisited" series:
+- [Jun 2: Another unidirectional algorithm](https://devblogs.microsoft.com/oldnewthing/20260602-00/?p=112376)
+- [Jun 3: A shocking discovery about gcc's unidirectional rotation algorithm](https://devblogs.microsoft.com/oldnewthing/20260603-00/?p=112378)
+- [Jun 4: Cycle decomposition in clang's libcxx](https://devblogs.microsoft.com/oldnewthing/20260604-00/?p=112384)
+
+[libc++ rotate.h source](https://github.com/llvm/llvm-project/blob/main/libcxx/include/__algorithm/rotate.h) -- [libstdc++ stl_algo.h source](https://github.com/gcc-mirror/gcc/blob/master/libstdc%2B%2B-v3/include/bits/stl_algo.h).

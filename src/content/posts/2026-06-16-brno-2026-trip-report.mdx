@@ -1,0 +1,71 @@
+---
+title: "WG21 Brno: with C++26 done, the committee turns to undefined behavior"
+slug: "brno-2026-trip-report"
+pubDate: 2026-06-16
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, cpp, wg21, brno, cpp29, safety, undefined-behavior, profiles, contracts]
+summary: "The WG21 Brno meeting (June 8-13, 2026) was the first since C++26 was finalized, and per Herb Sutter's trip report the theme is unmistakable: catalogue and eliminate undefined behavior, push memory-safety profiles toward C++29, and finish the pieces the C++26 MVP deferred. Reflection, the headline of C++26, was not on the marquee -- and that is exactly what shipping looks like."
+draft: false
+relatedPosts: [cpp-safety-state-of-the-union-may-2026, revzin-reflection-is-only-half, may-2026-wg21-mailing]
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+C++26 is done. It shipped reflection, contracts, a hardened standard library, and `import std`. WG21 met in Brno, Czechia from June 8 to 13, 2026 -- the first meeting since C++26 was finalized at Croydon in March -- and the question hanging over it was simple: what now?
+
+[Herb Sutter's Brno trip report](https://herbsutter.com/2026/06/13/brno-trip-report/) answers it clearly. The committee has turned, with unusual focus, to one target: undefined behavior. Brno was not a reflection meeting or a big-new-feature meeting. It was the opening move of what is shaping up to be C++29, the safety release.
+
+## The meeting by the numbers
+
+About 200 people (55% on-site at Mendel University, 45% online), 28 nations, 22 active subgroups across 11 parallel tracks, over six days, with 25 first-time guests. The next meeting is in Buzios, Brazil, in November 2026.
+
+## The headline: write down all the UB
+
+The structural move of the meeting was **P3596R3, "Undefined Behavior and IFNDR Annexes"** -- two new annexes that catalogue, in one place, every case of undefined behavior and every "ill-formed, no diagnostic required" (IFNDR) corner in the standard. You cannot systematically eliminate what you have not first enumerated.
+
+Paired with it: **P3100, "A framework for systematically addressing undefined behaviour in the C++ Standard."** The plan, per Sutter, is a series of summer and fall telecons doing a line-by-line review of that catalogue, targeting C++29. This is the committee committing to grind down UB case by case, in public, on a schedule.
+
+For a language whose detractors reduce it to "undefined behavior everywhere," this is the most direct possible answer: name every instance, then close them. The <PostLink slug="cpp-safety-state-of-the-union-may-2026">safety state-of-the-union</PostLink> from May laid out the regulatory pressure (CISA, the EU CRA) behind this; Brno is the committee answering it with process, not slogans.
+
+## Profiles keep marching
+
+The other half of the safety story is profiles -- opt-in bundles of restrictions a compiler enforces. Brno moved several: **P4222, "An initialization profile"** (Stroustrup), the profile that stamps out uninitialized-read UB; **P3984, "A type-safety profile"** (Stroustrup); and **P3589R2, "C++ Profiles: The Framework"** (Dos Reis). SG23 (Safety and Security) is building the formal specification, targeting C++29 or a concurrent white paper.
+
+## Contracts grow a feature back
+
+One adoption stands out for anyone following the contracts story: **P3097R3, "Contracts for C++: Virtual functions."**
+
+Virtual-function contracts were cut from the C++26 contracts MVP at Hagenberg in early 2025 -- the interaction with inheritance was not mature enough to ship. P3097R3 brings them back for the next standard, with both base-class and final-overrider assertions evaluated. The MVP shipped; the feature that was deferred is already on its way back.
+
+## Quality-of-life, adopted
+
+Brno also cleared a stack of smaller papers that working programmers will feel:
+
+- **P2287R6, "Designated-initializers for Base Classes"** (Revzin) -- designated-init syntax that finally reaches through a base class.
+- **P3091, "Better Lookups for map, unordered_map, and flat_map"** -- a `.get(key)` that returns an `optional<mapped_type&>` instead of forcing an insertion the way `operator[]` does.
+- **P3668R4, "Defaulting Postfix Increment and Decrement Operations"** -- `=default` your postfix `++`/`--` to defer to the prefix versions.
+- **P3125R6, "constexpr pointer tagging"** -- a portable `pointer_tag_pair<Pointer, Tag>` for stashing bits in a pointer's spare low bits.
+- **P3248, "Require `[u]intptr_t`"** -- `intptr_t` and `uintptr_t` go from optional to mandatory.
+
+A closer look at these lands in a companion post this week.
+
+## So where was reflection?
+
+Here is the telling part: Sutter's Brno report does not mention reflection, P2996, or token injection at all.
+
+That is not a snub. It is what shipping looks like. Reflection was the marquee feature of C++26; once a feature is in the standard, the committee's attention moves to the next frontier, and right now that frontier is safety. The reflection work that remains -- token injection and the design space around code generation -- continues as study-group work aimed at C++29, exactly as the <PostLink slug="revzin-reflection-is-only-half">"reflection is only half"</PostLink> post and the <PostLink slug="may-2026-wg21-mailing">May mailing roundup</PostLink> already documented. It was not a Brno plenary headline.
+
+For the wro.cpp series, that is good news twice over. The reflection you have been reading all month is final, standardized C++26 -- not a moving target. And the next chapter is still being designed, which means there is time to master the part that already ships.
+
+## The bigger picture
+
+C++26 was the features release: reflection, contracts, hardened stdlib. Brno suggests C++29 wants to be the safety release -- a full UB catalogue with a schedule to close it, profiles with a target standard, and contracts filling in the pieces the MVP deferred.
+
+This week, three companion posts go deeper: the undefined-behavior catalogue, the quality-of-life adoptions, and the profiles-and-contracts safety track. Reflection did not make the Brno headlines, and that is exactly the sign you want after a feature ships: the committee trusts it enough to look past it.
+
+---
+
+**Sources**: Herb Sutter, [Brno trip report](https://herbsutter.com/2026/06/13/brno-trip-report/) (June 13, 2026) -- primary source for the adoptions and numbers above. Papers referenced: P3596R3 (Undefined Behavior and IFNDR Annexes), P3100 (A framework for systematically addressing undefined behaviour), P4222 (An initialization profile), P3984 (A type-safety profile), P3589R2 (C++ Profiles: The Framework), P3097R3 (Contracts for C++: Virtual functions), P2287R6 (Designated-initializers for Base Classes), P3091 (Better Lookups for map, unordered_map, and flat_map), P3668R4 (Defaulting Postfix Increment and Decrement Operations), P3125R6 (constexpr pointer tagging), P3248 (Require [u]intptr_t). Additional trip reports (Inbal Levi, JeanHeyd Meneide, Barry Revzin) may add detail as they publish.

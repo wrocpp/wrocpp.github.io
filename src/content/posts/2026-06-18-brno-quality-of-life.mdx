@@ -1,0 +1,95 @@
+---
+title: "Five small C++29 papers from Brno you will actually use"
+slug: "brno-quality-of-life"
+pubDate: 2026-06-18
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, cpp, wg21, brno, cpp29, designated-initializers, map, operators, library]
+summary: "Underneath the safety headlines, WG21 Brno cleared a stack of small papers that working programmers will feel every day: designated-initializers that reach through a base class, a map .get() that does not insert, defaultable postfix operators, constexpr pointer tagging (which quietly leans on reflection), and mandatory intptr_t. All target C++29."
+draft: false
+relatedPosts: [brno-2026-trip-report, brno-undefined-behavior, first-reflection]
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+The <PostLink slug="brno-2026-trip-report">Brno meeting</PostLink> was mostly about safety, but underneath the headline work the committee cleared a stack of small, practical papers. None of them will make a conference keynote. All of them remove a daily papercut, and all target C++29.
+
+## Designated-initializers that reach through a base class
+
+C++20 gave us designated initializers but forbade them for any aggregate with a base class. **P2287, "Designated-initializers for Base Classes"** (Revzin) lifts that. There is no special base-class designator -- you just name the inherited member directly:
+
+```cpp
+struct A { int a; };
+struct B : A { int b; };
+
+auto b1 = B{.a = 1, .b = 2};      // name the inherited member directly
+auto b2 = B{{.a = 1}, .b = 2};    // or brace the base subobject
+auto b3 = B{A{1}, .b = 2};        // or initialize the base by type
+// B{.b = 2, .a = 1};             // still ill-formed: out of order
+```
+
+The out-of-order rule from C++20 stays: designators must appear in declaration order, base members first. Ambiguous names across multiple bases are an error you have to disambiguate.
+
+## A map lookup that does not insert
+
+`operator[]` on a `map` inserts when the key is missing, which is a footgun on a `const` map (it does not compile) and a silent bug when you only meant to read. `find()` works but hands you an iterator you have to compare against `end()`. **P3091, "Better Lookups for map, unordered_map, and flat_map"** (Halpern) adds a third option, `get()`, that returns an `optional` reference:
+
+```cpp
+constexpr optional<mapped_type&>       get(const key_type& k);
+constexpr optional<const mapped_type&> get(const key_type& k) const;
+```
+
+```cpp
+double largest = -infinity;
+for (int i = 1; i <= 100; ++i)
+    largest = std::max(largest, m.get(i).value_or(-infinity));
+
+if (auto v = m.get(key))   // optional<T&>; no insertion, works on const
+    use(*v);
+```
+
+Note the name: it is `get()`, not `lookup()` (some early coverage, including the trip report's prose, called it the latter). It returns `std::optional<T&>`, the reference-`optional` that the library gained alongside it.
+
+## Defaultable postfix increment and decrement
+
+Everyone writes the same postfix operator: copy, call prefix, return the copy. **P3668, "Defaulting Postfix Increment and Decrement Operations"** lets you stop:
+
+```cpp
+struct counter {
+    int n;
+    constexpr counter& operator++()    { ++n; return *this; }  // you write prefix
+    constexpr counter  operator++(int) = default;             // the rest is generated
+};
+```
+
+The defaulted `operator++(int)` synthesizes exactly the canonical body -- copy `*this`, call the prefix `operator++`, return the copy. It works with explicit object parameters and as a hidden friend too. A small thing, but it deletes a line of pure boilerplate that everyone has gotten subtly wrong at least once.
+
+## constexpr pointer tagging (with a reflection cameo)
+
+Stashing a few bits in a pointer's spare low bits (alignment bits) is an old trick -- LLVM's `PointerIntPair` is the canonical implementation. **P3125, "constexpr pointer tagging"** (Dusikova) standardizes it as `std::pointer_tag_pair`, usable at compile time:
+
+```cpp
+using node_ptr = std::pointer_tag_pair<const void*, bool, 1>;
+static_assert(sizeof(node_ptr) == sizeof(void*));   // the bit is free
+
+node_ptr p{some_pointer, true};
+if (p.tag())
+    return *static_cast<const T*>(p.pointer());
+auto [ptr, tag] = p;   // structured bindings work too
+```
+
+The detail worth noting on this blog: the default bit count is computed with `pointer_bits_available(^^Ptr)` -- that `^^Ptr` is the reflection operator. A low-level bit-twiddling utility now reaches for C++26 reflection to ask a type how many spare bits its alignment guarantees. The <PostLink slug="first-reflection">reflection</PostLink> we have been writing about all month is already showing up as plumbing in unrelated library proposals.
+
+## Mandatory intptr_t
+
+The smallest of the bunch: **P3248, "Require `[u]intptr_t`"** (Brito Gadeschi) makes `intptr_t` and `uintptr_t` (and their limit macros) mandatory instead of optional. They were optional because not every architecture could promise an integer that round-trips a pointer; in practice every target you care about has them, and proposals like the pointer-tagging one above had to defensively degrade without them. Now they can just assume them.
+
+## The pattern
+
+None of these is a headline. Together they are the committee doing maintenance: closing the designated-initializer gap C++20 left open, giving `map` the lookup Python has had forever, deleting a class of hand-written operator boilerplate, standardizing a bit-packing trick everyone reimplements, and removing an optional-feature caveat. This is what a mature language looks like between its big releases -- and two of these five already touch reflection or contracts, the features C++26 just shipped.
+
+---
+
+**Sources**: Herb Sutter, [Brno trip report](https://herbsutter.com/2026/06/13/brno-trip-report/) (June 13, 2026), which lists these as adopted for C++29. Papers (latest published revisions): P2287, [Designated-initializers for Base Classes](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p2287r5.html). P3091, [Better Lookups for map, unordered_map, and flat_map](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3091r5.html). P3668, [Defaulting Postfix Increment and Decrement Operations](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3668r3.html). P3125, [constexpr pointer tagging](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3125r5.html). P3248, [Require [u]intptr_t](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3248r2.html). Syntax shown is from these published revisions; the trip report cites the post-Brno revisions, which were not yet in the mailing at the time of writing.

@@ -1,0 +1,135 @@
+---
+title: "Reflection + annotations for hashing: opt out of fields, not whole structs"
+slug: "annotations-for-hashing"
+pubDate: 2026-06-23
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, cpp26, reflection, p2996, p3394, annotations, hashing]
+summary: "Krystian Piekos's May 29 post on infotraining.pl shows the cleanest demo so far of P3394 annotations combined with P2996 reflection: opt structs into hashing with [[=hashable]], and opt individual fields out with [[=skipped_for_hash]]. The Hashable concept and the calculate_hash walker fit in 40 lines. No macros."
+draft: false
+relatedPosts: [annotations, simdjson-reflection, tiny-orm, define-aggregate]
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+Krystian Piekos (infotraining.pl) published [a clean demo](https://blog.infotraining.pl/annotations-for-cpp-26-hashing) of P3394 annotations combined with P2996 reflection on May 29. The pattern: opt entire structs into hashing with `[[=hashable]]`, then opt individual fields out with `[[=skipped_for_hash]]`. Field-level granularity. No macros. No `std::hash<T>` specializations to maintain.
+
+The wro.cpp <PostLink slug="annotations">annotations post</PostLink> (post 9) introduced the syntax. This is the cleanest production-shaped use case yet.
+
+## The annotation types
+
+The two annotation types are empty structs with constexpr instances:
+
+```cpp
+struct Hashable_t {};
+inline constexpr Hashable_t hashable;
+
+struct SkippedForHash_t {};
+inline constexpr SkippedForHash_t skipped_for_hash;
+```
+
+These do nothing at runtime. They exist only so the compiler can spot them via reflection at compile time.
+
+## The struct, annotated
+
+A struct that opts into structural hashing, with one base class and one field skipped:
+
+```cpp
+struct [[=hashable]] User
+  : Id,
+    Person,
+    [[=skipped_for_hash]] ScoreMixIn<int>      // base class skipped
+{
+    std::chrono::year_month_day registration_date;
+    [[=skipped_for_hash]] std::chrono::year_month_day last_login;   // field skipped
+};
+```
+
+Read that carefully -- the `[[=skipped_for_hash]]` annotation can be applied to a *specific base class* in the inheritance list, not just to the struct as a whole. The same syntax works on data members. Both cases route through the same `annotations_of_with_type` query.
+
+## The opt-in check
+
+A concept gates the `calculate_hash` template so it only applies to types that opted in:
+
+```cpp
+template <typename T>
+concept EnabledForHashing =
+    std::meta::annotations_of_with_type(^^T, ^^Hashable_t).size() > 0;
+```
+
+`annotations_of_with_type(reflection, ^^AnnotationType)` returns a vector of all annotations of that type. Zero means not annotated; one or more means yes. This is the entire opt-in mechanism.
+
+## The walker
+
+The hash function walks every base class and non-static data member via `subobjects_of`, filters out any annotated with `SkippedForHash_t`, and combines what remains:
+
+```cpp
+template <typename T>
+    requires std::is_class_v<T> && EnabledForHashing<T>
+size_t calculate_hash(const T& obj, size_t seed = 0)
+{
+    constexpr auto ctx = std::meta::access_context::unchecked();
+
+    constexpr auto included = [](std::meta::info r) consteval -> bool {
+        return std::meta::annotations_of_with_type(r, ^^SkippedForHash_t).size() == 0;
+    };
+
+    static constexpr auto r_subobjects =
+        std::define_static_array(std::meta::subobjects_of(^^T, ctx));
+
+    template for (constexpr auto r_sub : r_subobjects) {
+        if constexpr (included(r_sub)) {
+            using Subobject_t = typename [: std::meta::type_of(r_sub) :];
+            static_assert(Hashable<Subobject_t>, "Subobject must be hashable");
+            Utility::hash_combine(seed, obj.[: r_sub :]);
+        }
+    }
+    return seed;
+}
+```
+
+Four reflection primitives carry the load:
+
+1. **`subobjects_of(^^T, ctx)`** -- returns reflections for the bases AND non-static data members in declaration order. Unlike `nonstatic_data_members_of`, this captures the inheritance hierarchy too.
+2. **`annotations_of_with_type(r, ^^T)`** -- queries annotations of a specific type. Returns a `vector<info>`.
+3. **`type_of(r)`** -- extracts the type from a member or base reflection, for the `Hashable` concept check.
+4. **`obj.[: r :]`** -- splices the reflection into a regular member access expression.
+
+The `template for` is post 4 of the wro.cpp <PostLink slug="template-for-expansion-statements">expansion statements post</PostLink>. The splice is post 3.
+
+## Why this matters
+
+Writing your own hash for a class almost always means writing the boilerplate "combine these fields, but not those." Without reflection, you write the function by hand, or you write a macro that does roughly the same thing but interacts badly with IDEs and refactoring. With reflection alone, you get all-or-nothing -- either hash every field or don't.
+
+Annotations bridge the gap. The annotation lives on the field declaration. You can rename a field, and the annotation moves with it. You can refactor a base class out, and the annotation goes with it. The "do not hash this" decision lives next to the field it applies to, in the type definition where it belongs.
+
+## Compose with serialization
+
+The same annotation pattern works for any cross-cutting "opt this field out" concern. The wro.cpp <PostLink slug="simdjson-reflection">simdjson post</PostLink> showed P3394 annotations used for `[[simdjson::skip]]` on serialization. The wro.cpp <PostLink slug="tiny-orm">tiny-orm post</PostLink> showed a similar pattern for `[[pk]]` and `[[no_insert]]` on database columns. If you reuse the same annotation types across all three, you get one source of truth for "this field is internal state, don't expose it":
+
+```cpp
+struct [[=hashable]] User {
+    Id id;
+    std::string name;
+
+    // skipped from hash, skipped from JSON output, skipped from SQL insert
+    [[=skipped_for_hash, =skipped_for_serialization]]
+    std::chrono::year_month_day last_login;
+};
+```
+
+Multiple annotations on one declaration is part of P3394. Each reflection-driven function checks the annotation it cares about and ignores the others.
+
+## Where this is heading
+
+With C++26, the annotation processing happens inside helper templates -- `calculate_hash<T>`, `to_json<T>`, `insert<T>`. The annotations are observed; the generated code is fixed at template instantiation time.
+
+With C++29 token injection (P3294), the annotation processing could happen at the call site itself, generating a custom function body per annotation pattern. That is speculative -- token injection has no shipping compiler. But it's the direction the reflection arc has been pointing at since post 1.
+
+For now, the helper-template-with-annotations pattern is the production shape. It works on GCC 16.1 and Bloomberg's clang-p2996 fork today. It composes with the serialization, schema, and ORM patterns the rest of the wro.cpp series already documented.
+
+---
+
+**Sources**: Krystian Piekos, [Annotations for C++26 Hashing](https://blog.infotraining.pl/annotations-for-cpp-26-hashing) (May 29, 2026). [isocpp.org repost](https://isocpp.org/blog/2026/05/annotations-for-cpp26-hashing-krystian-piko). P3394R4 [Annotations for reflection](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3394r4.html).

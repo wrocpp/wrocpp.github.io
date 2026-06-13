@@ -1,0 +1,189 @@
+---
+title: "reflect_llmschema: C++ functions to LLM tool-use schemas, at compile time"
+slug: "reflect-llmschema"
+pubDate: 2026-06-20
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 19
+audience: working-cpp
+tags: [reflection, cpp26, llm, openai, anthropic, mcp, reflect_llmschema]
+summary: "In the AI agent era every tool you expose to Claude/GPT needs a JSON-Schema description. Today you write it by hand next to the C++ function. With C++26 reflection, a single consteval call emits the tool-use JSON at compile time — parameter names, types, docstrings, dispatch, done."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+> **Library repo:** [github.com/wrocpp/reflect_llmschema](https://github.com/wrocpp/reflect_llmschema) · v0.1.0 · MIT.
+> **Installs via** `find_package(reflect_llmschema)` (vcpkg recipe attached below).
+
+Arc 6 kicks off with the use case that didn't exist when Arc 1 started: feeding C++ functions to large language models as **tools**.
+
+In 2026 OpenAI's function-calling API, Anthropic's `tool_use`, and Anthropic's MCP all expect a JSON-Schema object describing each callable tool — its name, parameters, types, descriptions. Today your C++ function and its schema live in two places, and they drift:
+
+```json
+{
+  "name": "create_user",
+  "description": "Creates a new user account.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "name":  { "type": "string", "description": "Display name" },
+      "email": { "type": "string", "format": "email" },
+      "admin": { "type": "boolean", "default": false }
+    },
+    "required": ["name", "email"]
+  }
+}
+```
+
+With `reflect_llmschema`:
+
+```cpp
+#include <reflect_llmschema/schema.hpp>
+
+struct [[=llm::description("Creates a new user account.")]] CreateUserArgs {
+    [[=llm::description("Display name")]]          std::string name;
+    [[=llm::format("email")]]                      std::string email;
+    [[=llm::default_value(false)]]                 bool admin = false;
+};
+
+std::string create_user(CreateUserArgs args);
+
+int main() {
+    std::println("{}", llm::openai_tool<&create_user, "create_user">());
+}
+```
+
+Output: the exact JSON above, computed at compile time, baked into `.rodata`. Rename a field; the schema follows. Add a parameter; the schema grows. Drift becomes impossible.
+
+## The mapping
+
+JSON Schema's primitive type set is small. We map C++ types into it by walking the parameter struct with reflection and dispatching:
+
+| C++ type | JSON Schema |
+|---|---|
+| `bool` | `{"type": "boolean"}` |
+| `int`, `long`, `std::int32_t`, ... | `{"type": "integer"}` |
+| `float`, `double` | `{"type": "number"}` |
+| `std::string`, `std::string_view` | `{"type": "string"}` |
+| `std::vector<T>`, any range | `{"type": "array", "items": ...recurse}` |
+| `std::optional<T>` | `...recurse`, drop from `required` list |
+| aggregate `struct` | `{"type": "object", "properties": ...recurse, "required": [...]}` |
+| `enum class` | `{"type": "string", "enum": ...enumerators}` |
+
+That's ~50 lines of `if constexpr` ladders plus `template for` recursion. The whole library is under 500 lines.
+
+## The core walk
+
+```cpp
+template <typename T>
+consteval void append_type_schema(std::string& out) {
+    if constexpr (std::is_same_v<T, bool>)             out += R"({"type":"boolean"})";
+    else if constexpr (std::is_integral_v<T>)           out += R"({"type":"integer"})";
+    else if constexpr (std::is_arithmetic_v<T>)         out += R"({"type":"number"})";
+    else if constexpr (std::is_convertible_v<T, std::string_view>)
+                                                        out += R"({"type":"string"})";
+    else if constexpr (std::is_enum_v<T>)               append_enum_schema<T>(out);
+    else if constexpr (std::ranges::range<T>)           append_array_schema<T>(out);
+    else                                                append_object_schema<T>(out);
+}
+
+template <typename T>
+consteval void append_object_schema(std::string& out) {
+    out += R"({"type":"object","properties":{)";
+    bool first = true;
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    template for (constexpr auto m
+                  : std::define_static_array(
+                      std::meta::nonstatic_data_members_of(^^T, ctx))) {
+        if (!first) out += ',';
+        first = false;
+        out += '"';
+        out += std::meta::identifier_of(m);
+        out += "\":";
+        append_type_schema<[: std::meta::type_of(m) :]>(out);
+    }
+    out += "},\"required\":[";
+    append_required_list<T>(out);
+    out += "]}";
+}
+```
+
+`template for` unrolls per member; `if constexpr` prunes dead type branches; `std::define_static_string` lifts the final JSON into static storage. Zero runtime allocation; zero reflection artefacts in the binary.
+
+## MCP server demo
+
+A four-tool MCP server (built on top of [`mcp-cpp`](https://github.com/modelcontextprotocol) or your own HTTP shim):
+
+```cpp
+#include <reflect_llmschema/mcp.hpp>
+
+struct [[=llm::description("Fetch weather for a city.")]] WeatherArgs {
+    std::string city;
+    std::string country_code = "US";
+};
+Weather get_weather(WeatherArgs);
+
+struct [[=llm::description("Book a flight between two airports.")]] FlightArgs {
+    std::string from;
+    std::string to;
+    std::chrono::year_month_day date;
+};
+FlightBooking book_flight(FlightArgs);
+
+int main() {
+    llm::mcp::server s;
+    s.register_tool<&get_weather,  "get_weather">();
+    s.register_tool<&book_flight,  "book_flight">();
+    s.register_tool<&list_flights, "list_flights">();
+    s.register_tool<&cancel,       "cancel">();
+    s.serve(8080);
+}
+```
+
+Four lines register four tools. Each registration:
+1. Emits the JSON-Schema at compile time for the tool's parameter struct.
+2. Registers a runtime dispatch that deserialises the incoming JSON (using the `reflect_json` library from post 10) into the typed struct, calls the function, serialises the return value back.
+3. Publishes on the `/tools` MCP endpoint.
+
+<GodboltEmbed id="oTbbWW1TG" title="reflect_llmschema — OpenAI tool-use from C++ function" />
+
+## Why this was impossible before 2026
+
+Runtime reflection (Java, C#, Python) can walk a function's parameters and emit the schema — at startup, with reflective metadata in the binary.
+
+Code generation (Rust, protobuf) can do it at compile time — via a derive macro that sees the token tree and emits a second compilation unit.
+
+C++26 reflection does both cheaper than either:
+- **Cheaper than runtime reflection** — no metadata carried at runtime; the JSON string is a literal, the dispatch is a direct call.
+- **Cheaper than proc_macros / codegen** — single compilation, no two-phase build, no generated files to check into your repo.
+
+## Comparison with current C++ practice
+
+Without reflection, you'd use one of:
+- **Hand-written JSON literals** — error-prone; every renaming is a silent bug.
+- **nlohmann/json builders** — runtime construction of the schema at startup.
+- **Schema-first codegen** (OpenAPI, JSON Schema → C++) — external tool, two-phase build, generated files.
+
+reflect_llmschema removes all three. Your C++ declaration *is* the schema.
+
+## What the library ships
+
+Under [github.com/wrocpp/reflect_llmschema](https://github.com/wrocpp/reflect_llmschema):
+
+- `llm::openai_tool<Fn, "name">()` — OpenAI function-calling JSON.
+- `llm::anthropic_tool<Fn, "name">()` — Anthropic tool_use JSON.
+- `llm::mcp_tool<Fn, "name">()` — MCP `tools/list` entry.
+- `llm::mcp::server` — drop-in MCP server class that handles JSON-RPC + tool dispatch.
+- Annotations: `description`, `format`, `default_value`, `range`, `pattern`, `enum_values`.
+
+Status: v0.1.0 covers the MVP scope above. v0.2 roadmap: streaming tool-responses, ref schemas for shared sub-types, parameter validation with `std::expected` errors.
+
+## What's next
+
+- **[Post 20 — reflect_arbitrary](/posts/reflect-arbitrary/)** — property-based test generators from types.
+- The example file exercises the type-mapping walk; see `posts/19-reflect-llmschema/examples/` in the [`cpp26-reflection-examples` repo](https://github.com/wrocpp/cpp26-reflection-examples).
+
+Questions / corrections / your own MCP server use case: drop in [Discussions](https://github.com/wrocpp/wrocpp.github.io/discussions) or on [Slack](https://wrocpp.slack.com).

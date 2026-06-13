@@ -1,0 +1,74 @@
+---
+title: "C++ is writing down all of its undefined behavior"
+slug: "brno-undefined-behavior"
+pubDate: 2026-06-17
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, cpp, wg21, brno, cpp29, undefined-behavior, ifndr, erroneous-behavior, safety]
+summary: "The structural move at WG21 Brno was not a feature -- it was a catalogue. P3596 adds two annexes that enumerate every case of undefined behavior and every ill-formed-no-diagnostic-required corner in the standard, and P3100 turns that list into a case-by-case program to close each one for C++29. There are exactly 80 core-language UB cases, and 70% of them are memory-safety bugs."
+draft: false
+relatedPosts: [brno-2026-trip-report, cpp-safety-state-of-the-union-may-2026, cpp26-five-weeks]
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+The <PostLink slug="brno-2026-trip-report">Brno trip report</PostLink> called this the meeting's headline, and it is worth a post of its own: with C++26 done, the committee's biggest move was not a new feature. It was a decision to write down, in one place, every instance of undefined behavior in the language, and then close them one at a time.
+
+Two papers carry it. You cannot systematically eliminate what you have not first enumerated.
+
+## P3596: the catalogue
+
+**P3596R3, "Undefined Behavior and IFNDR Annexes"** (Berne, Doumler, Maurer, Yaghmour) adds two new annexes to the standard. One catalogues every case of **undefined behavior** (UB). The other catalogues every **ill-formed, no diagnostic required** (IFNDR) case -- the corners where your program is wrong but no compiler is obligated to tell you.
+
+The annexes are non-normative: they do not change what any program means. They are a reference index. The clever part is that each entry gets a stable name -- things like `[ub:expr.add.sub.diff.pointers]` or `[ifndr.temp]` -- embedded back into the main standard text, so the normative wording and the catalogue cross-link in both directions. The R3 revision organizes them by clause, the way the existing Annex C is organized: seven sections of UB, ten of IFNDR.
+
+The entry rule is strict, and tells you the intent: each example "must demonstrate the specific UB construct, and not a piece of code that is incorrect for some other reason." This is a clean-room enumeration, not a grab-bag.
+
+A couple of the catalogued cases, to make it concrete:
+
+```cpp
+// [ub:intro.object.implicit.create] -- you cannot create two
+// different objects in the same storage:
+void* p = malloc(sizeof(int) + sizeof(float));
+*reinterpret_cast<int*>(p)   = 0;
+*reinterpret_cast<float*>(p) = 0.0f;   // UB
+
+// [ub:dcl.ref] -- binding a reference to nothing:
+int* ip = nullptr;
+int& ir = *ip;                          // UB: null pointer
+```
+
+## P3100: the program
+
+A catalogue is a starting point, not a fix. **P3100R6, "A framework for systematically addressing undefined behaviour in the C++ Standard"** (Doumler, Berne) is the plan to grind it down.
+
+It begins with a count. By inspecting every occurrence of "undefined" and "assume" in the working draft, the authors found exactly **80 cases of explicit, core-language undefined behavior** (library UB, IFNDR, and implicit UB are handled separately). Sorted into ten categories, the distribution is the entire safety argument in one table:
+
+- **Type and lifetime: 50 cases** (type punning, use-after-lifetime) -- 62.5% on its own.
+- Arithmetic: 9. Bounds: 5. Control flow: 5. Coroutines: 3. Replacement functions: 3. Threading: 2. Initialization, sequencing, assumptions: 1 each.
+
+The three memory-safety categories (initialization, bounds, type-and-lifetime) are **56 of 80 cases, about 70%**. When people say C++'s safety problem is a memory-safety problem, this is the receipt.
+
+For each case, P3100 lays out a toolbox of seven ways to handle it: make the feature ill-formed (remove it), redefine it to well-defined behavior, turn it into **erroneous behavior**, insert a **runtime check**, subset the language, add an annotation, or build a new feature. The two that need no source changes and apply almost everywhere are erroneous behavior and runtime checks -- the authors note runtime checks via implicit contract assertions are applicable to 77 of the 80 cases.
+
+## The mechanism already shipped
+
+The reason this is a plan and not a wish is that the enforcement machinery landed in C++26.
+
+**Erroneous behavior** (P2795, C++26) is the key idea: behavior that is well-defined but explicitly incorrect. The program keeps running, so there is no UB to exploit, but the bug is not erased, so sanitizers and other tools can still flag it. C++26's one concrete instance: reading an uninitialized automatic variable of arithmetic type now yields an "erroneous value" instead of undefined behavior. P3100 generalizes exactly this -- erroneous behavior plus contract-style runtime checks -- across the whole catalogue.
+
+So the pieces fit together: C++26 shipped the mechanism (erroneous behavior, contracts), P3596 is the index, and P3100 is the schedule. Per the <PostLink slug="brno-2026-trip-report">trip report</PostLink>, the plan is a run of telecons doing a line-by-line review of the catalogue, targeting C++29.
+
+## Why it matters
+
+The standard critique of C++ collapses it to a slogan: undefined behavior everywhere. It has always been a fair-ish complaint with an unsatisfying answer, because "everywhere" was never actually counted.
+
+Now it is counted. Eighty cases, named, categorized, with a tool assigned to each and a standard to land them in. That is a very different posture than the language had even a year ago, when the <PostLink slug="cpp-safety-state-of-the-union-may-2026">safety conversation</PostLink> was mostly about regulatory pressure and what might be possible. Brno turned it into a backlog with a burn-down chart.
+
+It will not all land in C++29, and some cases will stay UB because the performance cost of closing them is real. But "we wrote down all 80 and we are working through them on a schedule" is the most credible safety story C++ has told. It is also, quietly, the most reflection-adjacent: the same instinct that made the committee ship compile-time introspection -- make the implicit explicit, make it inspectable -- is now being aimed at the language's own dark corners.
+
+---
+
+**Sources**: Herb Sutter, [Brno trip report](https://herbsutter.com/2026/06/13/brno-trip-report/) (June 13, 2026). P3596R3, [Undefined Behavior and IFNDR Annexes](https://isocpp.org/files/papers/P3596R3.pdf) (Berne, Doumler, Maurer, Yaghmour). P3100R6, [A framework for systematically addressing undefined behaviour in the C++ Standard](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3100r6.pdf) (Doumler, Berne). P2795R5, [Erroneous behaviour for uninitialized reads](https://wg21.link/p2795r5) (the C++26 mechanism this program builds on). Case counts and category breakdown are from P3100R6; the Brno disposition is from Sutter's report (other trip reports had not yet published at the time of writing).

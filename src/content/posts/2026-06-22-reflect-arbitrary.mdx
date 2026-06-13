@@ -1,0 +1,202 @@
+---
+title: "reflect_arbitrary: property-based test generators, inferred from your types"
+slug: "reflect-arbitrary"
+pubDate: 2026-06-22
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 20
+audience: working-cpp
+tags: [reflection, cpp26, testing, quickcheck, rapidcheck, fuzztest, reflect_arbitrary]
+summary: "QuickCheck in Haskell, mockall in Rust, jqwik in Java — every major language auto-derives Arbitrary<T> from a struct declaration. C++ was last. Reflection fixes that: reflect the struct, recurse into field types, emit a generator. RapidCheck and FuzzTest adapters included."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+> **Library repo:** [github.com/wrocpp/reflect_arbitrary](https://github.com/wrocpp/reflect_arbitrary) · v0.1.0 · MIT.
+> **Adapters:** RapidCheck, Google FuzzTest.
+
+Property-based testing changed what "test coverage" means. Instead of checking one example at a time, you describe a *property* and let the test framework try hundreds of inputs:
+
+```haskell
+-- Haskell QuickCheck
+prop :: User -> Bool
+prop u = roundTrip u == u
+```
+
+To do that the framework needs an **`Arbitrary`** instance for every type in your test — a recipe for generating random values of that type. Haskell's QuickCheck auto-derives `Arbitrary` for any algebraic data type; Rust's `proptest` has `Arbitrary` derive macros; Java's jqwik reflects on classes at runtime.
+
+C++ had two things stopping the same pattern: no reflection, and a test ecosystem (gtest, Catch2) organised around example-based tests. RapidCheck and FuzzTest bring property-based testing to C++ but require you to **hand-write the generator** for every custom type:
+
+```cpp
+// RapidCheck today — manual Arbitrary specialisation
+namespace rc {
+template <> struct Arbitrary<User> {
+    static Gen<User> arbitrary() {
+        return gen::build<User>(
+            gen::set(&User::name,    gen::arbitrary<std::string>()),
+            gen::set(&User::age,     gen::inRange(0, 150)),
+            gen::set(&User::email,   gen::arbitrary<std::string>()),
+            gen::set(&User::admin,   gen::arbitrary<bool>()));
+    }
+};
+}
+```
+
+Every field appears twice. Rename `age`, forget to update the generator, and your tests silently stop exercising that case.
+
+`reflect_arbitrary` collapses this:
+
+```cpp
+#include <reflect_arbitrary/arbitrary.hpp>
+
+struct User {
+    std::string name;
+    [[=gen::range(0, 150)]] int age;
+    std::string email;
+    bool admin;
+};
+
+// Zero manual setup — RapidCheck sees User as Arbitrary automatically.
+rc::check([](User u) {
+    return round_trip_json(u) == u;
+});
+```
+
+One `#include`, one struct. Property-based coverage for every field, forever.
+
+## The walk
+
+```cpp
+namespace gen {
+
+template <typename T>
+rc::Gen<T> arbitrary() {
+    if constexpr (std::is_same_v<T, bool>)               return rc::gen::arbitrary<bool>();
+    else if constexpr (std::is_integral_v<T>)             return integer_gen<T>();
+    else if constexpr (std::is_floating_point_v<T>)       return float_gen<T>();
+    else if constexpr (std::is_same_v<T, std::string>)    return string_gen();
+    else if constexpr (is_range<T>)                       return range_gen<T>();
+    else if constexpr (std::is_aggregate_v<T>)            return struct_gen<T>();
+    else                                                   static_assert(false, "no Arbitrary");
+}
+
+template <typename T>
+rc::Gen<T> struct_gen() {
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    return rc::gen::map(
+        rc::gen::tuple(
+            [&]<std::meta::info... Ms>(std::meta::info_pack<Ms...>) {
+                return std::make_tuple(arbitrary_for_member<Ms>()...);
+            }(std::meta::info_pack_for<T>{})),
+        [](auto&& tup) {
+            T result{};
+            apply_to_members<T>(result, std::forward<decltype(tup)>(tup));
+            return result;
+        });
+}
+
+}  // namespace gen
+```
+
+For each non-static data member, we generate a value and assemble the struct. Annotations on the field (`[[=gen::range(0, 150)]]`) are consulted per-member to constrain the generator. Nested aggregates recurse.
+
+## Constraints via annotations
+
+```cpp
+struct Order {
+    [[=gen::non_empty{}, =gen::max_length(20)]] std::string sku;
+    [[=gen::range(1, 1000)]]                    int quantity;
+    [[=gen::regex("[a-z]+@[a-z]+\\.[a-z]{2,3}")]] std::string email;
+    [[=gen::one_of("pending", "shipped", "cancelled")]] std::string status;
+};
+```
+
+The annotation vocabulary ports serde / Pydantic constraints:
+
+| Annotation | Effect |
+|---|---|
+| `gen::range(lo, hi)` | Integer / floating-point bounds |
+| `gen::non_empty{}` | Vectors, strings, optional values must be non-empty / present |
+| `gen::max_length(N)` | Cap strings, vectors |
+| `gen::regex("pattern")` | Strings match a compile-time regex |
+| `gen::one_of(v, v, v)` | Pick from a small enum of values |
+| `gen::positive{}` | Shorthand for `range(1, MAX)` |
+| `gen::probability(p)` | For `bool`: skew `true` rate |
+
+All annotations are `constexpr` values (see [post 9](/posts/annotations/)); `reflect_arbitrary` queries them with `annotation_of_type<...>(member)` during the walk.
+
+## Finding a real bug
+
+Classic property-based test: serialise round-trips.
+
+```cpp
+struct User { std::string name; int age; bool admin; };
+
+rc::check([](User u) {
+    auto s = rjson::to_json(u);
+    auto r = rjson::from_json<User>(s);
+    return r.has_value() && *r == u;
+});
+```
+
+RapidCheck tries ~100 generated `User`s by default. If any one fails (e.g. a name with a control character breaks the escape code), it reports the minimal shrunk failing input:
+
+```
+Falsifiable after 17 tests and 8 shrinks:
+  User { name = "\t", age = 0, admin = false }
+```
+
+`reflect_arbitrary` works with RapidCheck's built-in shrinker — you get **minimal counterexamples** for free.
+
+## FuzzTest adapter
+
+For LibFuzzer-backed continuous fuzzing ([Google FuzzTest](https://github.com/google/fuzztest)):
+
+```cpp
+#include <reflect_arbitrary/fuzztest.hpp>
+
+FUZZ_TEST(RoundTrip, [](User u) {
+    EXPECT_EQ(rjson::from_json<User>(rjson::to_json(u)).value(), u);
+}).WithDomains(arb::fuzztest_domain<User>());
+```
+
+The `arb::fuzztest_domain<T>` helper produces a FuzzTest `Domain<T>` from the same reflection walk. Your fuzz harness is declarative.
+
+<GodboltEmbed id="h9Mx51Ke8" title="reflect_arbitrary — property test generator from a struct" />
+
+## Comparison with other languages
+
+| Language | Auto-derive `Arbitrary<T>` | Annotation-driven constraints |
+|---|---|---|
+| Haskell (QuickCheck) | Yes (via `Generic`) | Limited |
+| Rust (proptest) | Yes (via `#[derive(Arbitrary)]`) | Yes |
+| Java (jqwik) | Yes (runtime reflection) | Yes |
+| Python (Hypothesis) | Yes (`@given(builds(MyClass))`) | Yes |
+| C++ (pre-reflect) | No | No |
+| **C++26 (reflect_arbitrary)** | **Yes** | **Yes — and at compile time** |
+
+The last column is the unusual one: constraint annotations on fields are consumed by the generator builder at compile time, so the generated `Gen<T>` isn't holding runtime metadata — it's a direct composition of primitive generators.
+
+## Research context
+
+Property-based testing has matured as a field, and the academic literature explicitly names **C++'s lack of reflection** as the barrier to better adoption. Nilesh Jagnik's 2024 paper *"Property Based And Fuzz Testing in C++"* lists reflection as the missing piece between C++ and Haskell/Rust ecosystems. `reflect_arbitrary` is the implementation of that missing piece.
+
+## What the library ships
+
+Under [github.com/wrocpp/reflect_arbitrary](https://github.com/wrocpp/reflect_arbitrary):
+
+- `arb::arbitrary<T>()` — `rc::Gen<T>` for any reflectable type.
+- `arb::fuzztest_domain<T>()` — FuzzTest `Domain<T>`.
+- Adapters for Catch2 property tests (`CATCH_CHECK_PROPERTY`).
+- Annotation vocabulary: 7 constraint annotations.
+- Opt-out: `[[=gen::arbitrary_fn(&my_custom_gen)]]` to skip auto-derive for a single field.
+
+v0.1.0 handles aggregates, ranges, `std::optional`, enums. v0.2 roadmap: variant types, recursive types with depth bound, shrinking-aware annotations.
+
+## What's next
+
+- **[Post 21 — reflect_optics](/posts/reflect-optics/)** — Haskell-style lenses, finally.
+- Companion Monday short-form: *"Building reflect_arbitrary — design notes"*.
