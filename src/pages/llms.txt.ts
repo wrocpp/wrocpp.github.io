@@ -21,7 +21,7 @@ export const GET: APIRoute = async () => {
 
   for (const e of toolset) {
     if (!e.data.agentInstructions) continue;
-    const url = `https://wrocpp.github.io/toolset/${e.slug}/llms.txt`;
+    const url = `https://wrocpp.github.io/toolset/${e.id}/llms.txt`;
     lines.push(`- [${e.data.title}](${url}): ${e.data.summary}`);
   }
 
@@ -30,7 +30,7 @@ export const GET: APIRoute = async () => {
   lines.push('');
   lines.push('- [Toolset hub](https://wrocpp.github.io/toolset/): index of all sections, editorial principles, and "how we test" methodology.');
   for (const e of toolset) {
-    const url = `https://wrocpp.github.io/toolset/${e.slug}/`;
+    const url = `https://wrocpp.github.io/toolset/${e.id}/`;
     lines.push(`- [${e.data.title}](${url}): ${e.data.summary}`);
   }
 

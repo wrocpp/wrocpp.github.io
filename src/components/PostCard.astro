@@ -9,7 +9,7 @@ const { title, summary, pubDate, language, tags, kind, series, series_order, dra
 const date = pubDate.toISOString().slice(0, 10);
 const kindClass = kind === 'flagship' ? 'is-flagship' : kind === 'short' ? 'is-short' : 'is-event';
 ---
-<a href={`/posts/${post.slug}/`} class={`post-card ${kindClass}${draft ? ' is-draft' : ''}`}>
+<a href={`/posts/${post.id}/`} class={`post-card ${kindClass}${draft ? ' is-draft' : ''}`}>
   <div class="post-card__meta">
     {draft && <span class="post-card__draft">draft</span>}
     <time datetime={date}>{date}</time>

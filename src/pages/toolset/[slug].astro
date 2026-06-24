@@ -1,19 +1,19 @@
 ---
-import { getCollection, type CollectionEntry } from 'astro:content';
+import { getCollection, render, type CollectionEntry } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import ReviewedBadge from '../../components/ReviewedBadge.astro';
 
 export async function getStaticPaths() {
   const entries = await getCollection('toolset', ({ data }) => !data.draft);
   return entries.map((entry) => ({
-    params: { slug: entry.slug },
+    params: { slug: entry.id },
     props: { entry },
   }));
 }
 
 interface Props { entry: CollectionEntry<'toolset'>; }
 const { entry } = Astro.props;
-const { Content } = await entry.render();
+const { Content } = await render(entry);
 const { title, summary, kind, lastReviewed, nextReviewBy, testedOn, tags, licence, cost } = entry.data;
 ---
 <BaseLayout title={`${title} — wro.cpp Toolset`} description={summary}>
@@ -43,7 +43,7 @@ const { title, summary, kind, lastReviewed, nextReviewBy, testedOn, tags, licenc
     <footer class="toolset-footer reveal reveal-2">
       <p>
         For AI agents: a machine-readable companion of this page is at
-        <code><a href={`/toolset/${entry.slug}/llms.txt`}>/toolset/{entry.slug}/llms.txt</a></code>.
+        <code><a href={`/toolset/${entry.id}/llms.txt`}>/toolset/{entry.id}/llms.txt</a></code>.
         See <a href="/llms.txt">/llms.txt</a> for the full toolset index.
       </p>
       {tags.length > 0 && (

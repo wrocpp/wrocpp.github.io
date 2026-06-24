@@ -1,7 +1,16 @@
-import { defineCollection, z } from 'astro:content';
+import { defineCollection } from 'astro:content';
+import { z } from 'astro/zod';
+import { glob } from 'astro/loaders';
 
 const posts = defineCollection({
-  type: 'content',
+  loader: glob({
+    pattern: '**/[^_]*.{md,mdx}',
+    base: './src/content/posts',
+    // Preserve URLs: honor the frontmatter `slug` (which strips the date
+    // prefix) instead of the filename-derived id, so /posts/<slug>/ is stable.
+    generateId: ({ entry, data }) =>
+      typeof data.slug === 'string' ? data.slug : entry.replace(/\.[^/.]+$/, ''),
+  }),
   schema: z.object({
     title: z.string(),
     slug: z.string().optional(), // falls back to file name if omitted
@@ -30,7 +39,7 @@ const posts = defineCollection({
 });
 
 const events = defineCollection({
-  type: 'content',
+  loader: glob({ pattern: '**/[^_]*.{md,mdx}', base: './src/content/events' }),
   schema: z.object({
     title: z.string(),
     /** Episode number, e.g. 36 for "Wro.cpp #36". */
@@ -67,7 +76,7 @@ const events = defineCollection({
 });
 
 const speakers = defineCollection({
-  type: 'content',
+  loader: glob({ pattern: '**/[^_]*.{md,mdx}', base: './src/content/speakers' }),
   schema: z.object({
     name: z.string(),
     affiliation: z.string().optional(),
@@ -85,7 +94,12 @@ const speakers = defineCollection({
 });
 
 const toolset = defineCollection({
-  type: 'content',
+  loader: glob({
+    pattern: '**/[^_]*.{md,mdx}',
+    base: './src/content/toolset',
+    generateId: ({ entry, data }) =>
+      typeof data.slug === 'string' ? data.slug : entry.replace(/\.[^/.]+$/, ''),
+  }),
   schema: z.object({
     title: z.string(),
     slug: z.string().optional(),

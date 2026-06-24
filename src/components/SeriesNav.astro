@@ -23,14 +23,14 @@ if (series) {
   const all = (await getCollection('posts', isPublished))
     .filter((p) => p.data.series === series && typeof p.data.series_order === 'number')
     .sort((a, b) => (a.data.series_order ?? 0) - (b.data.series_order ?? 0));
-  const i = all.findIndex((p) => p.slug === currentSlug);
+  const i = all.findIndex((p) => p.id === currentSlug);
   if (i > 0) {
     const p = all[i - 1];
-    prev = { slug: p.slug, title: p.data.title, order: p.data.series_order };
+    prev = { slug: p.id, title: p.data.title, order: p.data.series_order };
   }
   if (i >= 0 && i < all.length - 1) {
     const n = all[i + 1];
-    next = { slug: n.slug, title: n.data.title, order: n.data.series_order };
+    next = { slug: n.id, title: n.data.title, order: n.data.series_order };
   }
 }
 ---

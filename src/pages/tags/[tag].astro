@@ -15,7 +15,7 @@ export const getStaticPaths: GetStaticPaths = async () => {
   return Array.from(seen).map((tag) => ({ params: { tag } }));
 };
 
-const { tag } = Astro.params;
+const tag = Astro.params.tag!;
 const posts = (await getCollection('posts', isPublished))
   .filter((p) => (p.data.tags ?? []).includes(tag))
   .sort(byDateDesc);
