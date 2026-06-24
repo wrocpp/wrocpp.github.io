@@ -30,7 +30,27 @@ except ImportError:
     sys.exit("error: PyYAML not installed. run: pip3 install pyyaml")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-WEBHOOK_PATH = Path.home() / ".claude" / "secrets" / "wrocpp-slack-webhook"
+
+
+def _resolve_webhook_path() -> Path:
+    """Locate the Slack webhook secret.
+
+    This is a Scudo-account project, so the secret normally lives under
+    ~/.claude-scudo/secrets/. Fall back to the default ~/.claude/secrets/
+    for environments that keep it there. The default path drives the
+    "not found" error message when neither exists.
+    """
+    candidates = [
+        Path.home() / ".claude-scudo" / "secrets" / "wrocpp-slack-webhook",
+        Path.home() / ".claude" / "secrets" / "wrocpp-slack-webhook",
+    ]
+    for p in candidates:
+        if p.is_file():
+            return p
+    return candidates[-1]
+
+
+WEBHOOK_PATH = _resolve_webhook_path()
 
 
 def load_webhook() -> str:
