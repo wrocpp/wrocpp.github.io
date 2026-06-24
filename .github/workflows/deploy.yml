@@ -13,6 +13,8 @@ name: Build & Deploy
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   schedule:
     # Three staggered daily builds. GitHub-Actions free-tier scheduled
     # runners drift up to several hours late under load, which
@@ -50,11 +52,17 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version-file: '.nvmrc'
           cache: 'npm'
 
       - name: Install
         run: npm ci
+
+      - name: Audit dependencies (fail on high/critical)
+        run: npm audit --audit-level=high --omit=dev
+
+      - name: Type & content check
+        run: npm run check
 
       - name: Build
         env:
@@ -72,6 +80,8 @@ jobs:
 
   deploy:
     needs: build
+    # PRs run build + audit + check for verification, but never deploy.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

@@ -6,7 +6,7 @@ export const getStaticPaths: GetStaticPaths = async () => {
   return entries
     .filter((e) => e.data.agentInstructions)
     .map((entry) => ({
-      params: { slug: entry.slug },
+      params: { slug: entry.id },
       props: { entry },
     }));
 };
@@ -22,7 +22,7 @@ export const GET: APIRoute = async ({ props }) => {
     `> ${summary}`,
     '',
     `Reviewed: ${reviewed}`,
-    `Source:   https://wrocpp.github.io/toolset/${entry.slug}/`,
+    `Source:   https://wrocpp.github.io/toolset/${entry.id}/`,
     '',
     '---',
     '',

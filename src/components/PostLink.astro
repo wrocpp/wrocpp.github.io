@@ -30,7 +30,7 @@ interface Props {
 const { slug, showPending = false } = Astro.props;
 
 const all = await getCollection('posts');
-const target = all.find((p) => p.slug === slug);
+const target = all.find((p) => p.id === slug);
 const live = target ? isPublished(target) : false;
 const href = `/posts/${slug}/`;
 ---

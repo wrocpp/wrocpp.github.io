@@ -24,7 +24,7 @@ const seriesTotal = series
 const progressPct =
   seriesTotal && series_order ? Math.round((series_order / seriesTotal) * 100) : 0;
 ---
-<BaseLayout title={`${draft ? '[DRAFT] ' : ''}${title}`} description={summary} canonicalPath={`/posts/${post.slug}/`}>
+<BaseLayout title={`${draft ? '[DRAFT] ' : ''}${title}`} description={summary} canonicalPath={`/posts/${post.id}/`}>
   {draft && (
     <div class="draft-banner">
       <strong>DRAFT</strong> — visible only in local dev. Flip <code>draft: false</code> in the frontmatter to publish.
@@ -89,7 +89,7 @@ const progressPct =
         <slot />
       </div>
 
-      <SeriesNav currentSlug={post.slug} series={series} />
+      <SeriesNav currentSlug={post.id} series={series} />
     </div>
   </article>
 
@@ -97,7 +97,7 @@ const progressPct =
       `series_order` lets GA4 build a step-by-step funnel report
       (post 1 -> 2 -> 3 ...) so we can see drop-off between
       consecutive posts in the series. Fires once per page load. */}
-  <script is:inline define:vars={{ slug: post.slug, seriesName: series ?? null, order: series_order ?? null, kind, language }}>
+  <script is:inline define:vars={{ slug: post.id, seriesName: series ?? null, order: series_order ?? null, kind, language }}>
     (function() {
       window.addEventListener('load', function() {
         if (typeof window.gtag !== 'function') return;
