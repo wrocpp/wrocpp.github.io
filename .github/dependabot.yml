@@ -1,0 +1,41 @@
+# Automated dependency updates. Security updates for the npm ecosystem are
+# enabled by default once this file exists; the grouping below keeps the
+# weekly version-bump PRs low-noise. Commit prefixes match the repo's
+# conventional-commit style so the changelog stays clean.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    groups:
+      astro:
+        patterns:
+          - "astro"
+          - "@astrojs/*"
+      tailwind:
+        patterns:
+          - "tailwindcss"
+          - "@tailwindcss/*"
+      dev-tooling:
+        dependency-type: "development"
+        patterns:
+          - "typescript"
+          - "@types/*"
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(dev-deps)"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "chore(ci)"
