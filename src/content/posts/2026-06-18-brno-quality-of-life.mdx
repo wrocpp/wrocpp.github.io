@@ -12,9 +12,12 @@ draft: false
 relatedPosts: [brno-2026-trip-report, brno-undefined-behavior, first-reflection]
 ---
 
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
 import PostLink from '../../components/PostLink.astro';
 
 The <PostLink slug="brno-2026-trip-report">Brno meeting</PostLink> was mostly about safety, but underneath the headline work the committee cleared a stack of small, practical papers. None of them will make a conference keynote. All of them remove a daily papercut, and all target C++29.
+
+Three of these are concrete enough to run today, in the only sense currently possible: no released compiler implements the C++29 syntax yet (June 2026), so the runnable examples below show *the workaround each paper deletes*, with the future one-liner sitting in a comment. Compile both and you can see exactly how much boilerplate goes away.
 
 ## Designated-initializers that reach through a base class
 
@@ -31,6 +34,8 @@ auto b3 = B{A{1}, .b = 2};        // or initialize the base by type
 ```
 
 The out-of-order rule from C++20 stays: designators must appear in declaration order, base members first. Ambiguous names across multiple bases are an error you have to disambiguate.
+
+<GodboltEmbed id="q8aWPq4Kr" gcc_id="sb87Kvcch" title="What runs today: brace the base (the P2287 form is commented)" subtitle="clang_bb_p2996 · C++26" gcc_subtitle="g161 (GCC 16.1) · C++26" />
 
 ## A map lookup that does not insert
 
@@ -52,6 +57,8 @@ if (auto v = m.get(key))   // optional<T&>; no insertion, works on const
 
 Note the name: it is `get()`, not `lookup()` (some early coverage, including the trip report's prose, called it the latter). It returns `std::optional<T&>`, the reference-`optional` that the library gained alongside it.
 
+<GodboltEmbed id="MjdPn6T3o" gcc_id="6srEzbYYr" title="What runs today: find() / end() (the P3091 get() form is commented)" subtitle="clang_bb_p2996 · C++26" gcc_subtitle="g161 (GCC 16.1) · C++26" />
+
 ## Defaultable postfix increment and decrement
 
 Everyone writes the same postfix operator: copy, call prefix, return the copy. **P3668, "Defaulting Postfix Increment and Decrement Operations"** lets you stop:
@@ -65,6 +72,8 @@ struct counter {
 ```
 
 The defaulted `operator++(int)` synthesizes exactly the canonical body -- copy `*this`, call the prefix `operator++`, return the copy. It works with explicit object parameters and as a hidden friend too. A small thing, but it deletes a line of pure boilerplate that everyone has gotten subtly wrong at least once.
+
+<GodboltEmbed id="enq7vxbT8" gcc_id="Ebz7eGKne" title="What runs today: the hand-written postfix (the P3668 = default form is commented)" subtitle="clang_bb_p2996 · C++26" gcc_subtitle="g161 (GCC 16.1) · C++26" />
 
 ## constexpr pointer tagging (with a reflection cameo)
 

@@ -1,0 +1,60 @@
+---
+title: "Hello, sender: your first std::execution pipeline"
+slug: "hello-sender"
+pubDate: 2026-06-28
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [execution, async, senders, cpp26, p2300, news]
+summary: "C++26 shipped three big things: reflection, contracts, and std::execution. The first two get the headlines on this blog. std::execution (P2300) is the new standard model for asynchronous and parallel work, and it is the one most codebases will reach for first. Here is the smallest pipeline that does real work, running today on Compiler Explorer."
+draft: false
+relatedPosts: [structured-concurrency, gcc-16-hands-on]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+C++26 has three tentpole features. Two of them, <PostLink slug="first-reflection">reflection</PostLink> and contracts, have had most of our attention. The third is `std::execution`: senders, receivers, and schedulers (P2300), the standard model for asynchronous and parallel work. It is the one a typical service codebase will touch first, and it is the least talked about. This post is the smallest program that shows what a sender actually is.
+
+## The program
+
+```cpp
+#include <stdexec/execution.hpp>
+#include <print>
+
+int main() {
+    // Build a lazy pipeline: produce 21, then double it.
+    auto work = stdexec::just(21)
+              | stdexec::then([](int x) { return x * 2; });
+
+    // Drive it to completion on this thread; unwrap the single result.
+    auto [result] = stdexec::sync_wait(work).value();
+
+    std::println("doubled = {}", result);
+}
+```
+
+Output:
+
+```
+doubled = 42
+```
+
+## What just happened
+
+A **sender** is a lazy description of asynchronous work, not the work itself. `just(21)` is a sender that will, when run, produce the value `21`. `then(f)` is an adaptor: it takes a sender and returns a new sender that runs `f` on the value. The `operator|` chains them, the same way ranges pipe a view through adaptors.
+
+Nothing has executed yet. The whole `work` object is a value you can pass around, store, or compose further. It only runs when something *drives* it: `sync_wait` runs the pipeline to completion on the calling thread and hands back the result (wrapped in an `optional`-like tuple, because a sender can also complete with an error or a cancellation instead of a value).
+
+That laziness is the whole point. A `std::future` is eager and one-shot: the work is already running and you can only `.get()` it once. A sender is a recipe you can keep building on before anyone lights the stove. The next post does exactly that.
+
+## A note on compilers
+
+The `std::execution` *wording* is in C++26, but the shipping standard-library headers (`<execution>`'s sender machinery) are not yet in libstdc++ or libc++ as of June 2026. The example above uses NVIDIA's [stdexec](https://github.com/NVIDIA/stdexec), the reference implementation the standard text was distilled from. The namespaces map one-to-one onto `std::execution`, so this code is what the standard spelling will be. On Compiler Explorer the `stdexec` library is one dropdown entry away; the buttons below wire it in for you.
+
+<GodboltEmbed id="zKoaf7sMd" gcc_id="YW1nfePvc" title="Hello, sender (12 lines)" subtitle="clang_bb_p2996 · C++26 · stdexec reference impl" gcc_subtitle="g161 (GCC 16.1) · C++26 · stdexec reference impl" />
+
+## Where to next
+
+One value through one adaptor is the "hello world." The reason senders exist is composition: running several pieces of work concurrently and joining them without touching a mutex. That is <PostLink slug="structured-concurrency">the next short</PostLink>.

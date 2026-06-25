@@ -1,0 +1,55 @@
+---
+title: "Embed a file at compile time: #embed in C++26"
+slug: "embed-the-file"
+pubDate: 2026-07-02
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [embed, cpp26, preprocessor, news]
+summary: "Baking a file into a binary has meant a build step forever: xxd -i, a generated header, a CMake custom command that drifts. C++26 adopts C23's #embed, so a file becomes a literal the compiler reads at translation time. No codegen, no glue. Here it is running on Compiler Explorer."
+draft: false
+relatedPosts: [hello-sender, gcc-16-hands-on]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+Putting a file inside your binary has always meant a side quest: run `xxd -i` to turn it into a C array, commit (or generate) the resulting header, wire a CMake custom command to keep it fresh, and hope nobody edits the generated file by hand. C++26 deletes the whole ritual. It adopts C23's `#embed` directive, so the preprocessor reads the file and expands it into a list of byte values, right where you write it.
+
+## The program
+
+```cpp
+#include <print>
+#include <string_view>
+
+int main() {
+    static constexpr unsigned char bytes[] = {
+        #embed "asset.txt"
+    };
+
+    std::string_view text{reinterpret_cast<const char*>(bytes), sizeof(bytes)};
+    std::print("embedded {} bytes:\n{}", sizeof(bytes), text);
+}
+```
+
+With `asset.txt` sitting next to the source, the output is:
+
+```
+embedded 70 bytes:
+#embed pulls this file straight into the binary -- no xxd, no codegen.
+```
+
+## What just happened
+
+`#embed "asset.txt"` expands to a comma-separated list of the file's byte values, so it drops straight into the braces of an array initializer. Because `bytes` is `static constexpr`, those bytes are baked into the program image: there is no file to open at runtime, no path to get wrong, no I/O to fail. We then view the same storage as a `std::string_view` to print it, but it could just as well be a font, a shader, a WASM blob, or a default config.
+
+The contrast with the old way is the entire point. `xxd -i` produced a header you had to regenerate and check in; the array could silently fall out of sync with the file it was made from. `#embed` has no intermediate artifact: the file *is* the source of truth, read fresh on every build. GCC 16.1 ships it today.
+
+<GodboltEmbed id="WazvofM39" gccOnly={true} title="#embed a file into the binary" gcc_subtitle="g161 (GCC 16.1) · -std=c++26" />
+
+(The button opens a small CMake project on Compiler Explorer so that `asset.txt` travels with the source; clang-p2996 also implements `#embed`, but the run above is pinned to GCC 16.1.)
+
+## Where to next
+
+`#embed` is the smallest of the C++26 conveniences, but the one you will reach for the day you need it. For the language's bigger 2026 stories, see <PostLink slug="hello-sender">the std::execution async model</PostLink> and <PostLink slug="first-reflection">compile-time reflection</PostLink>.

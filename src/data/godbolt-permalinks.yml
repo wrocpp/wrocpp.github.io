@@ -447,3 +447,58 @@ tiny-orm:
     url: https://godbolt.org/z/jWoYKK9Wo
     expected_output: "CREATE TABLE users (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  user_name TEXT,\n  mail TEXT,\n  is_admin\
       \ BOOLEAN\n);\nINSERT INTO users (user_name, mail, is_admin) VALUES (?, ?, ?);"
+hello-sender:
+  hello_sender:
+    title: Hello sender
+    id: zKoaf7sMd
+    url: https://godbolt.org/z/zKoaf7sMd
+    expected_output: doubled = 42
+    gcc_id: YW1nfePvc
+    gcc_url: https://godbolt.org/z/YW1nfePvc
+    gcc_expected_output: doubled = 42
+structured-concurrency:
+  when_all:
+    title: When all
+    id: 31rMEozr6
+    url: https://godbolt.org/z/31rMEozr6
+    expected_output: a=11 b=22 sum=33
+    gcc_id: PzKGTocc8
+    gcc_url: https://godbolt.org/z/PzKGTocc8
+    gcc_expected_output: a=11 b=22 sum=33
+embed-the-file:
+  embed_demo:
+    title: Embed demo
+    gcc_id: WazvofM39
+    gcc_url: https://godbolt.org/z/WazvofM39
+    gcc_expected_output: 'embedded 71 bytes:
+
+      #embed pulls this file straight into the binary -- no xxd, no codegen.'
+brno-quality-of-life:
+  designated_bases:
+    title: Designated bases
+    id: q8aWPq4Kr
+    url: https://godbolt.org/z/q8aWPq4Kr
+    expected_output: 120x32 [OK]
+    gcc_id: sb87Kvcch
+    gcc_url: https://godbolt.org/z/sb87Kvcch
+    gcc_expected_output: 120x32 [OK]
+  map_get:
+    title: Map get
+    id: MjdPn6T3o
+    url: https://godbolt.org/z/MjdPn6T3o
+    expected_output: 'https  -> 443
+
+      gopher -> (unknown)'
+    gcc_id: 6srEzbYYr
+    gcc_url: https://godbolt.org/z/6srEzbYYr
+    gcc_expected_output: 'https  -> 443
+
+      gopher -> (unknown)'
+  postfix_default:
+    title: Postfix default
+    id: enq7vxbT8
+    url: https://godbolt.org/z/enq7vxbT8
+    expected_output: old = 0, now = 1
+    gcc_id: Ebz7eGKne
+    gcc_url: https://godbolt.org/z/Ebz7eGKne
+    gcc_expected_output: old = 0, now = 1
