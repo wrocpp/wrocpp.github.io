@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import urllib.request
 from pathlib import Path
@@ -65,6 +66,113 @@ def compile_url(profile: dict) -> str:
     return f"https://godbolt.org/api/compiler/{profile['id']}/compile"
 
 
+# Per-file Compiler Explorer directives, read from the example's header comment.
+# Two news shorts need more than a bare single-source session:
+#   // verify: ce-libs: stdexec@trunk   -> attach a CE library (id@version;
+#                                          version defaults to "trunk"). Used by
+#                                          the std::execution examples, which
+#                                          build against the stdexec reference
+#                                          implementation hosted on CE.
+#   // verify: ce-file: asset.txt       -> ship a sibling file alongside the
+#                                          source (e.g. an #embed asset). The
+#                                          compile API takes it as files[]; the
+#                                          shortener needs a CMake tree so the
+#                                          saved permalink still carries the file.
+CE_LIBS_RE = re.compile(r"^//\s*verify:\s*ce-libs:\s*(.+)$")
+CE_FILE_RE = re.compile(r"^//\s*verify:\s*ce-file:\s*(.+)$")
+
+
+def parse_ce_directives(source: str, src_path: Path) -> tuple[list, list]:
+    """Return (libraries, files) parsed from the example header.
+
+    libraries: [{"id", "version"}] for CE's libraries selector.
+    files:     [{"filename", "contents"}] read from siblings of src_path.
+    """
+    libs: list = []
+    files: list = []
+    for line in source.splitlines():
+        m = CE_LIBS_RE.match(line)
+        if m:
+            for tok in m.group(1).replace(",", " ").split():
+                lid, _, ver = tok.partition("@")
+                libs.append({"id": lid, "version": ver or "trunk"})
+        m = CE_FILE_RE.match(line)
+        if m:
+            for fn in m.group(1).replace(",", " ").split():
+                sibling = src_path.parent / fn
+                if not sibling.is_file():
+                    sys.exit(f"error: ce-file {fn!r} not found next to {src_path.name}")
+                files.append({"filename": fn, "contents": sibling.read_text()})
+    return libs, files
+
+
+def executor_session(source: str, profile: dict, libs: list) -> dict:
+    """Single-source session that opens on the program's stdout pane."""
+    return {
+        "id": 1,
+        "language": "c++",
+        "source": source,
+        "compilers": [],
+        "executors": [
+            {
+                "compiler": {"id": profile["id"], "options": profile["options"], "libs": libs},
+                "compilerVisible": False,
+                "compilerOutputVisible": False,
+                "arguments": "",
+                "argumentsVisible": False,
+                "stdin": "",
+                "stdinVisible": False,
+            }
+        ],
+    }
+
+
+def cmake_tree_session(source: str, main_name: str, profile: dict, files: list) -> dict:
+    """Multi-file CMake tree session, needed when the example pulls in a sibling
+    file (e.g. an #embed asset). A non-tree session cannot carry the extra file,
+    so the saved permalink would fail to build. Verified that plain-C++ CMake
+    trees round-trip every file through the shortener. The tree-level compiler
+    with execute:true surfaces the program output, matching the executor links."""
+    cmakelists = (
+        "cmake_minimum_required(VERSION 3.20)\n"
+        "project(demo CXX)\n"
+        "set(CMAKE_CXX_STANDARD 26)\n"
+        "set(CMAKE_CXX_STANDARD_REQUIRED ON)\n"
+        f"add_executable(demo {main_name})\n"
+    )
+    tree_files = [{"id": 1, "filename": main_name, "content": source}]
+    fid = 2
+    for f in files:
+        tree_files.append({"id": fid, "filename": f["filename"], "content": f["contents"]})
+        fid += 1
+    tree_files.append({"id": fid, "filename": "CMakeLists.txt", "content": cmakelists})
+    return {
+        "id": 1,
+        "language": "c++",
+        "source": source,
+        "compilers": [],
+        "trees": [
+            {
+                "id": 1,
+                "isCMakeProject": True,
+                "compilerLanguageId": "c++",
+                "cmakeArgs": "-DCMAKE_CXX_STANDARD=26",
+                "files": tree_files,
+                "newFileId": fid + 1,
+                "compilers": [
+                    {
+                        "id": profile["id"],
+                        "options": profile["options"],
+                        "libs": [],
+                        "filters": {"execute": True, "binary": False},
+                    }
+                ],
+                "executors": [],
+            }
+        ],
+    }
+
+
 def apply_rewrites(source: str, profile: dict) -> str:
     out = source
     for old, new in profile["source_rewrites"]:
@@ -101,7 +209,8 @@ def slug_from_post(post_arg: str) -> tuple[str, str]:
     sys.exit(f"error: no mdx post with series_order={nn} found in {posts_dir}")
 
 
-def shorten(source: str, title: str, profile: dict) -> dict:
+def shorten(source: str, title: str, profile: dict, main_name: str,
+            libs: list | None = None, files: list | None = None) -> dict:
     """Hit godbolt's shortener with one source file under the given
     compiler profile. Returns the parsed {id, url, title}.
 
@@ -111,32 +220,16 @@ def shorten(source: str, title: str, profile: dict) -> dict:
     "click and see what the program prints" -- assembly is rarely
     what readers want first. Compile correctness is already gated by
     compile_and_run() before this is called, so the executor pane
-    will never open onto a broken build."""
-    payload = {
-        "sessions": [
-            {
-                "id": 1,
-                "language": "c++",
-                "source": source,
-                "compilers": [],
-                "executors": [
-                    {
-                        "compiler": {
-                            "id": profile["id"],
-                            "options": profile["options"],
-                            "libs": [],
-                        },
-                        "compilerVisible": False,
-                        "compilerOutputVisible": False,
-                        "arguments": "",
-                        "argumentsVisible": False,
-                        "stdin": "",
-                        "stdinVisible": False,
-                    }
-                ],
-            }
-        ]
-    }
+    will never open onto a broken build.
+
+    When the example declares a ce-file sibling (files), a single-source
+    session cannot carry it, so we emit a CMake tree session instead."""
+    libs = libs or []
+    if files:
+        session = cmake_tree_session(source, main_name, profile, files)
+    else:
+        session = executor_session(source, profile, libs)
+    payload = {"sessions": [session]}
     req = urllib.request.Request(
         SHORTENER_URL,
         data=json.dumps(payload).encode("utf-8"),
@@ -152,7 +245,8 @@ def shorten(source: str, title: str, profile: dict) -> dict:
     return {"id": short_id, "url": url, "title": title}
 
 
-def compile_and_run(source: str, profile: dict) -> tuple[bool, str, str]:
+def compile_and_run(source: str, profile: dict,
+                    libs: list | None = None, files: list | None = None) -> tuple[bool, str, str]:
     """Compile + execute the source via godbolt's API under the given
     compiler profile.
 
@@ -160,14 +254,16 @@ def compile_and_run(source: str, profile: dict) -> tuple[bool, str, str]:
     compiler exited 0 AND the program exited 0. Used as a gate BEFORE
     creating the shortlink: if the code doesn't actually run on Compiler
     Explorer, the published post would lie to readers.
+
+    libs:  CE libraries to link (e.g. stdexec) -> options.libraries.
+    files: sibling files the source needs (e.g. an #embed asset) -> files[].
     """
-    payload = {
-        "source": source,
-        "options": {
-            "userArguments": profile["options"],
-            "filters": {"execute": True},
-        },
-    }
+    options = {"userArguments": profile["options"], "filters": {"execute": True}}
+    if libs:
+        options["libraries"] = libs
+    payload = {"source": source, "options": options}
+    if files:
+        payload["files"] = files
     req = urllib.request.Request(
         compile_url(profile),
         data=json.dumps(payload).encode("utf-8"),
@@ -194,7 +290,10 @@ def compile_and_run(source: str, profile: dict) -> tuple[bool, str, str]:
 
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--post", required=True, help="post folder (e.g. 02-first-reflection)")
+    src_group = p.add_mutually_exclusive_group(required=True)
+    src_group.add_argument("--post", help="series post folder (e.g. 02-first-reflection)")
+    src_group.add_argument("--news", help="dated news short folder under posts/00-news "
+                                          "(e.g. 2026-06-28-hello-sender)")
     p.add_argument("--force", action="store_true", help="overwrite existing entries")
     p.add_argument("--dry-run", action="store_true", help="print what would change")
     p.add_argument("--no-run-verify", action="store_true",
@@ -212,8 +311,18 @@ def main() -> int:
         else None  # auto -- per-variant resolution
     )
 
-    nn_slug, slug = slug_from_post(args.post)
-    examples_dir = CPP26_ROOT / "posts" / nn_slug / "examples"
+    if args.news:
+        # News shorts live under posts/00-news/<YYYY-MM-DD-slug>/examples and are
+        # keyed in YAML by their mdx slug -- the folder name minus the date prefix
+        # (e.g. 2026-06-28-hello-sender -> hello-sender). No series_order lookup.
+        m = re.match(r"^\d{4}-\d{2}-\d{2}-(.+)$", args.news)
+        if not m:
+            sys.exit(f"error: --news expects YYYY-MM-DD-slug form, got {args.news!r}")
+        slug = m.group(1)
+        examples_dir = CPP26_ROOT / "posts" / "00-news" / args.news / "examples"
+    else:
+        nn_slug, slug = slug_from_post(args.post)
+        examples_dir = CPP26_ROOT / "posts" / nn_slug / "examples"
     if not examples_dir.is_dir():
         sys.exit(f"error: not a directory: {examples_dir}")
 
@@ -233,6 +342,10 @@ def main() -> int:
         existing = yaml_data[slug].get(variant) or {}
         title = existing.get("title") or variant.replace("_", " ").capitalize()
         source_text = src.read_text()
+
+        # Per-file CE directives: ce-libs (e.g. stdexec) and ce-file (e.g. an
+        # #embed asset). These flow into both the verify gate and the shortlink.
+        ce_libs, ce_files = parse_ce_directives(source_text, src)
 
         # Resolve which compiler profiles apply to THIS variant.
         # - explicit (--compiler clang|gcc|both): use that set verbatim.
@@ -271,7 +384,7 @@ def main() -> int:
             stdout = ""
             if not args.no_run_verify:
                 print(f"verify  {label}  ->", end=" ", flush=True)
-                ok, stdout, err = compile_and_run(profile_source, profile)
+                ok, stdout, err = compile_and_run(profile_source, profile, ce_libs, ce_files)
                 if not ok:
                     print("FAIL")
                     sys.exit(f"\nCE verification failed for {src.name} on {profile['id']}:\n{err}")
@@ -290,7 +403,7 @@ def main() -> int:
                 continue
 
             # Fresh shortener call.
-            result = shorten(profile_source, title, profile)
+            result = shorten(profile_source, title, profile, src.name, ce_libs, ce_files)
             # Re-key the response to per-profile YAML keys, then merge into
             # the existing entry so clang and gcc fields coexist.
             entry = dict(existing)
