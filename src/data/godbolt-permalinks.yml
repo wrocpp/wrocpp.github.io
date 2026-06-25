@@ -502,3 +502,44 @@ brno-quality-of-life:
     gcc_id: Ebz7eGKne
     gcc_url: https://godbolt.org/z/Ebz7eGKne
     gcc_expected_output: old = 0, now = 1
+format-smart-pointers:
+  as_address:
+    title: As address
+    id: PYn6eTnc5
+    url: https://godbolt.org/z/PYn6eTnc5
+    expected_output: 'address is non-null: true
+
+      plain:    0xcafef00d
+
+      upper:    0XCAFEF00D
+
+      zero-pad: 0x00000000cafef00d'
+    gcc_id: P7T7Y8aKj
+    gcc_url: https://godbolt.org/z/P7T7Y8aKj
+    gcc_expected_output: 'address is non-null: true
+
+      plain:    0xcafef00d
+
+      upper:    0XCAFEF00D
+
+      zero-pad: 0x00000000cafef00d'
+  as_value:
+    title: As value
+    id: 8jhEGnYYn
+    url: https://godbolt.org/z/8jhEGnYYn
+    expected_output: 'p -> 42
+
+      n -> (null)'
+    gcc_id: sKf81v5Ej
+    gcc_url: https://godbolt.org/z/sKf81v5Ej
+    gcc_expected_output: 'p -> 42
+
+      n -> (null)'
+  custom_formatter:
+    title: Custom formatter
+    id: nd5Ghf59s
+    url: https://godbolt.org/z/nd5Ghf59s
+    expected_output: Point(3, 4)
+    gcc_id: T581e8nGE
+    gcc_url: https://godbolt.org/z/T581e8nGE
+    gcc_expected_output: Point(3, 4)

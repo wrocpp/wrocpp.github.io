@@ -1,0 +1,98 @@
+---
+title: "Why you can't std::format a smart pointer (and how to anyway)"
+slug: "format-smart-pointers"
+pubDate: 2026-07-04
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [format, smart-pointers, cpp26, news]
+summary: "A recent r/cpp question: std::cout << a unique_ptr works, but std::println(\"{}\", that_unique_ptr) is ill-formed. There is no std::formatter for smart pointers. Is that an oversight? No -- it is a deliberate, sustained decision. Here is the why, and three ways to format a smart pointer today, all verified on Compiler Explorer."
+draft: false
+relatedPosts: [embed-the-file, brno-quality-of-life]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+A question went around r/cpp recently (credit to u/SPEKTRUMdagreat) that is worth answering properly, because the answer reveals a deliberate design choice rather than a gap. The setup: streaming a smart pointer works,
+
+```cpp
+std::cout << "uptr: " << u_ptr << '\n';   // fine
+std::cout << "sptr: " << s_ptr << '\n';   // fine
+```
+
+but formatting one does not:
+
+```cpp
+std::println("uptr: {}", u_ptr);   // ill-formed: no formatter<unique_ptr<int>>
+std::println("sptr: {}", s_ptr);   // ill-formed: no formatter<shared_ptr<int>>
+```
+
+`std::cout << u_ptr` compiles because `operator<<` overloads exist for `shared_ptr` (since C++11) and `unique_ptr` (since C++20); they print the managed object's address. `std::format` has no matching `std::formatter`, so the second snippet does not compile. The question: is that an oversight?
+
+## It is deliberate, not an oversight
+
+`std::format` is conservative about pointers on purpose. Among all pointer types, only `void*`, `const void*`, and `nullptr_t` are formattable. An arbitrary `int*` is **not** -- the `formatter` for it is disabled, so you cannot accidentally print an address when you meant a value. A `unique_ptr<int>` formatter would have to punch a hole in exactly that rule.
+
+And it is not that nobody thought of it. The original proposal that gave `std::format` its library formatters, [P1636 "Formatters for library types"](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p1636r2.pdf) (Dimov/Vollmann, 2019), *did* include `shared_ptr` and `unique_ptr` -- formatting `.get()` cast to `void*`. **LEWG asked for the smart pointers to be removed.** The exclusion has held: the follow-up [P2930 "Formatter specializations for the standard library"](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p2930r0.html) adds formatters for `optional`, `variant`, `expected`, and `any`, and still leaves smart pointers out.
+
+Why is that defensible? Because "format a smart pointer" has no single obvious meaning. The address (what `operator<<` prints) is rarely what you want and is non-reproducible -- it changes every run under ASLR, which makes it poison for golden-output tests. The pointee is usually what you mean, but that needs the pointee to be formattable and needs null handled. Faced with two reasonable answers and a footgun, the committee declined to guess. The streaming operators predate that philosophy; `std::format` started clean and stayed strict.
+
+So: not a thing you are missing. Here are the three ways to do it today.
+
+## 1. The address, like operator&lt;&lt; (plus a C++26 upgrade)
+
+Cast `.get()` to `void*` yourself -- that is the one pointer type `std::format` accepts. C++26's [P2510 "Formatting pointers"](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2510r3.pdf) then lets you dress that `void*` up directly (uppercase, zero-padding) without the old reinterpret-to-integer trick:
+
+```cpp
+const void* p = static_cast<const void*>(u.get());   // arbitrary int* is not formattable
+std::println("plain:    {}",     p);   // 0xcafef00d
+std::println("upper:    {:P}",   p);   // 0XCAFEF00D   (C++26)
+std::println("zero-pad: {:018}", p);   // 0x00000000cafef00d  (C++26)
+```
+
+<GodboltEmbed id="PYn6eTnc5" gcc_id="P7T7Y8aKj" title="Format the address as void* (with C++26 P2510)" subtitle="clang_bb_p2996 · C++26" gcc_subtitle="g161 (GCC 16.1) · C++26" />
+
+## 2. The pointee, which is usually what you want
+
+Most of the time the address is noise and you want the value. Dereference and format that, guarding against null:
+
+```cpp
+auto show = [](const auto& q) {
+    return q ? std::format("{}", *q) : std::string("(null)");
+};
+std::println("p -> {}", show(p));   // p -> 42
+std::println("n -> {}", show(n));   // n -> (null)
+```
+
+<GodboltEmbed id="8jhEGnYYn" gcc_id="sKf81v5Ej" title="Format the pointee, null-safe" subtitle="clang_bb_p2996 · C++26" gcc_subtitle="g161 (GCC 16.1) · C++26" />
+
+## 3. Write the formatter the standard left out
+
+If you want `{}` to work directly on the pointer, supply the `std::formatter` yourself. One catch worth knowing: you may only add a specialization to a `std` template when a **program-defined type** is involved. `std::formatter<std::unique_ptr<Point>>` is fine because `Point` is yours; `std::formatter<std::unique_ptr<int>>` would be non-conforming. That is also the realistic case -- you want to print `unique_ptr<YourType>`, not `unique_ptr<int>`:
+
+```cpp
+template <class CharT>
+struct std::formatter<std::unique_ptr<Point>, CharT> {
+    constexpr auto parse(auto& ctx) { return ctx.begin(); }
+    auto format(const std::unique_ptr<Point>& p, auto& ctx) const {
+        if (p) return std::format_to(ctx.out(), "Point({}, {})", p->x, p->y);
+        return std::format_to(ctx.out(), "(null)");
+    }
+};
+
+std::println("{}", p);   // Point(3, 4)
+```
+
+<GodboltEmbed id="nd5Ghf59s" gcc_id="T581e8nGE" title="A drop-in formatter for your own pointee type" subtitle="clang_bb_p2996 · C++26" gcc_subtitle="g161 (GCC 16.1) · C++26" />
+
+If you are already on `{fmt}`, `fmt::ptr(p)` does the `void*`-address version for you, smart pointers included.
+
+## The takeaway
+
+The asymmetry between `operator<<` and `std::format` is not a bug to be patched -- it is `std::format` holding a line that `operator<<` never did: pointers are not formattable unless you say `void*` and mean it. Smart pointers were considered, removed, and have stayed removed across two proposals. If a standard formatter for them ever lands, expect it to print the `void*` address and to be gated exactly like the old `operator<<` -- which is the one of the three options above you can already write in a single cast.
+
+---
+
+**Sources**: [P1636R2, Formatters for library types](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p1636r2.pdf) (smart pointers proposed, then removed by LEWG). [P2930R0, Formatter specializations for the standard library](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p2930r0.html) (adds optional/variant/expected/any; not smart pointers). [P2510R3, Formatting pointers](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2510r3.pdf) (C++26 `void*` formatting: `{:P}`, padding). The `void*`-only rule is in the `[format]` wording at [eel.is/c++draft/format](https://eel.is/c++draft/format). Examples verified on Compiler Explorer with GCC 16.1 and the Bloomberg clang-p2996 fork.
