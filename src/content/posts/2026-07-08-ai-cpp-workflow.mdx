@@ -1,0 +1,44 @@
+---
+title: "How the C++ community is actually using AI in 2026"
+slug: "ai-cpp-workflow-2026"
+pubDate: 2026-07-08
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, ai, llm, workflow, community, cpp]
+summary: "The question in the C++ world has shifted from whether to use LLMs to how to use them well. A roundup of where that conversation is right now: Jason Turner's three-part C++ Weekly arc on getting useful code out of AI, CppCast on teaching C++ in the LLM era, and Herb Sutter asking the uncomfortable question about agents doing harm."
+draft: false
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+Something changed in the C++ community's relationship with AI over the last few months. The conversation stopped being "should I use an LLM for C++" and became "how do I get it to produce code I would actually merge." Here is where that discussion stands, gathered from the people the community listens to.
+
+## Jason Turner's three-part arc on C++ Weekly
+
+Turner has been working the problem in public across several episodes, and the titles tell the story of where he landed.
+
+- **[Ep 531, "You Are Using AI Wrong"](https://www.youtube.com/watch?v=kRZWuyM46QY)** is the provocation: most of the frustration developers have with AI-generated C++ comes from how they are driving it, not from the model. The workflow is the variable you control.
+- **[Ep 535, "Getting The Best AI Generated Code"](https://www.youtube.com/watch?v=NtbQ-mF3iJE)** is the practical follow-up: how to set up the context, constraints, and feedback loop so the output is closer to what you want on the first pass.
+- **[Ep 539, "Modernizing C++ with AI"](https://www.youtube.com/watch?v=SJ9Jm-K9bYU)** is the payoff: driving an LLM through iterative refactoring of real C++, modernizing older code in small, reviewable steps rather than one giant unreviewable rewrite.
+
+The through-line is consistency with how good engineers already work: small diffs, tight feedback, you stay the reviewer. The AI is a fast junior pair, not an oracle.
+
+## Teaching C++ when the students have LLMs
+
+[CppCast Ep 408](https://cppcast.com/episodes/) took the same question into education, with guest Tom Tesch on **teaching C++ to game-development students in the age of LLMs**. The hard part is no longer "how do you explain pointers"; it is how you assess understanding when every student has a tool that will produce a plausible answer. The discussion ranges from assessment design to why constrained, retro hardware (down to the NES) is still a useful teaching environment precisely because the model cannot lean on infinite resources.
+
+## The question nobody wants to skip
+
+Not all of it is upside. Back in April, Herb Sutter ran a [poll asking whether readers had observed AI agents doing harm](https://herbsutter.com/) in practice. It is a deliberately uncomfortable question, and it belongs in this roundup: the same agents that refactor your legacy code can also confidently introduce a subtle bug, a security regression, or a license problem. Turner's "you stay the reviewer" and Sutter's "watch for harm" are the same lesson from two angles.
+
+## The takeaway
+
+The honest state of the art in mid-2026: LLMs are genuinely useful for C++ when you treat them as a workflow to be engineered rather than a button to be pressed. Drive in small steps, keep the feedback loop tight, and never stop being the reviewer. That is not a hype take or a doom take; it is where the practitioners have actually converged.
+
+For a concrete worked example on this site, see <PostLink slug="fastest-jvm-is-cpp26">the fastest JVM is the C++26 compiler</PostLink>, on what compile-time C++ can do that an LLM cannot guess at.
+
+---
+
+**Sources**: C++ Weekly with Jason Turner, [Ep 531](https://www.youtube.com/watch?v=kRZWuyM46QY) / [Ep 535](https://www.youtube.com/watch?v=NtbQ-mF3iJE) / [Ep 539](https://www.youtube.com/watch?v=SJ9Jm-K9bYU). [CppCast Ep 408](https://cppcast.com/episodes/) with Tom Tesch. [Herb Sutter's AI-harm poll](https://herbsutter.com/).
