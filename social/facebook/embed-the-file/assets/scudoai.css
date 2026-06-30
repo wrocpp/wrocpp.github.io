@@ -1,0 +1,322 @@
+/* ============================================================
+ *  wro.cpp social card -- standalone stylesheet
+ *
+ *  Self-contained styling for brand-gen's `social/linkedin-post`
+ *  output. Replaces (does NOT extend) the scudoai-social.css that
+ *  brand-gen ships with -- the design language here is the
+ *  wro.cpp 'Editorial Magnet' look used by src/styles/global.css,
+ *  not the scudoai blue-indigo deck aesthetic.
+ *
+ *  Source of truth for tokens: src/styles/global.css:12-30 in the
+ *  wrocpp.github.io repo.
+ *
+ *  Brand-gen markup we style:
+ *    <section class="card card-insight [light|dark]">
+ *      <div class="grid-bg"></div>            (decorative, hidden)
+ *      <div class="glow"></div>               (decorative, hidden)
+ *      <div class="insight-content">
+ *        <h1>...</h1>
+ *        <p>...</p>
+ *        <div class="insight-citation">...</div>
+ *      </div>
+ *      <div class="logo-watermark top-left">
+ *        <svg><use href="#scudo-logo"/></svg>
+ *        <span class="logo-wordmark">ScudoAI</span>  (hidden; replaced via ::after)
+ *      </div>
+ *    </section>
+ *
+ *  Other card types (card-quote, card-stat, card-announcement)
+ *  get analogous rules at the bottom.
+ * ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+:root {
+  --paper:    #FCFAF5;
+  --paper-2:  #F3EFE6;
+  --paper-3:  #E8E1D0;
+  --ink:      #1B1B1D;
+  --ink-muted:#55555A;
+  --ink-faint:#8A8A90;
+  --rule:     #D7D2C4;
+  --orange:   #EA541E;
+  --orange-2: #D6481A;
+  --blue:     #3EB5E9;
+  --blue-deep:#2E8FB8;
+
+  --font-display: 'Quicksand', system-ui, -apple-system, sans-serif;
+  --font-body:    'Source Serif 4', Georgia, serif;
+  --font-mono:    'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-family: var(--font-body);
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+/* Hide brand-gen decorative noise -- the wro.cpp aesthetic is calm
+ * and editorial, not a dark deck with glow + grid backgrounds. */
+.grid-bg, .glow { display: none !important; }
+
+/* ---------------- Card frame (1200x1200) ---------------- */
+.card {
+  position: relative;
+  width: 1200px;
+  height: 1200px;
+  background: var(--paper);
+  /* Faint warm radial wash, mirrors body { background-image } in
+   * src/styles/global.css:44-49 -- gives the paper texture without
+   * looking flat. */
+  background-image:
+    radial-gradient(900px 700px at 80% -10%, rgba(234, 84, 30, 0.06), transparent 60%),
+    radial-gradient(800px 600px at -10% 110%, rgba(62, 181, 233, 0.05), transparent 60%);
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: 130px 110px 130px 110px;
+  display: flex;
+  flex-direction: column;
+  /* Faint inner border gives the card a printed-page feel. */
+  border-bottom: 6px solid var(--orange);
+}
+
+/* Override: theme=dark cards still use paper. We keep the editorial
+ * light look across the board so the wro.cpp brand stays consistent.
+ * If the user really wants a dark variant later, this is the hook. */
+.card.dark { background: var(--paper) !important; color: var(--ink) !important; }
+.card.dark h1, .card.dark h2, .card.dark p,
+.card.dark blockquote { color: var(--ink) !important; }
+
+/* ---------------- INSIGHT card ---------------- */
+.card-insight {
+  justify-content: center;
+  padding-top: 200px; /* reserve space for logo watermark (top:90px + 64px + safety) */
+}
+.card-insight .insight-content {
+  display: flex;
+  flex-direction: column;
+  gap: 60px;
+  max-width: 980px;
+}
+.card-insight h1 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 92pt;
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+  color: var(--ink);
+  margin: 0;
+}
+.card-insight h1.title-long {
+  font-size: 72pt;
+  line-height: 1.06;
+  letter-spacing: -0.02em;
+  max-height: 420px;
+}
+.card-insight h1.title-xlong {
+  font-size: 56pt;
+  line-height: 1.10;
+  letter-spacing: -0.015em;
+  max-height: 440px;
+}
+/* Auto-accent: ++ in C++/C++26 turns orange, sentence-final period
+ * (when wrapped in <span class="dot">) turns blue. The skill writes
+ * the heading with these spans for the wro.cpp signature look. */
+.card-insight h1 .accent { color: var(--orange); }
+.card-insight h1 .dot    { color: var(--blue-deep); }
+.card-insight p {
+  font-family: var(--font-body);
+  font-size: 30pt;
+  line-height: 1.5;
+  color: var(--ink-muted);
+  margin: 0;
+  max-width: 920px;
+}
+.card-insight .insight-citation {
+  font-family: var(--font-mono);
+  font-size: 18pt;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+  margin-top: 40px;
+  padding-top: 30px;
+  border-top: 1px solid var(--rule);
+  text-transform: lowercase;
+}
+.card-insight .insight-citation::before {
+  content: '// ';
+  color: var(--orange);
+  font-weight: 700;
+}
+
+/* ---------------- QUOTE card ---------------- */
+.card-quote { justify-content: center; padding: 140px 110px; }
+.card-quote .quote-content { display: flex; flex-direction: column; align-items: flex-start; }
+.card-quote .quote-mark {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 200pt;
+  line-height: 0.8;
+  color: var(--orange);
+  opacity: 0.20;
+  /* In-flow above the text (not floated in the corner) with a negative
+   * bottom margin so the mark nearly touches the first quote line. */
+  margin: 0 0 -0.42em;
+}
+.card-quote .quote-body {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 64pt;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  max-width: 980px;
+  margin: 0;
+}
+.card-quote .quote-attribution {
+  margin-top: 50px;
+  font-family: var(--font-mono);
+  font-size: 18pt;
+  color: var(--ink-muted);
+}
+.card-quote .quote-attribution::before { content: '-- '; color: var(--orange); }
+
+/* ---------------- STAT card ---------------- */
+.card-stat { justify-content: center; }
+/* Value and label sit side by side (label wraps to stacked lines whose
+ * combined height roughly matches the value); context + source span the
+ * full width underneath. */
+.card-stat .stat-content {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    "value label"
+    "context context"
+    "source source";
+  column-gap: 64px;
+  align-items: center;
+}
+.card-stat .stat-value {
+  grid-area: value;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 240pt;
+  line-height: 0.82;
+  letter-spacing: -0.04em;
+  color: var(--orange);
+  margin: 0;
+}
+.card-stat .stat-label {
+  grid-area: label;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 90pt;
+  line-height: 1.0;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  /* min-content forces a per-word wrap, so "codegen steps" stacks into
+   * two lines next to the value instead of running on one long line. */
+  width: min-content;
+  margin: 0;
+}
+.card-stat .stat-context {
+  grid-area: context;
+  font-family: var(--font-body);
+  font-size: 26pt;
+  line-height: 1.45;
+  color: var(--ink-muted);
+  margin: 56px 0 0;
+  max-width: 880px;
+}
+.card-stat .stat-source {
+  grid-area: source;
+  margin-top: 44px;
+  font-family: var(--font-mono);
+  font-size: 18pt;
+  color: var(--ink-faint);
+}
+.card-stat .stat-source::before { content: '// '; color: var(--orange); }
+
+/* ---------------- ANNOUNCEMENT card ---------------- */
+.card-announcement { justify-content: center; }
+.card-announcement .announcement-meta {
+  font-family: var(--font-mono);
+  font-size: 20pt;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--orange);
+  margin-bottom: 30px;
+}
+.card-announcement .announcement-content h1,
+.card-announcement .announcement-content h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 78pt;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin: 0;
+}
+.card-announcement .announcement-content p {
+  font-family: var(--font-body);
+  font-size: 28pt;
+  line-height: 1.5;
+  color: var(--ink-muted);
+  margin: 40px 0 0;
+  max-width: 900px;
+}
+
+/* ---------------- LOGO WATERMARK ---------------- */
+/* brand-gen hard-codes "ScudoAI" in .logo-wordmark; we hide it and
+ * draw "wro.cpp" via ::after on the watermark. The orange ".cpp" mirrors
+ * the brand-mark in the site header. */
+.logo-watermark {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: 64px;
+  z-index: 10;
+  color: var(--ink);
+}
+.logo-watermark.top-left     { top: 90px; left: 110px; }
+.logo-watermark.top-right    { top: 90px; right: 110px; }
+.logo-watermark.bottom-left  { bottom: 60px; left: 110px; }
+.logo-watermark.bottom-right { bottom: 60px; right: 110px; }
+.logo-watermark svg {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  /* Magnet logo PNG already has transparent paper-tone background;
+   * no rounded box needed -- it sits on the paper card directly. */
+}
+.logo-wordmark {
+  font-size: 0 !important;
+  line-height: 0 !important;
+  /* Hide the upstream "ScudoAI" text node entirely. */
+}
+.logo-watermark::after {
+  content: 'wro.cpp';
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 28pt;
+  letter-spacing: -0.025em;
+  color: var(--ink);
+  line-height: 1;
+  /* The .cpp portion is given orange via a ::first-line trick below
+   * isn't reliable for inline -- so the SKILL writes the wordmark
+   * with explicit spans when it owns the markup. For this default
+   * rendering, the whole wordmark is ink and the orange comes through
+   * the bottom border + eyebrow. */
+}
+.logo-watermark.top-right::after,
+.logo-watermark.bottom-right::after { order: -1; margin-right: 18px; }
+
+/* ---------------- Defensive overrides ---------------- */
+/* Anything brand-gen might have set inline using its tokens. */
+* { box-sizing: border-box; }
