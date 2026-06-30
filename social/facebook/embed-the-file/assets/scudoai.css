@@ -166,7 +166,7 @@ html, body {
   opacity: 0.20;
   /* In-flow above the text (not floated in the corner) with a negative
    * bottom margin so the mark nearly touches the first quote line. */
-  margin: 0 0 -0.62em;
+  margin: 0 0 -0.42em;
 }
 .card-quote .quote-body {
   font-family: var(--font-display);
@@ -185,9 +185,6 @@ html, body {
   color: var(--ink-muted);
 }
 .card-quote .quote-attribution::before { content: '-- '; color: var(--orange); }
-/* author and role are adjacent spans with no separator in the markup;
- * add one so they do not run together ("wro.cppC++26 ..."). */
-.card-quote .quote-attribution .role::before { content: ' / '; color: var(--ink-faint); }
 
 /* ---------------- STAT card ---------------- */
 .card-stat { justify-content: center; }

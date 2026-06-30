@@ -1,0 +1,86 @@
+---
+title: "One word, final, turns a virtual call into two instructions"
+slug: "final-devirtualization"
+pubDate: 2026-07-12
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp, performance, devirtualization, final, virtual-functions, news]
+summary: "A C++ Weekly episode reminded everyone of a free win: marking a class final lets the compiler devirtualize. We took the canonical example to GCC 16.1 at -O2 and read the actual assembly. Without final, GCC hedges with a runtime vtable check; with final, the whole call folds to mov eax, 42; ret. The asm is the proof."
+draft: false
+relatedPosts: [cpp26-string-improvements]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+Jason Turner's [C++ Weekly Ep 536](https://www.youtube.com/watch?v=MbqWWkP8Ras) revisited one of the cheapest performance wins in the language: the `final` keyword lets the compiler **devirtualize**. It is the kind of thing everyone half-remembers, so we took the canonical example to GCC 16.1 at `-O2` and read the assembly it actually emits. The result is more interesting than the folklore.
+
+## The setup
+
+Two classes, and a function that calls a virtual method through a reference to the most-derived type. The only thing we will change is whether `Derived` is `final`.
+
+```cpp
+struct Base {
+    virtual int compute() const { return 1; }
+    virtual ~Base() = default;
+};
+
+struct Derived : Base {                  // version A: not final
+    int compute() const override { return 42; }
+};
+
+int call(const Derived& d) {
+    return d.compute();
+}
+```
+
+## Without `final`: the compiler hedges
+
+You might expect that calling through a `const Derived&` lets the compiler skip the vtable. It cannot. Without `final`, some *further* class could derive from `Derived` and override `compute()`, so a `Derived&` might not refer to a `Derived` at all. Here is what GCC 16.1 emits for `call` at `-O2`:
+
+```asm
+call(Derived const&):
+        mov     rax, QWORD PTR [rdi]          ; load d's vtable pointer
+        mov     rax, QWORD PTR [rax]          ; load slot 0 -> &Derived::compute
+        cmp     rax, OFFSET FLAT:Derived::compute() const
+        jne     .L5                           ; not Derived's override? take the slow path
+        mov     eax, 42                       ; guessed right: inline the body
+        ret
+.L5:
+        jmp     rax                           ; fall back to the indirect virtual call
+```
+
+This is *speculative devirtualization*: GCC guesses the target is `Derived::compute`, checks that guess at runtime, and inlines the body (`return 42`) on the hit, with the real indirect call kept as a fallback. Clever, but it is still a vtable load, a compare, and a branch on every call. The compiler is hedging because the type system left the door open.
+
+<GodboltEmbed id="zqr6PGPGa" gccOnly title="Without final: vtable load + runtime type check" gcc_subtitle="x86-64 GCC 16.1 · -O2 -std=c++20 · assembly view" />
+
+## With `final`: the compiler commits
+
+Change one word:
+
+```cpp
+struct Derived final : Base {            // version B: final
+    int compute() const override { return 42; }
+};
+```
+
+Now `Derived` cannot be derived from, so a `const Derived&` provably refers to a `Derived`. The guess becomes a certainty, the runtime check disappears, and the entire function collapses:
+
+```asm
+call(Derived const&):
+        mov     eax, 42
+        ret
+```
+
+<GodboltEmbed id="Kxvqzz4Ka" gccOnly title="With final: devirtualized, inlined, two instructions" gcc_subtitle="x86-64 GCC 16.1 · -O2 -std=c++20 · assembly view" />
+
+## What to take from it
+
+`final` is not just documentation that "this class is a leaf." It is information the optimizer uses. When the compiler can prove the dynamic type, a virtual call devirtualizes, which usually means it inlines, which often means it folds away entirely (as it does here). The payoff is biggest in hot loops that call virtual methods on leaf types: a vtable load and an unpredictable indirect branch per iteration become a direct, inlinable call.
+
+Two caveats keep it honest. First, you only get the win where the compiler can *see* the static type is the final one (calls through `Base&` still dispatch). Second, GCC's speculative devirtualization means even the non-`final` version is not as slow as the naive "it's a full virtual call" mental model suggests, but the guard is still there, and `final` is what removes it. If a class is genuinely a leaf, mark it `final` and let the optimizer commit.
+
+---
+
+**Source**: [C++ Weekly Ep 536, "Devirtualization and performance with final"](https://www.youtube.com/watch?v=MbqWWkP8Ras) (Jason Turner). Assembly produced on Compiler Explorer with x86-64 GCC 16.1 at `-O2 -std=c++20`; click either card to open the exact session.

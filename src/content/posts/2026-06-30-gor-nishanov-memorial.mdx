@@ -1,0 +1,30 @@
+---
+title: "Gor Nishanov (1971-2026), who gave C++ its coroutines"
+slug: "gor-nishanov-memorial"
+pubDate: 2026-06-30
+author: filip-sajdak
+language: en
+kind: short
+audience: mixed
+tags: [news, community, coroutines, history, cpp]
+summary: "Gor Nishanov, the architect of C++20 coroutines, has died at 54. From the 2014 resumable-functions papers to shipping implementations in MSVC and Clang, he spent the better part of a decade turning co_await into a standard language feature. Herb Sutter remembered him as intelligent and witty, but above all kind."
+draft: false
+---
+
+Gor Nishanov, the architect of Standard C++ coroutines, died in June 2026 at the age of 54. Herb Sutter shared the news on June 28. If you have ever written `co_await`, `co_yield`, or `co_return`, you have used his work.
+
+## What he built
+
+Nishanov spent about a decade at Microsoft on the Visual C++ team before moving to standards work close to full time. His defining contribution began in 2014 with the "Resumable Functions" proposals (N4134 and the papers that followed), which grew, through years of design iteration and consensus-building, into the coroutines that shipped in **ISO C++20**.
+
+The part that is easy to overlook: he did not just write the design, he made it real. Nishanov implemented coroutines in both **Microsoft Visual C++** and **Clang/LLVM**, so the feature arrived in the standard already backed by two production compilers rather than as paper wording. That is a rare thing, and it is a large part of why C++20 coroutines were usable on day one. More recently he had been working on concurrent-queue proposals, still iterating on the hard concurrency problems years after coroutines landed.
+
+## How he worked
+
+In his remembrance, Herb Sutter described Nishanov as "intelligent and witty," but went out of his way to say that "above all he was kind." The detail that stands out: he repeatedly helped *competing* coroutine proposals succeed, even when they rivaled his own design, because he wanted the committee to adopt the best work rather than his work. That is a rare level of intellectual honesty in any field, and it earned him broad respect across WG21.
+
+Coroutines are one of those features that quietly reshaped how modern C++ is written, from generators to async I/O to the sender/receiver model the committee is building on now. The person behind them put the language ahead of himself. That is worth remembering.
+
+---
+
+**Source**: [Herb Sutter, "Gor Nishanov (1971-2026)"](https://herbsutter.com/2026/06/28/gor-nishanov-1971-2026/). For the feature he gave us, see [coroutines on cppreference](https://en.cppreference.com/w/cpp/language/coroutines).
