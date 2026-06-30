@@ -28,10 +28,11 @@ REPO = Path(__file__).resolve().parent.parent
 MIN_PNG_BYTES = 150_000
 MAX_PNG_BYTES = 430_000
 
-# wrocpp.css is 300 lines after inject.sh; if assets/scudoai.css doesn't match,
-# inject didn't run or assets are missing.
+# wrocpp.css is ~325 lines after inject.sh; if assets/scudoai.css doesn't match,
+# inject didn't run or assets are missing. (The default scudoai.css is ~870
+# lines and an erroneous append is ~1189, so this band stays well clear of both.)
 EXPECTED_CSS_LINES_MIN = 280
-EXPECTED_CSS_LINES_MAX = 320
+EXPECTED_CSS_LINES_MAX = 345
 
 # Logo SVG embedded by brand-gen is ~6KB; less means missing or wrong.
 MIN_LOGO_SVG_BYTES = 5_000
