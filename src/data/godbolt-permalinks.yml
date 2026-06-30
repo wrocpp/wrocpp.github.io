@@ -543,3 +543,36 @@ format-smart-pointers:
     gcc_id: T581e8nGE
     gcc_url: https://godbolt.org/z/T581e8nGE
     gcc_expected_output: Point(3, 4)
+cpp26-string-improvements:
+  bitset_sv:
+    title: Bitset sv
+    id: KT5xncrb5
+    url: https://godbolt.org/z/KT5xncrb5
+    expected_output: 'value = 42
+
+      count = 3'
+    gcc_id: Y5aP6GWca
+    gcc_url: https://godbolt.org/z/Y5aP6GWca
+    gcc_expected_output: 'value = 42
+
+      count = 3'
+  concat:
+    title: Concat
+    id: Kvhb6oYf9
+    url: https://godbolt.org/z/Kvhb6oYf9
+    expected_output: 'hello world
+
+      << hello world >>'
+    gcc_id: K66cYh4EP
+    gcc_url: https://godbolt.org/z/K66cYh4EP
+    gcc_expected_output: 'hello world
+
+      << hello world >>'
+  stringstream_sv:
+    title: Stringstream sv
+    id: zPsK71WvM
+    url: https://godbolt.org/z/zPsK71WvM
+    expected_output: sum = 102
+    gcc_id: bjGsGjcTc
+    gcc_url: https://godbolt.org/z/bjGsGjcTc
+    gcc_expected_output: sum = 102

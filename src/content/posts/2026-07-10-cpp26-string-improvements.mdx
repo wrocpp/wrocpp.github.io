@@ -1,0 +1,75 @@
+---
+title: "Three small C++26 string fixes you will use every day"
+slug: "cpp26-string-improvements"
+pubDate: 2026-07-10
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp26, stdlib, string, string_view, news, p2591]
+summary: "C++26 quietly closes three long-standing paper cuts in the string library: you can finally write string + string_view, build a stringstream straight from a string_view, and construct a bitset from a view without a temporary. None of them are flashy, all of them remove a copy or a conversion you have been writing for years. Verified on GCC 16.1 and clang-p2996."
+draft: false
+relatedPosts: [format-smart-pointers]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+Most of the C++26 attention goes to reflection, contracts, and `std::execution`. But the standard also landed a batch of small string-library fixes (nicely catalogued by [Sandor Dargo](https://www.sandordargo.com/blog/2026/04/29/cpp26-string-string_view-improvements)) that remove conversions you have been writing by hand for years. Here are the three you will hit most often, each verified on both GCC 16.1 and the Bloomberg clang-p2996 fork.
+
+## 1. `string + string_view` finally compiles
+
+This is the one that has bitten everyone. `std::string_view` arrived in C++17, but you could never concatenate it onto a `std::string` directly. The mix had no `operator+`, so you had to build a temporary `std::string` first.
+
+```cpp
+std::string      hello{"hello "};
+std::string_view world{"world"};
+
+std::string greeting = hello + world;   // pre-C++26: ill-formed. C++26: works.
+```
+
+[P2591R5 "Concatenation of strings and string views"](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p2591r5.html) adds free `operator+` templates that accept anything convertible to `string_view`, in **both** orders, so you can even bracket a string with views:
+
+```cpp
+std::string framed = std::string_view{"<< "} + greeting + std::string_view{" >>"};
+// framed == "<< hello world >>"
+```
+
+<GodboltEmbed id="Kvhb6oYf9" gcc_id="K66cYh4EP" title="string + string_view, both orders" subtitle="clang_bb_p2996 · C++26" gcc_subtitle="g161 (GCC 16.1) · C++26" />
+
+## 2. A stringstream straight from a `string_view`
+
+If you parse text, you have written `std::istringstream in{std::string{some_view}}` just to get a view into a stream. That temporary copy is gone. [P2495R3 "Interfacing stringstreams with string_view"](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2495r3.pdf) gives the whole `stringstream` family `string_view` constructors:
+
+```cpp
+std::string_view csv{"12 34 56"};
+std::istringstream in{csv};          // C++26: no temporary std::string
+
+int a, b, c;
+in >> a >> b >> c;                   // a+b+c == 102
+```
+
+<GodboltEmbed id="zPsK71WvM" gcc_id="bjGsGjcTc" title="istringstream from a string_view" subtitle="clang_bb_p2996 · C++26" gcc_subtitle="g161 (GCC 16.1) · C++26" />
+
+## 3. A bitset from a `string_view`
+
+Same story for `std::bitset`. Before C++26 you either built a temporary `std::string` or went through `data()`, which is a null-termination trap when the view is a slice of a larger buffer. [P2697R1 "Interfacing bitset with string_view"](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p2697r1.pdf) adds the direct constructor:
+
+```cpp
+std::string_view bits{"101010"};
+std::bitset<6> b{bits};              // C++26: straight from the view
+
+b.to_ulong();   // 42
+b.count();      // 3
+```
+
+<GodboltEmbed id="KT5xncrb5" gcc_id="Y5aP6GWca" title="bitset from a string_view" subtitle="clang_bb_p2996 · C++26" gcc_subtitle="g161 (GCC 16.1) · C++26" />
+
+## Why these matter
+
+None of these change what your program does. They change how much boilerplate stands between you and it, and they delete temporary allocations that were pure friction. The `string_view` constructors in particular fix a real correctness hazard: every time you reached for `.data()` on a non-null-terminated view, you were one refactor away from reading past the end. C++26 closes that path off by giving you a constructor that knows the length.
+
+The nicest part: all three are mainline standard-library changes, already shipping in GCC and Clang. No reflection fork, no experimental flag (the examples above just happen to be pinned to our C++26 toolchains). Turn on `-std=c++26` and they are there.
+
+---
+
+**Sources**: Sandor Dargo, ["C++26: string and string_view improvements"](https://www.sandordargo.com/blog/2026/04/29/cpp26-string-string_view-improvements). Papers: [P2591R5](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p2591r5.html) (concatenation), [P2495R3](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2495r3.pdf) (stringstreams), [P2697R1](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p2697r1.pdf) (bitset). Examples verified on Compiler Explorer with GCC 16.1 and the Bloomberg clang-p2996 fork.
