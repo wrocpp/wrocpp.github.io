@@ -1,0 +1,45 @@
+---
+title: "Less standard library, faster program"
+slug: "leaner-standard-library"
+pubDate: 2026-07-14
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, build-times, standard-library, performance, cpp]
+summary: "Jussi Pakkanen (creator of Meson) rewrote a subset of the C++ standard library from scratch, dropping ISO conformance to chase compile speed. Converting his real CapyPDF library to it cut compile time ~80% and binary size ~75%, and made the program ~25% faster. All at once. The tradeoff you would expect is not there, which is the interesting part."
+draft: false
+---
+
+We are trained to expect a tradeoff. Make the build faster and you usually pay for it somewhere: a slower binary, a bigger one, less optimization. So the most surprising line in Jussi Pakkanen's write-up of **Pystd**, his from-scratch C++ standard library, is that he got all of the wins at the same time.
+
+Pakkanen (the creator of the **Meson** build system) started from a familiar irritation: C++ compiles slowly, and the standard library is a big reason why. A C hello world compiles in about **0.02 seconds**. The C++ equivalent that pulls in `#include <print>` takes roughly **1 second** without optimizations and up to **2.3 seconds** with them. Call it a 100x tax before you have written any of your own code.
+
+His diagnosis points at the headers, not the language. Preprocess a single include and watch it bloom: `<vector>` expands to about **29,000 lines**, `<memory>` to **55,000**, `<print>` to **65,000**, `<filesystem>` to **80,000**. As he puts it, almost 30k lines just to get a growable array seems a bit much.
+
+## What he built
+
+Pystd is deliberately **not** ISO C++. It drops backwards compatibility and reimplements the commonly used subset: vector, string, `u8string`, spans, a hash map and a B-tree ordered map, `unique_ptr`, `optional`, `expected`, `variant`, plus Python-flavored conveniences like `argparse`, a `pathlib` with a `**` operator, PCRE-backed regex, and tempfile. The whole library is about **12,000 lines**, roughly a third of what one preprocessed `std::vector` costs. It uses a `pystd<year>` versioning namespace so old code stays frozen while new releases evolve freely.
+
+## The measurement that matters
+
+Numbers from a toy are easy to dismiss, so Pakkanen converted a real shipping library, his **CapyPDF**, to use Pystd instead of the standard library. The result:
+
+- compile time: **about 80% lower**
+- unstripped binary: **about 75% smaller**
+- stripped binary: **about 30% smaller**
+- runtime: **about 25% faster**
+
+There is no compile-versus-runtime bargain here. Less abstraction for the compiler to see through means less code to instantiate, a smaller binary, and less indirection at runtime. To keep it that way as the library grows, he enforces a hard rule in CI: including any single public header must compile within **0.15 seconds**, and it has to hold even on a Raspberry Pi.
+
+## The catch, and it is a real one
+
+This is not a drop-in `std::` replacement, and Pakkanen does not pretend it is. Nothing in the ecosystem speaks Pystd's types, so every boundary with a library that wants `std::string` or `std::vector` needs a conversion. It builds only on **GCC and Clang, Linux and macOS**: no MSVC, because it leans on pack indexing that MSVC has not shipped. And the post is quiet on the genuinely hard parts of a standard library: exceptions, RTTI, allocators, iterator invalidation contracts, thread-safety guarantees. "One third the size" is partly a comparison against work not yet done.
+
+The committee's own answer to the same pain is `import std;` and modules, which attack header expansion without abandoning conformance. That is the fairer counterweight to hold this against.
+
+Still, the takeaway survives the caveats, and it is worth internalizing even if you never touch Pystd: the slowness people blame on "C++" is often the **library implementation**, not the language, and a hard per-header compile budget is a discipline any team can adopt on its own code today.
+
+---
+
+**Sources**: Jussi Pakkanen, ["Pystd, a standard library similar-ish to the real one"](https://nibblestew.blogspot.com/2026/06/pystd-standard-library-similar-ish.html) (June 2026). Code at [github.com/jpakkane/pystd](https://github.com/jpakkane/pystd).
