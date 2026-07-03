@@ -1,0 +1,44 @@
+---
+title: "A new unit in one line"
+slug: "unit-in-one-line"
+pubDate: 2026-09-09
+author: filip-sajdak
+language: en
+kind: flagship
+series: mp-units
+series_order: 4
+audience: working-cpp
+tags: [mp-units, units, extensibility, cpp23, series]
+summary: "In 1958 MIT students measured the Harvard Bridge in the body lengths of Oliver Smoot: 364.4 smoots plus one ear. Teaching mp-units the smoot, symbol, exact conversion factor and all, takes one line, and conversions, printing, and derived quantities work immediately. Episode 4 of the mp-units series."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+In October 1958, pledges of an MIT fraternity measured the Harvard Bridge by repeatedly laying down their shortest member, Oliver Smoot, and marking the pavement. The result — **364.4 smoots, "plus one ear"** — is still repainted on the bridge today, and one smoot is exactly 5 feet 7 inches: Oliver's height, 1.7018 m. (Smoot later became chairman of ANSI and president of ISO, which is either irony or destiny.)
+
+The smoot is a perfect stress test for a units library, because no library ships it. Real codebases are full of smoots: ticks, lots, pips, sectors, TEUs, story points — units your domain invented. If adding one is painful, the library will be fought instead of used.
+
+## One line
+
+In mp-units, a new unit is a declaration:
+
+```cpp
+inline constexpr struct smoot final
+    : named_unit<"smoot", mag_ratio<17'018, 10'000> * si::metre> {} smoot;
+```
+
+That single line states the unit's name, its printing symbol, and its **exact** magnitude as a rational factor of the metre — no floating-point conversion constant to accumulate error. Everything else is immediately available, because the rest of the library is defined in exactly the same way; the SI units are not special cases baked into the engine.
+
+<GodboltEmbed id="oM6ez3orT" gccOnly title="The smoot: defined in one line, first-class immediately" gcc_subtitle="x86-64 GCC 16.1 · -std=c++23 -O2 · mp-units trunk · runs live" />
+
+The demo defines the smoot, states the bridge's length in it, converts to metres (620.136 m — you can check against the plaque), and then divides by a crossing time to get a speed in km/h. That last step matters most: the brand-new unit composes with the whole system. Derived quantities, kind checking from <PostLink slug="quantity-kinds">episode 2</PostLink>, the affine machinery from <PostLink slug="points-are-not-deltas">episode 3</PostLink> — all of it applies to your unit the moment it exists.
+
+The same mechanism scales up: whole systems of quantities (the SI itself, natural units, IEC data units) are built from these declarations, and your domain's system can sit beside them as an equal.
+
+Next episode: getting the units *out* — `std::format` support and why the unit should travel with the value all the way to the log line.
+
+---
+
+**Sources**: [mp-units documentation: systems of units](https://mpusz.github.io/mp-units/latest/users_guide/framework_basics/systems_of_units/) · MIT Museum on the [Smoot](https://en.wikipedia.org/wiki/Smoot).

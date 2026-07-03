@@ -1,0 +1,37 @@
+---
+title: "The unit travels with the value"
+slug: "unit-safe-text"
+pubDate: 2026-09-23
+author: filip-sajdak
+language: en
+kind: flagship
+series: mp-units
+series_order: 5
+audience: working-cpp
+tags: [mp-units, units, format, cpp23, series]
+summary: "Every codebase has a comment like 'speed in m/s' that stopped being true two refactors ago. mp-units plugs quantities into std::format so the unit is printed from the type, with format specs that address the number and the unit separately. Change the unit and the log line follows. Episode 5 of the mp-units series."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+The cheapest place to find a unit bug is a log file — and the most common way to plant one is a format string. `log("speed: {} m/s", speed)` hard-codes a claim about `speed` that the type system never sees. Two refactors later someone changes the calculation to km/h, the log keeps saying m/s, and the next engineer to read it debugs the wrong thing for an afternoon.
+
+The fix follows from everything this series has built: if the unit is part of the value's type, the *text* should come from the type too.
+
+## std::format, taught physics
+
+mp-units quantities plug straight into `std::format`. The default spec prints value and unit symbol together; a quantity-specific grammar lets you address the **N**umber and **U**nit parts of the output separately when you need precision control:
+
+<GodboltEmbed id="77qvfo44h" gccOnly title="Format strings that cannot lie about units" gcc_subtitle="x86-64 GCC 16.1 · -std=c++23 -O2 · mp-units trunk · runs live" />
+
+Three lines of output, three points. `{}` prints `120 km/h` — the symbol comes from the type, not from the format string, so it *cannot* drift out of sync. `{::N[.2f]}` applies `.2f` to the numeric part only, and the same spec prints `120.00 km/h` or `33.33 m/s` depending on what the value actually is — the precision request and the unit are independent. And the marathon line shows the guarantee that matters in production: convert the quantity, and every piece of text downstream follows automatically.
+
+This closes the loop on the series' theme. <PostLink slug="unit-bug-mars-orbiter">Episode 1</PostLink> showed units protecting arithmetic; this one shows them protecting *communication* — logs, telemetry, UI labels, the places where a human reads the number and acts on it. The Mars Climate Orbiter report singled out exactly that interface, files handed from one team's software to another's, as where the error lived undetected.
+
+One episode left, and it steps back from the code: P3045, the proposal to put all of this into the standard library, who is driving it, and what has to happen between now and C++29.
+
+---
+
+**Sources**: [mp-units documentation: text output](https://mpusz.github.io/mp-units/latest/users_guide/framework_basics/text_output/).
