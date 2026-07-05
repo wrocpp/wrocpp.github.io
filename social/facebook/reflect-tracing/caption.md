@@ -1,7 +1,7 @@
 # reflect_tracing
 
 ## Body
-~200 ns per span, function-address payload, Chrome / Perfetto JSON dump. Engine: Maciek Gajewski's 2021 wro.cpp technique. Reflection contributes the instrumentation layer -- function name, signature, source location -- without `__PRETTY_FUNCTION__` macros. Today: one scope-guard per function. Tomorrow (C++29): `[[trace]]` annotation makes it invisible.
+~200 ns per span, function-address payload, Chrome / Perfetto JSON dump. Engine: Maciek Gajewski's 2021 wro.cpp technique. Reflection contributes the instrumentation layer (function name, signature, source location) without `__PRETTY_FUNCTION__` macros. Today: one scope-guard per function. Tomorrow (C++29): `[[trace]]` annotation makes it invisible.
 
 Series post 24 of 25 in the wro.cpp C++26 reflection arc.
 

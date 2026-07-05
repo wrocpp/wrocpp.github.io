@@ -1,11 +1,11 @@
 # The May 2026 WG21 mailing in five papers (pre-Brno, 116 total)
 
 ## Body
-WG21's pre-Brno mailing landed in early May -- **116 papers**, the largest pre-meeting volume since the C++20 design crunch. Brno meets 8-13 June. Five papers are doing the heavy lifting for the threads worth tracking:
+WG21's pre-Brno mailing landed in early May (**116 papers**, the largest pre-meeting volume since the C++20 design crunch). Brno meets 8-13 June. Five papers are doing the heavy lifting for the threads worth tracking:
 
-**1. P2000R0 - Direction for ISO C++29** (Vandevoorde, Garland, McKenney, Orr, Stroustrup, Wong). The formal direction-setting paper for C++29. **Safety is named as the headline axis** -- the committee adopted the line "C++29 must deliver on the safety story C++26 began but did not finish." Retroactively justifies the "deferred to C++29" framing on every memory-safety toolset page.
+**1. P2000R0 - Direction for ISO C++29** (Vandevoorde, Garland, McKenney, Orr, Stroustrup, Wong). The formal direction-setting paper for C++29. **Safety is named as the headline axis**. The committee adopted the line "C++29 must deliver on the safety story C++26 began but did not finish." Retroactively justifies the "deferred to C++29" framing on every memory-safety toolset page.
 
-**2. D3704R0 - A type-safety profile** (Stroustrup). The next iteration past the C++26 deferral -- re-aligned on top of Dos Reis's P3589 general framework, addressing the Bloomberg P3543 counter-paper critiques head-on: per-rule granularity, structured error reporting, explicit migration paths. **SG23 focus at Brno.**
+**2. D3704R0 - A type-safety profile** (Stroustrup). The next iteration past the C++26 deferral, re-aligned on top of Dos Reis's P3589 general framework, addressing the Bloomberg P3543 counter-paper critiques head-on: per-rule granularity, structured error reporting, explicit migration paths. **SG23 focus at Brno.**
 
 **3. P3970R0 - Profiles and Safety: a call to action** (same co-author group as P2000). 8 pages; the argument: committee owes the community concrete profile timelines, not just direction prose. Names three milestones (SG23 framework R1 at Brno, type-safety profile R1 by autumn, vote at November). Signal that the C++29 deliverable isn't slipping further.
 
@@ -17,7 +17,7 @@ Honourable mentions: std::execution ratification follow-ups, pattern matching (P
 
 Sutter's Brno trip report typically posts within 48 hours of meeting close; wro.cpp will run a Brno trip-report news short in the week of 15 June.
 
-If you ship C++ and haven't taken the 2026 Developer Survey "Lite" on isocpp.org yet -- 10 minutes, the standards committee + major tool vendors all read it directly.
+If you ship C++ and haven't taken the 2026 Developer Survey "Lite" on isocpp.org yet: 10 minutes, the standards committee + major tool vendors all read it directly.
 
 https://wrocpp.github.io/posts/may-2026-wg21-mailing/
 

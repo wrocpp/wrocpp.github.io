@@ -18,11 +18,11 @@ import GodboltEmbed from '../../components/GodboltEmbed.astro';
 > **Library repo:** [github.com/wrocpp/reflect_tracing](https://github.com/wrocpp/reflect_tracing) · v0.1.0 · MIT.
 > **Co-authors:** Filip Sajdak, Maciek Gajewski.
 
-Metrics ([post 23](/posts/reflect-telemetry/)) answer *"how is my service trending?"*. Tracing answers *"what did this one request actually do?"* — a timeline of spans at microsecond resolution, showing which function called which, how long each took, and where time was actually spent.
+Metrics ([post 23](/posts/reflect-telemetry/)) answer *"how is my service trending?"*. Tracing answers *"what did this one request actually do?"*: a timeline of spans at microsecond resolution, showing which function called which, how long each took, and where time was actually spent.
 
-Chrome's trace format (and its Perfetto UI successor) is the de-facto standard. Writing a producer is straightforward; making it **low-overhead enough for production** is the hard part. Six years ago at Wro.cpp #25, Maciek Gajewski showed how: thread-local ring buffers, TSC timestamps, zero-allocation hot path, batched flush. Latency per span: ~200 ns on commodity hardware.
+Chrome's trace format (and its Perfetto UI successor) is the de-facto standard. Writing a producer is straightforward; making it low-overhead enough for production is the hard part. Six years ago at Wro.cpp #25, Maciek Gajewski showed how: thread-local ring buffers, TSC timestamps, zero-allocation hot path, batched flush. Latency per span: ~200 ns on commodity hardware.
 
-`reflect_tracing` wraps that engine. Here's what instrumentation looks like **in C++26 today**:
+`reflect_tracing` wraps that engine. Here's what instrumentation looks like in C++26 today:
 
 ```cpp
 #include <reflect_tracing/trace.hpp>
@@ -44,13 +44,13 @@ int main() {
 
 Open `request_trace.json` in Perfetto UI: a per-thread timeline of every `scope_guard`, nested by call depth, with microsecond-accurate timings.
 
-The `scope_guard<^^Fn>` template takes a reflection of the enclosing function as a non-type template parameter. On construction it records the function's address; on destruction it completes the span. `^^handle_request` is the new piece — we're not passing a string literal (no chance of mismatch), not relying on a macro (no preprocessor involvement), just a compile-time handle to the function.
+The `scope_guard<^^Fn>` template takes a reflection of the enclosing function as a non-type template parameter. On construction it records the function's address; on destruction it completes the span. `^^handle_request` is the new piece. We're not passing a string literal (no chance of mismatch), not relying on a macro (no preprocessor involvement), just a compile-time handle to the function.
 
 ## "Can I move the scope-guard line into the annotation?"
 
 Natural next question: why write that one line at the top of every traced function? Why not just `[[=trace]]` on the declaration and let the compiler inject the scope guard?
 
-**In C++26, you can't.** Annotations in P2996 are *queryable data* — `[[=expr]]` attaches a `std::meta::info` to the declaration that any library can read via `annotation_of_type<T>(^^decl)`. Reading is all they do. There's no mechanism for an annotation to *execute* at declaration time and modify the annotated entity. The only code-generating primitive P2996 ships is `std::meta::define_aggregate`, which synthesises **new class types** from a namespace-scope initialiser — not "insert a statement at the start of this function's body."
+In C++26, you can't. Annotations in P2996 are *queryable data*: `[[=expr]]` attaches a `std::meta::info` to the declaration that any library can read via `annotation_of_type<T>(^^decl)`. Reading is all they do. There's no mechanism for an annotation to *execute* at declaration time and modify the annotated entity. The only code-generating primitive P2996 ships is `std::meta::define_aggregate`, which synthesises new class types from a namespace-scope initialiser, not "insert a statement at the start of this function's body."
 
 The future picture, in C++29:
 
@@ -70,19 +70,19 @@ Response handle_request(Request const& req) {
 }
 ```
 
-That's what `reflect_tracing` eventually looks like. The library's annotation design **is forward-compatible** — the explicit `scope_guard<^^fn>` form shipping today becomes the expansion of a future `[[=trace]]` annotation, and your *instrumented* source doesn't change when you upgrade compilers. Your *instrumentation source* (the one-liner at the top) just goes away.
+That's what `reflect_tracing` eventually looks like. The library's annotation design is forward-compatible. The explicit `scope_guard<^^fn>` form shipping today becomes the expansion of a future `[[=trace]]` annotation, and your *instrumented* source doesn't change when you upgrade compilers. Your *instrumentation source* (the one-liner at the top) just goes away.
 
 Three practical options bridge the gap today:
 
-1. **The explicit `scope_guard<^^Fn>` line above** — one line, honest, works now. This is what the library ships.
-2. **A macro helper** — `TRACE_FN(handle_request)` expands to the `scope_guard` declaration. Duplicates the function name but saves a few keystrokes. `reflect_tracing/trace.hpp` ships `TRACE_FN(name)` for teams who want it.
-3. **`reflect-trace-instrument` — a source-to-source transformer.** A companion binary (built on clang-p2996-as-library, same pattern as `reflect_dx`'s `reflect-pretty`) scans your source for `[[=trace]]`-annotated functions and emits an instrumented copy at build time. Functionally equivalent to P3157's future compile-time injection — just running as a Makefile step instead of a language feature. Ships with the library.
+1. The explicit `scope_guard<^^Fn>` line above. One line, honest, works now. This is what the library ships.
+2. A macro helper. `TRACE_FN(handle_request)` expands to the `scope_guard` declaration. Duplicates the function name but saves a few keystrokes. `reflect_tracing/trace.hpp` ships `TRACE_FN(name)` for teams who want it.
+3. `reflect-trace-instrument`, a source-to-source transformer. A companion binary (built on clang-p2996-as-library, same pattern as `reflect_dx`'s `reflect-pretty`) scans your source for `[[=trace]]`-annotated functions and emits an instrumented copy at build time. Functionally equivalent to P3157's future compile-time injection, just running as a Makefile step instead of a language feature. Ships with the library.
 
 The first option is the default. The third is for teams that really don't want to see the line.
 
 ## Can we get the function name without typing it?
 
-Natural follow-up: even if `[[=trace]]` can't inject code in C++26, can we at least avoid naming the function in the `scope_guard<^^…>` line? There's no `^^this_function` primitive — reflection always names entities explicitly — but two C++-today mechanisms recover the name automatically, each with a different payload story:
+Natural follow-up: even if `[[=trace]]` can't inject code in C++26, can we at least avoid naming the function in the `scope_guard<^^…>` line? There's no `^^this_function` primitive (reflection always names entities explicitly), but two C++-today mechanisms recover the name automatically, each with a different payload story:
 
 ### (a) `std::source_location::current()` default argument
 
@@ -105,11 +105,11 @@ void handle_request() {
 
 `name_` is a runtime variable, initialised at each construction by copying a pointer value that is itself a compile-time constant. ~1 cycle of MOV-immediate-to-register per span. The pointer lives in `.rodata`.
 
-This is the cheapest "no-naming" option that uses only standard C++ — no extensions, no macros.
+This is the cheapest "no-naming" option that uses only standard C++, no extensions or macros.
 
 ### (b) Compile-time NTTP: name as template parameter
 
-If "runtime MOV of a compile-time value" offends your sense of what ought to be compile-time, the name can be promoted to a non-type template parameter — provided you accept either two lines or a macro:
+If "runtime MOV of a compile-time value" offends your sense of what ought to be compile-time, the name can be promoted to a non-type template parameter, provided you accept either two lines or a macro:
 
 ```cpp
 template <char const* Name>
@@ -126,15 +126,15 @@ void handle_request() {
 }
 ```
 
-`std::source_location::current()` is `consteval`; its result is a constant expression at the call site. `.function_name()` returns a pointer to a string *literal* — which is not directly usable as an NTTP (the "pointer to subobject of a string literal" rule). Wrap in `std::define_static_string` to promote the value into compile-time-stable storage, which *is* a valid NTTP. The `scope_guard_named<_fn>` instantiation is specialised per unique name — typically one per traced function, which is fine.
+`std::source_location::current()` is `consteval`; its result is a constant expression at the call site. `.function_name()` returns a pointer to a string *literal*, which is not directly usable as an NTTP (the "pointer to subobject of a string literal" rule). Wrap in `std::define_static_string` to promote the value into compile-time-stable storage, which *is* a valid NTTP. The `scope_guard_named<_fn>` instantiation is specialised per unique name, typically one per traced function, which is fine.
 
-Cost: **0 cycles of naming work** (the `Name` is in the instruction stream wherever it's needed), but **one template instantiation per unique name**. For a typical service with O(100) traced functions, this is invisible. For O(10k) traced functions, code-size effects may matter; measure before pre-optimising.
+Cost: 0 cycles of naming work (the `Name` is in the instruction stream wherever it's needed), but one template instantiation per unique name. For a typical service with O(100) traced functions, this is invisible. For O(10k) traced functions, code-size effects may matter; measure before pre-optimising.
 
 The `AUTO_SCOPE()` macro wraps this in a single line, using `__LINE__` to give the `static constexpr` a unique name within the translation unit.
 
-### (c) Maciek's labels-as-values — no name at all
+### (c) Maciek's labels-as-values: no name at all
 
-The "no name anywhere, ever, not even at dump time" option — as originally demonstrated at Wro.cpp #25 in 2021. Takes a per-call-site label address via GCC's `&&label` extension:
+The "no name anywhere, ever, not even at dump time" option, as originally demonstrated at Wro.cpp #25 in 2021. Takes a per-call-site label address via GCC's `&&label` extension:
 
 ```cpp
 #define TRACE()                                     \
@@ -147,46 +147,46 @@ void handle_request() {
 }
 ```
 
-Payload is purely an 8-byte address — same as Form 1 — and *includes the line number within the function* (because the label is at a specific source position). Resolution at dump time via `addr2line` / `dwarf++`. This is the tightest hot path of the four.
+Payload is purely an 8-byte address (same as Form 1) and *includes the line number within the function* (because the label is at a specific source position). Resolution at dump time via `addr2line` / `dwarf++`. This is the tightest hot path of the four.
 
 ### Picking a form
 
 | Form | Name at call site | Hot-path cost | Payload | Requires |
 |---|---|---|---|---|
-| **`scope_guard<^^Fn>`** | One name, typed | ~1 cycle + `now_ns()` | 8-byte function address | P2996 reflection only |
-| **`auto_scope` (source_location default arg)** | — | ~1 cycle + `now_ns()` | 8-byte runtime-copied name pointer | Standard C++20 |
-| **`scope_guard_named<_fn>` (2 lines)** | — | 0 cycles + `now_ns()` | 8-byte NTTP name pointer | `define_static_string` (C++26) |
-| **`AUTO_SCOPE()` macro** | — | 0 cycles + `now_ns()` | Same as above | `define_static_string` + macro |
-| **`TRACE()` macro (Maciek)** | — | 0 cycles + `now_ns()` | 8-byte label address (per call site) | GCC/Clang `&&label` extension |
+| `scope_guard<^^Fn>` | One name, typed | ~1 cycle + `now_ns()` | 8-byte function address | P2996 reflection only |
+| `auto_scope` (source_location default arg) | none | ~1 cycle + `now_ns()` | 8-byte runtime-copied name pointer | Standard C++20 |
+| `scope_guard_named<_fn>` (2 lines) | none | 0 cycles + `now_ns()` | 8-byte NTTP name pointer | `define_static_string` (C++26) |
+| `AUTO_SCOPE()` macro | none | 0 cycles + `now_ns()` | Same as above | `define_static_string` + macro |
+| `TRACE()` macro (Maciek) | none | 0 cycles + `now_ns()` | 8-byte label address (per call site) | GCC/Clang `&&label` extension |
 
 All five emit a per-call-site register entry so the dump step can map key → display name uniformly; the difference is what the "key" is (a function address vs. a label address vs. a static-string pointer).
 
-**For a mixed codebase**, `reflect_tracing` ships all of them and documents the trade-offs. Default is Form 1 (`scope_guard<^^Fn>`) because it's the only form that composes with the reflection-driven filter / arg-capture annotations coming in C++29 — but every form produces a valid trace, and picking the right one per function is a legitimate codebase-hygiene decision rather than a library constraint.
+For a mixed codebase, `reflect_tracing` ships all of them and documents the trade-offs. Default is Form 1 (`scope_guard<^^Fn>`) because it's the only form that composes with the reflection-driven filter / arg-capture annotations coming in C++29, but every form produces a valid trace, and picking the right one per function is a legitimate codebase-hygiene decision rather than a library constraint.
 
 The example [`trace_emit.cpp`](https://github.com/wrocpp/cpp26-reflection-examples/blob/main/posts/24-reflect-tracing/examples/trace_emit.cpp) exercises all four forms side-by-side and shows the dump showing each one's resolved name.
 
 ## The engine (Maciek's technique, recapped)
 
-The critical design choice Maciek drove home in the 2021 talk: **the hot path records a function address, not a name.**
+The critical design choice Maciek drove home in the 2021 talk: the hot path records a function address, not a name.
 
 Per thread:
-- A fixed-size ring buffer of `span_record` entries — typically a few MB, sized once at startup.
+- A fixed-size ring buffer of `span_record` entries, typically a few MB, sized once at startup.
 - A write pointer incremented with relaxed atomics (single-writer-per-thread → no contention).
 
 On span enter/exit:
 1. Read TSC (`__rdtsc()` on x86, `CNTVCT_EL0` on arm64).
-2. Write a `span_record { void* addr; uint64_t tsc_enter; uint64_t tsc_exit; }` — **24 bytes**, pure POD, zero string work.
+2. Write a `span_record { void* addr; uint64_t tsc_enter; uint64_t tsc_exit; }`: 24 bytes, pure POD, zero string work.
 3. Advance the write pointer.
 
-Total: **~200 ns per span** at x86 on commodity hardware (measured by Maciek in 2021; still holds). Name resolution, TSC→ns conversion, thread-ID labelling, all of it — happens *at dump time*, not in the hot path.
+Total: ~200 ns per span at x86 on commodity hardware (measured by Maciek in 2021; still holds). Name resolution, TSC→ns conversion, and thread-ID labelling all happen *at dump time*, not in the hot path.
 
 ### Post-processing: address → name via DWARF
 
 The ring-buffer payload is just an 8-byte function address. To turn that into the span name `"handle_request"` you resolve it against the binary's debug info. Three tool options:
 
-- **`addr2line`** — lazy option, runs as a subprocess, piping addresses in and names out.
-- **[`dwarf++` / `elf++`](https://github.com/aclements/libelfin)** — C++ libraries that parse DWARF / ELF in-process. Faster, no subprocess, no `popen`.
-- **`dladdr`** — libc fallback; gives the immediate symbol but not full source location.
+- `addr2line`: lazy option, runs as a subprocess, piping addresses in and names out.
+- [`dwarf++` / `elf++`](https://github.com/aclements/libelfin): C++ libraries that parse DWARF / ELF in-process. Faster, no subprocess, no `popen`.
+- `dladdr`: libc fallback; gives the immediate symbol but not full source location.
 
 Any of them run *after* the ring buffer is drained. The hot path is 24 bytes of POD writes; everything else is deferred.
 
@@ -201,7 +201,7 @@ Any of them run *after* the ring buffer is drained. The hot path is 24 bytes of 
 
 A production tracer needs two kill switches:
 
-### Compile-time — `-DREFLECT_TRACING_DISABLED=1`
+### Compile-time: `-DREFLECT_TRACING_DISABLED=1`
 
 ```cpp
 #if REFLECT_TRACING_DISABLED
@@ -213,9 +213,9 @@ struct scope_guard { /* full impl */ };
 #endif
 ```
 
-With the flag set, `scope_guard<^^Fn>` is an empty class. The constructor + destructor are trivial no-ops that the optimiser removes entirely. Zero bytes, zero cycles, zero binary-size impact.
+With the flag set, `scope_guard<^^Fn>` is an empty class. The constructor + destructor are trivial no-ops that the optimiser removes entirely. It adds zero bytes and zero cycles, with no binary-size impact.
 
-### Runtime — `tracing::enabled = false`
+### Runtime: `tracing::enabled = false`
 
 ```cpp
 inline thread_local bool enabled = true;
@@ -232,12 +232,12 @@ Typical shape: default off in release builds, flipped on for specific request ty
 
 ## Reflection's role
 
-Note what reflection does *not* do: it doesn't make the hot path cheaper. The 24-byte payload is the same with or without reflection — address + timestamps. Reflection's contribution is the **instrumentation layer** above that, plus a few quality-of-life wins:
+Note what reflection does *not* do: it doesn't make the hot path cheaper. The 24-byte payload is the same with or without reflection: address + timestamps. Reflection's contribution is the instrumentation layer above that, plus a few quality-of-life wins:
 
-1. **Auto-record the address.** `&[:Fn:]` in the `scope_guard` constructor splices the function pointer — same 8 bytes as `&handle_request` but without needing to name the function at every call site.
-2. **No stale name strings in the binary.** Because we record the address and resolve via DWARF at dump time, we don't need `"handle_request"` stored somewhere in `.rodata`. DWARF has it already, for every function, for free.
-3. **Compile-time filters become data.** An annotation like `[[=trace::verbose]]` on the declaration gets consumed by `if constexpr` in the instrumentation layer — compiled out of release builds without macros.
-4. **Arguments will be inspectable (today partial, fully in C++29).** With `std::meta::parameters_of(^^Fn)` we can identify specific parameters to capture alongside the span. In C++26 the user has to pass them to a record function explicitly; C++29 injection will let an annotation drive it.
+1. Auto-record the address. `&[:Fn:]` in the `scope_guard` constructor splices the function pointer, the same 8 bytes as `&handle_request` but without needing to name the function at every call site.
+2. No stale name strings in the binary. Because we record the address and resolve via DWARF at dump time, we don't need `"handle_request"` stored somewhere in `.rodata`. DWARF has it already, for every function, for free.
+3. Compile-time filters become data. An annotation like `[[=trace::verbose]]` on the declaration gets consumed by `if constexpr` in the instrumentation layer, compiled out of release builds without macros.
+4. Arguments will be inspectable (today partial, fully in C++29). With `std::meta::parameters_of(^^Fn)` we can identify specific parameters to capture alongside the span. In C++26 the user has to pass them to a record function explicitly; C++29 injection will let an annotation drive it.
 
 ## Comparing to the status quo
 
@@ -245,12 +245,12 @@ Note what reflection does *not* do: it doesn't make the hot path cheaper. The 24
 |---|---|---|---|---|
 | `printf` / `spdlog` | Manual | μs | Variable | Manual |
 | `TRACE_SCOPE()` macro | Manual | ~200 ns | Yes | Requires second macro |
-| gperftools | Manual | μs | No | — |
+| gperftools | Manual | μs | No | none |
 | Perfetto SDK (Chrome) | Manual API | ~500 ns | Yes | Yes |
-| **reflect_tracing (C++26)** | **`scope_guard<^^Fn>` line** | **~200 ns** | **Yes** | **Explicit param captures** |
-| **reflect_tracing (C++29, P3157)** | **`[[=trace]]` annotation** | **~200 ns** | **Yes** | **Fully automatic** |
+| reflect_tracing (C++26) | `scope_guard<^^Fn>` line | ~200 ns | Yes | Explicit param captures |
+| reflect_tracing (C++29, P3157) | `[[=trace]]` annotation | ~200 ns | Yes | Fully automatic |
 
-The engine is not new (Maciek shipped this technique in 2021). What C++26 adds is the **reflection-driven instrumentation layer** — address capture via `&[:Fn:]`, static dispatch on annotations, `^^Fn` as a first-class NTTP. What C++29 will add is the final boilerplate collapse — turning the `scope_guard` line into an annotation. The library stays useful today either way; upgrading to C++29 deletes code from your call sites, not from your library.
+The engine is not new (Maciek shipped this technique in 2021). What C++26 adds is the reflection-driven instrumentation layer: address capture via `&[:Fn:]`, static dispatch on annotations, `^^Fn` as a first-class NTTP. What C++29 will add is the final boilerplate collapse, turning the `scope_guard` line into an annotation. The library stays useful today either way; upgrading to C++29 deletes code from your call sites, not from your library.
 
 ## A concrete trace
 
@@ -278,21 +278,21 @@ Perfetto's flamegraph view turns this into a million-span zoomable timeline. Use
 
 Under [github.com/wrocpp/reflect_tracing](https://github.com/wrocpp/reflect_tracing):
 
-- `tracing::scope_guard<^^Fn>` — explicit RAII guard (the C++26-today form).
-- `TRACE_FN(name)` — optional macro helper for teams that prefer the short form.
-- `reflect-trace-instrument` — source-to-source transformer that rewrites `[[=trace]]`-annotated functions with the scope guard inserted at body start. Pre-P3157 fill-in.
-- `tracing::enabled` — thread-local runtime kill switch.
-- `-DREFLECT_TRACING_DISABLED=1` — compile-time kill switch; the entire guard becomes empty.
-- `tracing::start(filename)` / `tracing::flush()` — lifecycle.
-- `[[=trace]]` — *queryable* annotation today (consumed by `reflect-trace-instrument`); *callable* annotation in a future C++29 minor release (P3157 injection).
+- `tracing::scope_guard<^^Fn>`: explicit RAII guard (the C++26-today form).
+- `TRACE_FN(name)`: optional macro helper for teams that prefer the short form.
+- `reflect-trace-instrument`: source-to-source transformer that rewrites `[[=trace]]`-annotated functions with the scope guard inserted at body start. Pre-P3157 fill-in.
+- `tracing::enabled`: thread-local runtime kill switch.
+- `-DREFLECT_TRACING_DISABLED=1`: compile-time kill switch; the entire guard becomes empty.
+- `tracing::start(filename)` / `tracing::flush()`: lifecycle.
+- `[[=trace]]`: *queryable* annotation today (consumed by `reflect-trace-instrument`); *callable* annotation in a future C++29 minor release (P3157 injection).
 - **Hot-path payload**: 24 bytes (function address + enter/exit timestamps). Name resolution happens at dump time via dwarf++ / addr2line.
 - **Output formats**: Chrome-trace JSON (default), OTLP span protobuf, ftrace-compatible binary.
 - **Benchmark**: ~200 ns per span when enabled; ~2 ns when runtime-disabled; 0 ns when compile-time-disabled.
 
 Credits: the ring-buffer core is Maciek Gajewski's; the reflection + annotation layer is Filip's; both of us collaborate on the APIs and OTLP exporter. See [Wro.cpp #25 (2021)](https://www.youtube.com/watch?v=6NWmTDdKdmI) for the original low-overhead tracing talk that kicked this off.
 
-## What's next
+## Next in the series
 
-- **[Post 25 — reflect_soa](/posts/reflect-soa/)** — AoS → SoA → AoSoA, picked by benchmark.
+- [Post 25, reflect_soa](/posts/reflect-soa/): AoS → SoA → AoSoA, picked by benchmark.
 - Companion Monday short: *"Reading a Perfetto trace for the first time"*.
 - Companion meetup (Wro.cpp 2027): a joint live-demo with Maciek profiling a real service.

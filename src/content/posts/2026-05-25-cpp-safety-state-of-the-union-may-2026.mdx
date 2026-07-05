@@ -15,13 +15,13 @@ import PostLink from '../../components/PostLink.astro';
 
 C++ in May 2026 has four conversations running at once.
 
-Regulators are mandating memory-safety roadmaps for shipped products. The standards committee is fighting over how to respond. C++26 shipped three pieces of the answer but deferred the headline one. The big industry players have already deployed library hardening at hundreds-of-millions-of-LOC scale and have the numbers to prove it works. **None of these threads talk to each other in public.** This essay wires them.
+Regulators are mandating memory-safety roadmaps for shipped products. The standards committee is fighting over how to respond. C++26 shipped three pieces of the answer but deferred the headline one. The big industry players have already deployed library hardening at hundreds-of-millions-of-LOC scale and have the numbers to prove it works. None of these threads talk to each other in public. This essay wires them.
 
-Pre-Brno (8-13 June 2026) reading. The companion piece is the [Modern C++ Reading List 2026](/toolset/modern-cpp-reading-list-2026/) -- the quarterly-refreshed index of the canonical-quality sources cited here plus 20 more I had to cut for length.
+Pre-Brno (8-13 June 2026) reading. The companion piece is the [Modern C++ Reading List 2026](/toolset/modern-cpp-reading-list-2026/), a quarterly-refreshed index of the canonical-quality sources cited here plus 20 more I had to cut for length.
 
 ## The regulatory pressure
 
-The C++ safety story in 2026 starts outside C++. The U.S. Cybersecurity and Infrastructure Security Agency (CISA) directive said: by **January 1, 2026**, manufacturers shipping products written in memory-unsafe languages should have published a memory-safety roadmap, or be in transition to a memory-safe alternative. The EU Cyber Resilience Act puts comparable obligations on software placed on the EU market. Government procurement language in both jurisdictions follows the directives.
+The C++ safety story in 2026 starts outside C++. The U.S. Cybersecurity and Infrastructure Security Agency (CISA) directive said: by January 1, 2026, manufacturers shipping products written in memory-unsafe languages should have published a memory-safety roadmap, or be in transition to a memory-safe alternative. The EU Cyber Resilience Act puts comparable obligations on software placed on the EU market. Government procurement language in both jurisdictions follows the directives.
 
 That deadline has now passed. Vendors who didn't publish a roadmap are out of compliance with the policy framing, even if the enforcement teeth are still being cut.
 
@@ -31,61 +31,61 @@ This is the context for everything that follows. Without it, the committee fight
 
 ## The committee answer
 
-At Hagenberg (Feb 2025), SG23 (the safety/security study group) took a poll on direction. **19 votes for Profiles. 9 for Safe C++. 11 for both.** That's the moment the committee chose its lane: incremental profiles layered on top of existing C++, not a Rust-style borrow-checker bolted onto the side.
+At Hagenberg (Feb 2025), SG23 (the safety/security study group) took a poll on direction. 19 votes for Profiles, 9 for Safe C++, 11 for both. That's the moment the committee chose its lane: incremental profiles layered on top of existing C++, not a Rust-style borrow-checker bolted onto the side.
 
-The losing side has not been quiet about it. The Safe C++ Extensions proposal (Sean Baxter's work, layering borrow-checking onto Circle) had real implementation and real proof it works -- it just doesn't compose with the existing C++ ecosystem the way profiles do. ([The Register's coverage](https://www.theregister.com/2025/09/16/safe_c_proposal_ditched/) and [InfoWorld](https://www.infoworld.com/article/4065702/safe-c-proposal-for-memory-safety-flames-out.html) are the best public accounts.) Cor3ntin's *"Legacy Safety: The Wroclaw C++ Meeting"* post is the most honest community-side write-up; the fact that this conversation happened in Wroclaw is why wro.cpp is writing this essay.
+The losing side has not been quiet about it. The Safe C++ Extensions proposal (Sean Baxter's work, layering borrow-checking onto Circle) had real implementation and real proof it works. It just doesn't compose with the existing C++ ecosystem the way profiles do. ([The Register's coverage](https://www.theregister.com/2025/09/16/safe_c_proposal_ditched/) and [InfoWorld](https://www.infoworld.com/article/4065702/safe-c-proposal-for-memory-safety-flames-out.html) are the best public accounts.) Cor3ntin's *"Legacy Safety: The Wroclaw C++ Meeting"* post is the most honest community-side write-up; the fact that this conversation happened in Wroclaw is why wro.cpp is writing this essay.
 
 What shipped in C++26 (Croydon, March 2026):
 
-- **[P2900R14 Contracts](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p2900r14.pdf)** -- four evaluation semantics (`ignore` / `observe` / `enforce` / `quick-enforce`), per-program / per-TU / per-assertion granularity, a global replaceable contract-violation handler. The vote was the contested one: 114-12-3.
-- **[P3471R4 Hardened standard library](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3471r4.html)** (Varlamov + Dionne) -- the first library standard that's a *consumer* of Contracts. `vector::operator[]` OOB, null `unique_ptr` deref, `string` overruns become contract violations when the implementation runs in hardened mode.
-- **[P2996R12 Reflection](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p2996r12.pdf)** -- the substrate for user-library checks that the committee won't get around to standardising in time. wro.cpp's reflection-arc series ships 25 posts of pattern documentation for exactly this case.
+- [P2900R14 Contracts](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p2900r14.pdf): four evaluation semantics (`ignore` / `observe` / `enforce` / `quick-enforce`), per-program / per-TU / per-assertion granularity, a global replaceable contract-violation handler. The vote was the contested one: 114-12-3.
+- [P3471R4 Hardened standard library](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3471r4.html) (Varlamov + Dionne): the first library standard that's a *consumer* of Contracts. `vector::operator[]` OOB, null `unique_ptr` deref, `string` overruns become contract violations when the implementation runs in hardened mode.
+- [P2996R12 Reflection](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p2996r12.pdf): the substrate for user-library checks that the committee won't get around to standardising in time. wro.cpp's reflection-arc series ships 25 posts of pattern documentation for exactly this case.
 
-What didn't ship -- the headline: **`[[profiles::enforce]]` was deferred to C++29.** The framework lives in P3589 (Dos Reis); the type-safety profile lives in D3984R0 (Stroustrup, Jan 2026); the timeline commitment lives in [P3970R0 "Profiles and Safety: a call to action"](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3970r0.pdf) (Vandevoorde + Garland + McKenney + Orr + Stroustrup + Wong, Jan 2026). [P5000R1 "Direction for ISO C++29"](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p5000r1.pdf) (R0 Feb 2026, revised May 2026, same author group) names safety as the headline C++29 axis -- effectively the committee leadership defending the new timeline against further slippage.
+What didn't ship is the headline: `[[profiles::enforce]]` was deferred to C++29. The framework lives in P3589 (Dos Reis); the type-safety profile lives in D3984R0 (Stroustrup, Jan 2026); the timeline commitment lives in [P3970R0 "Profiles and Safety: a call to action"](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3970r0.pdf) (Vandevoorde + Garland + McKenney + Orr + Stroustrup + Wong, Jan 2026). [P5000R1 "Direction for ISO C++29"](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p5000r1.pdf) (R0 Feb 2026, revised May 2026, same author group) names safety as the headline C++29 axis, effectively the committee leadership defending the new timeline against further slippage.
 
 ## What the industry actually deployed
 
 While the committee deliberated, the industry shipped.
 
-**Chrome / Chromium.** Memory bugs are [70% of all high-severity security flaws](https://www.chromium.org/Home/chromium-security/memory-safety/) in Chromium. Chrome's response: library hardening (Abseil + LLVM libc++ assumption-check flags), pointer discipline enforced via LLVM plugins + presubmit checks, MiraclePtr (the smart-pointer that quarantines freed memory). Google reports MiraclePtr **cut use-after-free bugs by 57%**. Sanitizers (ASan / MSan / UBSan / CFI / libFuzzer / AFL) run on every nightly. V8 ships a [heap-sandbox in beta](https://thenewstack.io/google-retrofits-spatial-memory-safety-onto-c/). [Project Naptime](https://thenewstack.io/google-retrofits-spatial-memory-safety-onto-c/) uses LLMs to hunt vulnerabilities at a scale humans can't match.
+Chrome / Chromium. Memory bugs are [70% of all high-severity security flaws](https://www.chromium.org/Home/chromium-security/memory-safety/) in Chromium. Chrome's response: library hardening (Abseil + LLVM libc++ assumption-check flags), pointer discipline enforced via LLVM plugins + presubmit checks, MiraclePtr (the smart-pointer that quarantines freed memory). Google reports MiraclePtr cut use-after-free bugs by 57%. Sanitizers (ASan / MSan / UBSan / CFI / libFuzzer / AFL) run on every nightly. V8 ships a [heap-sandbox in beta](https://thenewstack.io/google-retrofits-spatial-memory-safety-onto-c/). [Project Naptime](https://thenewstack.io/google-retrofits-spatial-memory-safety-onto-c/) uses LLMs to hunt vulnerabilities at a scale humans can't match.
 
-**Android.** Memory bugs are [over 60% of high-severity vulnerabilities](https://source.android.com/docs/security/test/memory-safety) and *millions* of user-visible crashes. Android 12+ ships systematic mitigations. The platform's commitment to MTE (ARMv8.5 Memory Tagging Extension) is now production -- Pixel 8 and later ship it on by default for system services.
+Android. Memory bugs are [over 60% of high-severity vulnerabilities](https://source.android.com/docs/security/test/memory-safety) and *millions* of user-visible crashes. Android 12+ ships systematic mitigations. The platform's commitment to MTE (ARMv8.5 Memory Tagging Extension) is now production. Pixel 8 and later ship it on by default for system services.
 
-**Apple / WebKit.** Chandler Carruth credits [Apple's libc++ safe-buffers work](https://www.chromium.org/Home/chromium-security/memory-safety/) as the LLVM-ecosystem-side tipping point: *"all the folks at Apple driving the LLVM RFC for safe buffers in C++ did an amazing job here of getting the LLVM ecosystem, both Clang and libc++, to have solid tools in this space at last."* The result: bounds-safety checks affordable enough to be on by default.
+Apple / WebKit. Chandler Carruth credits [Apple's libc++ safe-buffers work](https://www.chromium.org/Home/chromium-security/memory-safety/) as the LLVM-ecosystem-side tipping point: *"all the folks at Apple driving the LLVM RFC for safe buffers in C++ did an amazing job here of getting the LLVM ecosystem, both Clang and libc++, to have solid tools in this space at last."* The result: bounds-safety checks affordable enough to be on by default.
 
-**The deployment economics.** P3471's hardened-stdlib report (cited by Varlamov + Dionne) puts Google's library hardening at **0.3% perf cost across hundreds of millions of LOC, 1000+ bugs found at scale.** That number is the single most important data point in the whole debate. Compiler-side checks aren't a niche debugging mode any more -- they're affordable enough to run universally, in production, on the customer's machine.
+The deployment economics. P3471's hardened-stdlib report (cited by Varlamov + Dionne) puts Google's library hardening at 0.3% perf cost across hundreds of millions of LOC, 1000+ bugs found at scale. That number is the single most important data point in the whole debate. Compiler-side checks aren't a niche debugging mode any more. They're affordable enough to run universally, in production, on the customer's machine.
 
-**Hardware.** ARM's MTE ships in Pixel. CHERI (Capability Hardware Enhanced RISC Instructions) is in research production at Cambridge + Microsoft. Both reframe memory safety as a hardware enforcement problem the language doesn't have to solve alone.
+Hardware. ARM's MTE ships in Pixel. CHERI (Capability Hardware Enhanced RISC Instructions) is in research production at Cambridge + Microsoft. Both reframe memory safety as a hardware enforcement problem the language doesn't have to solve alone.
 
 ## What to do today
 
 While the C++29 profile attribute lands (eventually), the five things to wire RIGHT NOW are all in wro.cpp's toolset cluster:
 
-1. **Flip the hardened-stdlib macro** -- one CMake line per implementation; the Google deployment data is the case. See <PostLink slug="hardened-stdlib">hardened-stdlib</PostLink>.
-2. **Wire ASan + UBSan in CI** -- the matrix mindset (ASan+UBSan default; dedicated TSan and MSan lanes; libFuzzer + SanitizerCoverage for trust boundaries). See <PostLink slug="sanitizers-2026">sanitizers-2026</PostLink>.
-3. **Enable lifetime warnings + use scope guards** -- `[[clang::lifetimebound]]` + GCC's `-Wdangling-*` + the [C++ Core Guidelines lifetime profile](https://github.com/isocpp/CppCoreGuidelines). See <PostLink slug="lifetime-safety-2026">lifetime-safety-2026</PostLink>.
-4. **Author contracts at module boundaries** -- start with serialization, FFI, untrusted input. Use `observe` in canary, `enforce` / `quick-enforce` in production. See <PostLink slug="memory-safety-cpp26-and-beyond">memory-safety-cpp26-and-beyond</PostLink>.
-5. **Define the testing matrix** -- example-based + property-based + coverage-guided fuzzing + differential testing, ordered by what each catches. See <PostLink slug="testing-for-safety-2026">testing-for-safety-2026</PostLink>.
+1. **Flip the hardened-stdlib macro**: one CMake line per implementation; the Google deployment data is the case. See <PostLink slug="hardened-stdlib">hardened-stdlib</PostLink>.
+2. **Wire ASan + UBSan in CI**: the matrix mindset (ASan+UBSan default; dedicated TSan and MSan lanes; libFuzzer + SanitizerCoverage for trust boundaries). See <PostLink slug="sanitizers-2026">sanitizers-2026</PostLink>.
+3. **Enable lifetime warnings + use scope guards**: `[[clang::lifetimebound]]` + GCC's `-Wdangling-*` + the [C++ Core Guidelines lifetime profile](https://github.com/isocpp/CppCoreGuidelines). See <PostLink slug="lifetime-safety-2026">lifetime-safety-2026</PostLink>.
+4. **Author contracts at module boundaries**: start with serialization, FFI, untrusted input. Use `observe` in canary, `enforce` / `quick-enforce` in production. See <PostLink slug="memory-safety-cpp26-and-beyond">memory-safety-cpp26-and-beyond</PostLink>.
+5. **Define the testing matrix**: example-based + property-based + coverage-guided fuzzing + differential testing, ordered by what each catches. See <PostLink slug="testing-for-safety-2026">testing-for-safety-2026</PostLink>.
 
-These five steps are independent and cumulative. Project teams that run all five report the bug-class distribution shifts from "memory bugs everywhere" to "logic bugs in domain code" -- which is the right kind of bug to be fixing.
+These five steps are independent and cumulative. Project teams that run all five report the bug-class distribution shifts from "memory bugs everywhere" to "logic bugs in domain code," which is the right kind of bug to be fixing.
 
 ## The reading list
 
-Everything cited above plus another 20 pieces I had to cut for length lives in the new toolset entry: **[Modern C++ Reading List 2026](/toolset/modern-cpp-reading-list-2026/)**. Six sections (the committee's papers / talks worth your hour / industry deployment reports / blog posts / wro.cpp coverage / regulatory references), each with editorial framing + 3-5 annotated links. Quarterly refresh cadence -- the page will outlive this essay.
+Everything cited above plus another 20 pieces I had to cut for length lives in the new toolset entry: [Modern C++ Reading List 2026](/toolset/modern-cpp-reading-list-2026/). Six sections (the committee's papers / talks worth your hour / industry deployment reports / blog posts / wro.cpp coverage / regulatory references), each with editorial framing + 3-5 annotated links. The page refreshes quarterly and will outlive this essay.
 
 ## What to watch at Brno (8-13 June 2026)
 
 Three threads to watch as the next WG21 meeting approaches:
 
-- **SG23 focus on D3984R0 type-safety profile R1.** P3970R0 names three milestones: SG23 framework R1 at Brno, type-safety profile R1 by autumn, vote at the November meeting. If those slip, the C++29 timeline slips with them.
-- **P4003R0 "Coroutines for I/O"** (Liard + Baker + Vorzacek) gets its **first LEWG review at Brno.** Doesn't promise C++29; doesn't promise to look like Lewis Baker's libunifex; does promise to stop reinventing socket-loop integration.
+- SG23 focus on D3984R0 type-safety profile R1. P3970R0 names three milestones: SG23 framework R1 at Brno, type-safety profile R1 by autumn, vote at the November meeting. If those slip, the C++29 timeline slips with them.
+- P4003R0 "Coroutines for I/O" (Liard + Baker + Vorzacek) gets its first LEWG review at Brno. Doesn't promise C++29; doesn't promise to look like Lewis Baker's libunifex; does promise to stop reinventing socket-loop integration.
 - **P3294 token injection** continues iterating. The reflection arc's "Where this is heading" sections all gesture at this; the May 2026 mailing revision refined ergonomics and updated examples.
 
 The wro.cpp news short <PostLink slug="may-2026-wg21-mailing">may-2026-wg21-mailing</PostLink> (fires Wed 2026-05-27) covers all three in more depth. A Brno trip-report news short is planned for the week of 15 June.
 
 ## The wro.cpp angle
 
-Cor3ntin's "Legacy Safety: The Wroclaw C++ Meeting" post made Wroclaw the un-official venue for the legacy-safety conversation in late 2025 -- the moment several committee members publicly worked through how to defend C++'s installed base against the regulatory pressure without breaking the language. **wro.cpp is the Wroclaw C++ community.** This essay + the reading-list toolset entry is our contribution to keeping that conversation visible, honest, and useful.
+Cor3ntin's "Legacy Safety: The Wroclaw C++ Meeting" post made Wroclaw the un-official venue for the legacy-safety conversation in late 2025. That was the moment several committee members publicly worked through how to defend C++'s installed base against the regulatory pressure without breaking the language. wro.cpp is the Wroclaw C++ community. This essay + the reading-list toolset entry is our contribution to keeping that conversation visible, honest, and useful.
 
 If you want to keep up: subscribe to [the RSS feed](/rss.xml), join us on [the wro.cpp Slack](https://wrocpp.slack.com), and read the [reading list](/toolset/modern-cpp-reading-list-2026/). The next Brno trip-report short will land the week of 15 June.
 

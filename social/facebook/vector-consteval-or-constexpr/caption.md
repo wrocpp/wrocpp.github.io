@@ -3,7 +3,7 @@
 ## Body
 A reader asked us in Slack: "Is std::vector consteval and not constexpr?"
 
-Short answer: no. std::vector is constexpr-friendly since C++20. But the intuition behind the question is right -- vector values can only exist during constant evaluation, never as namespace-scope variables. Today's post unpacks the constexpr / consteval / constinit trio, the transient-allocation rule that gates everything, and the std::define_static_array (P3491) "promote" step that turns a one-shot consteval value into static-storage data your runtime program can iterate.
+Short answer: no. std::vector is constexpr-friendly since C++20. But the intuition behind the question is right. Vector values can only exist during constant evaluation, never as namespace-scope variables. Today's post unpacks the constexpr / consteval / constinit trio, the transient-allocation rule that gates everything, and the std::define_static_array (P3491) "promote" step that turns a one-shot consteval value into static-storage data your runtime program can iterate.
 
 Runnable godbolt with a one-line toggle between the two specifiers included.
 

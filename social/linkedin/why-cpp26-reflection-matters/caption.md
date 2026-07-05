@@ -3,7 +3,7 @@
 ## Body
 A 40-line JSON serializer for any aggregate. No macros. No code-gen. No hand-written `to_json` per type.
 
-That is what C++26 static reflection (P2996) makes possible -- and it is the opening teaser of the new wro.cpp series I am starting today.
+That is what C++26 static reflection (P2996) makes possible. It is the opening teaser of the new wro.cpp series I am starting today.
 
 For 25 years, C++ engineers have simulated reflection through templates, Boost.Hana, and code-generation glue scripts. With `^^T` and `template for` landing in the standard, the same compile-time walk that produces JSON also drops out YAML, XML, and JSON Schema. One serializer, every wire format, zero registration ceremony.
 

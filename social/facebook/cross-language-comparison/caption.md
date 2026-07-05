@@ -1,7 +1,7 @@
 # C++26 reflection across seven languages
 
 ## Body
-Five canonical reflection tasks (JSON serialize, enum -- string, CLI, ORM row, mocks) lined up across Rust, C#, Java, TypeScript, Go, Python, and C++26. The vocabulary is identical everywhere -- C++26 just makes the pattern native. What makes C++ distinctive: every dispatch resolves at compile time; binaries carry no per-field attribute table.
+Five canonical reflection tasks (JSON serialize, enum to string, CLI, ORM row, mocks) lined up across Rust, C#, Java, TypeScript, Go, Python, and C++26. The vocabulary is identical everywhere. C++26 just makes the pattern native. What makes C++ distinctive: every dispatch resolves at compile time; binaries carry no per-field attribute table.
 
 Series post 18 of 25 in the wro.cpp C++26 reflection arc.
 
