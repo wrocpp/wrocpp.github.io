@@ -16,11 +16,11 @@ draft: false
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 import PostLink from '../../components/PostLink.astro';
 
-Classic dimensional analysis, the kind every physics student learns and most units libraries implement, has a blind spot: it only sees the *dimension* of a quantity, not its *meaning*.
+A display refreshes at 144 Hz, a radioactive source decays at 144 Bq, and a wheel turns at 144 rad/s. Dimensionally the three are identical: **1/s**. A units library that checks dimensions and nothing else will let you add them together and hand back a well-typed, physically meaningless answer.
 
-Consider three quantities: the refresh rate of a display (144 Hz), the activity of a radioactive source (144 Bq), and an angular velocity (144 rad/s). Dimensionally they are all the same thing: **1/s**. A library that checks dimensions and nothing else will let you add all three together and hand you a well-typed, physically meaningless answer.
+Classic dimensional analysis, the kind every physics student learns and most units libraries implement, sees the *dimension* of a quantity but not its *meaning*.
 
-The hertz and the becquerel exist as separate SI units precisely *because* the meanings differ — the SI brochure is explicit that Hz is for periodic phenomena and Bq for stochastic radioactive decay, and that they must not be interchanged. Your compiler was never told.
+Hz and Bq exist as separate SI units because their meanings differ. The SI brochure is explicit that Hz is for periodic phenomena and Bq for stochastic radioactive decay, and that the two must not be interchanged. Your compiler was never told.
 
 ## Kinds: what mp-units checks that dimensions cannot
 
@@ -28,13 +28,11 @@ mp-units pioneered **quantity kind** safety: every quantity belongs to a kind in
 
 <GodboltEmbed id="h3T65b861" gccOnly title="Hz + Bq: same dimension, refuses to compile" gcc_subtitle="x86-64 GCC 16.1 · -std=c++23 -O2 · mp-units trunk · runs live" />
 
-The two commented lines are the point. `refresh_rate + source_decay` is rejected — not because the dimensions disagree (they do not), but because *frequency* and *activity* are different kinds of quantity. Likewise you cannot initialize a becquerel quantity from a hertz one. Meanwhile everything physics does permit still works: inverting the refresh rate gives a perfectly good period, converted to milliseconds with `.in(ms)`.
+The two commented lines carry the point. `refresh_rate + source_decay` is rejected: the dimensions agree, but *frequency* and *activity* are different kinds of quantity. You also cannot initialize a becquerel quantity from a hertz one. Everything physics permits still works: inverting the refresh rate gives a period, converted to milliseconds with `.in(ms)`.
 
-This is the feature that separates mp-units from a decade of "typed double" libraries, and it comes straight from modeling the **International System of Quantities** rather than just its units. Energy and torque both come out as newton-metres; frequency and activity both come out as 1/s; a dimensions-only checker shrugs at both confusions. A kinds-aware one catches them at compile time.
+Kind safety comes from modeling the **International System of Quantities**, which sits a level above raw units. Energy and torque both come out as newton-metres; frequency and activity both come out as 1/s. A dimensions-only checker accepts both confusions; a kinds-aware one rejects them at compile time.
 
-If the <PostLink slug="unit-bug-mars-orbiter">Mars Climate Orbiter bug</PostLink> was the easy case — wrong unit, same quantity — this is the subtle one: right dimension, wrong quantity. Both end the same way without a type system that knows physics.
-
-Next in the series: the difference between "it is 21 degrees" and "it got 21 degrees warmer," and why one of those must not be addable.
+The <PostLink slug="unit-bug-mars-orbiter">Mars Climate Orbiter bug</PostLink> was the easy case: wrong unit, same quantity. This one is harder: right dimension, wrong quantity. Both produce a wrong answer unless the type system knows physics.
 
 ---
 
