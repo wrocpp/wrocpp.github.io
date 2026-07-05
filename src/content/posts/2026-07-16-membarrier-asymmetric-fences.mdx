@@ -13,9 +13,7 @@ draft: false
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
-Most lock-free tricks are about avoiding locks. This one is about avoiding **fences**, on the path where you cannot afford them.
-
-A sequentially consistent fence is expensive, and plenty of concurrent algorithms need one on a path that runs constantly. **Asymmetric fences** split that cost in two. The common path gets a **light fence**: a compiler barrier only, `std::atomic_signal_fence`, which emits no hardware instruction at all. The rare path gets a **heavy fence** that does the real work for both sides.
+A sequentially consistent fence is expensive, and plenty of concurrent algorithms need one on a path that runs constantly. **Asymmetric fences** split that cost in two. The common path gets a light fence: a compiler barrier only, `std::atomic_signal_fence`, which emits no hardware instruction at all. The rare path gets a heavy fence that does the real work for both sides.
 
 On Linux the heavy fence is one syscall: `membarrier()`. It sends an inter-processor interrupt to every other thread in the process and makes each one execute a full memory barrier before it returns. You have moved the barrier off your hot path and onto the thread that only occasionally needs ordering. Folly uses exactly this in its hazard pointers, RCU, and thread-pool executors. C++ blessed the pattern in [P1202] and wrote it into [\[atomics.order\]/4](https://timsong-cpp.github.io/cppwp/n4950/atomics.order#4).
 
@@ -23,13 +21,11 @@ Here it is running. A store-buffer (Dekker) test where the outcome `a == 0 && b 
 
 <GodboltEmbed id="rnj34YrhT" gccOnly title="Asymmetric fence: 50,000 trials, 0 forbidden reorderings" gcc_subtitle="x86-64 GCC 16.1 · -std=c++20 -O2 -pthread · runs live" />
 
-## Why the write-up is worth your time
+## Down through the kernel to a possible defect
 
-That the pattern works is the easy part. **Ryan Chung Yi Sheng's** [deep-dive](https://nekrozqliphort.github.io/posts/membarrier/) is worth reading because it does not stop there. It follows the idea all the way down: how the kernel's IPI-plus-barrier dance actually establishes the ordering (including the awkward case where a thread is descheduled mid-barrier), and why the *obvious* way to specify asymmetric fences in C++ failed.
+That the pattern works is the easy part. Ryan Chung Yi Sheng's [deep-dive](https://nekrozqliphort.github.io/posts/membarrier/) does not stop there. It follows the idea all the way down: how the kernel's IPI-plus-barrier dance actually establishes the ordering (including the awkward case where a thread is descheduled mid-barrier), and why the *obvious* way to specify asymmetric fences in C++ failed.
 
 The naive formalization, a plain `synchronizes-with` between each light and heavy pair, chains transitively and ends up forbidding outcomes real hardware allows, which makes it unimplementable. The accepted wording instead adds ordering to the single total order over `seq_cst` operations, sidestepping the bad transitivity. And then the post goes one step further than the standard: a formal Linux-kernel-memory-model argument that the context-switch case may **not** provide the "strongly happens-before" guarantee C++ now claims for it. A possible latent defect, surfaced by reading the two models against each other.
-
-That is the payoff. Not "here is a fast fence," but a clean tour from a C++ atomics rule, through a syscall, into the kernel scheduler, and back out with a question for the committee.
 
 ---
 

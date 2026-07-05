@@ -1,5 +1,5 @@
 ---
-title: "std::flat_map is just two vectors, and that is the point"
+title: "std::flat_map is just two vectors"
 slug: "flat-map"
 pubDate: 2026-07-18
 author: filip-sajdak
@@ -7,37 +7,37 @@ language: en
 kind: short
 audience: working-cpp
 tags: [news, cpp23, containers, performance, stl]
-summary: "C++23's std::flat_map is not a tree with better marketing: it is an adaptor over a sorted vector of keys and a parallel vector of values. That buys cache-friendly lookups and near-zero memory overhead, and costs O(n) insertion and aggressive iterator invalidation. What it replaces is std::map, not std::unordered_map, and knowing which vector trick it is tells you exactly when to reach for it."
+summary: "C++23's std::flat_map is an adaptor over a sorted vector of keys and a parallel vector of values. That buys cache-friendly lookups and near-zero memory overhead, and costs O(n) insertion and aggressive iterator invalidation. It replaces std::map, not std::unordered_map, and knowing which vector trick it is tells you exactly when to reach for it."
 draft: false
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
-`std::flat_map` has been making the rounds again, usually pitched as "a faster `std::map`." The pitch is not wrong, but it hides the design, and the design is what tells you when the container fits.
+C++23 added `std::flat_map` (P0429, together with `flat_set`, `flat_multimap`, and `flat_multiset`). It is a **container adaptor** over two sequences: a sorted vector of keys and a parallel vector of values, kept in lockstep. Lookup is a binary search over contiguous keys. There is no tree and no per-node allocation, and the API is open about it: `keys()` and `values()` hand you the underlying containers, and construction can *adopt* pre-sorted data without doing any work.
 
-C++23's `std::flat_map` (P0429, together with `flat_set`, `flat_multimap`, and `flat_multiset`) is not a node-based structure at all. It is a **container adaptor over two sequences**: a sorted vector of keys and a parallel vector of values, kept in lockstep. Lookup is binary search over contiguous keys. There is no tree, no per-node allocation, no parent pointers — and the API does not pretend otherwise: `keys()` and `values()` hand you the underlying containers, and construction can *adopt* pre-sorted data without doing any work.
+That design is the thing to understand before you reach for the container. "A faster `std::map`" is true enough, but it hides where the speed comes from and what you pay for it.
 
 <GodboltEmbed id="YrhdrWonM" gccOnly title="flat_map: sorted keys, parallel values, zero-sort adoption" gcc_subtitle="x86-64 GCC 16.1 · -std=c++23 -O2 · runs live" />
 
-The demo shows the whole mental model in three prints. The `keys()` observer returns `["dns", "http", "https", "ssh"]` — sorted, contiguous, exactly what binary search wants. `values()` is the parallel array. And the last construction is the part most introductions skip: `std::sorted_unique` plus two moved-in vectors builds the map by **taking ownership of your containers as-is**. If your data arrives sorted — from a file, a database, a build step — you pay nothing at all. (The example also runs on clang with libc++; both mainstream standard libraries ship it.)
+The demo shows the whole mental model in three prints. The `keys()` observer returns `["dns", "http", "https", "ssh"]`, sorted and contiguous, exactly what binary search wants. `values()` is the parallel array. The last construction is the zero-work path: `std::sorted_unique` plus two moved-in vectors builds the map by taking ownership of your containers as they are. If your data arrives sorted (from a file, a database, or a build step) you pay nothing at all. The example also runs on clang with libc++; both mainstream standard libraries ship it.
 
 ## What the two vectors buy you
 
 - **Cache-friendly lookups.** A `std::map` lookup chases pointers through nodes scattered across the heap; a `flat_map` lookup walks a contiguous array the prefetcher understands. For lookup-heavy workloads this is routinely a large win.
-- **Memory.** No per-node allocation, no left/right/parent pointers, no allocator bookkeeping per element. Two vectors' worth of data, full stop.
+- **Memory.** No per-node allocation. A `flat_map` stores two vectors' worth of data and nothing else, where a red-black tree carries three pointers and a colour bit on every element.
 - **Free bulk construction** via `sorted_unique`, and symmetric `extract()` to take the vectors back out.
 
 ## What they cost you
 
-This is the part the enthusiasm posts tend to skip, and it is a real contract change, not fine print:
+Each of these is a real change in contract from `std::map`:
 
-- **Insertion into a populated map is O(n)** — everything after the insertion point shifts, in both vectors. Build once, look up often, or batch your mutations.
-- **Iterators AND references are invalidated** by insert and erase. A `std::map` promises stability; `flat_map` promises the opposite. Code that holds references into the map does not port.
-- **Exception behavior is unusual**: if a mutating operation throws, the standard guarantees the invariants (sorted keys, equal lengths) are restored — in some cases *by clearing the container*. Mutating a `flat_map` under exceptions is not the transaction you may be used to.
+- **Insertion into a populated map is O(n).** Everything after the insertion point shifts, in both vectors. Build once and look up often, or batch your mutations.
+- **Iterators and references are invalidated** by insert and erase. A `std::map` keeps them valid across mutation; `flat_map` does not, so code that holds references into the map does not port.
+- **Exception behavior is unusual.** If a mutating operation throws, the standard guarantees the invariants (sorted keys, equal lengths) are restored, in some cases *by clearing the container*. A throwing mutation can leave you with an empty map.
 
-And one framing correction: `flat_map`'s competitor is `std::map`, not `std::unordered_map`. A good hash table still wins pure point lookups on large data; what `flat_map` adds is ordered iteration, no hashing requirements, and the memory story — at tree-map prices it beats handily.
+One comparison worth getting right: `flat_map` competes with `std::map`, not `std::unordered_map`. A good hash table still wins pure point lookups on large data. What `flat_map` adds over a tree is ordered iteration and a much smaller memory footprint at similar lookup cost.
 
-If your data is mostly static and read a lot — configuration, symbol tables, routing tables, the classic cases — the two-vector design is exactly the trick you would have hand-rolled anyway. Now it is in the box, with the sharp edges documented.
+If your data is mostly static and read often (configuration, symbol tables, routing tables), the two-vector layout is the one you would have hand-rolled anyway. C++23 puts it in the standard library.
 
 ---
 

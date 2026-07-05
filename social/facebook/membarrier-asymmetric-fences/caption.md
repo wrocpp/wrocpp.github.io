@@ -5,7 +5,7 @@ A memory fence is expensive, and some concurrent code needs one on a path that r
 
 We ran the classic store-buffer test with it: 50,000 trials, zero forbidden reorderings, live on Compiler Explorer.
 
-Ryan Chung Yi Sheng's deep-dive follows the idea from the C++ standard down into the Linux kernel -- and finds a possible crack in the standard's wording along the way.
+Ryan Chung Yi Sheng's deep-dive follows the idea from the C++ standard down into the Linux kernel, and finds a possible crack in the standard's wording along the way.
 
 Read it: https://wrocpp.github.io/posts/membarrier-asymmetric-fences/
 
