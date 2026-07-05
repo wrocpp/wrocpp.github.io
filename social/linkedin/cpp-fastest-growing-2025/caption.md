@@ -1,17 +1,17 @@
 # Sutter's BeCPP keynote: C++ added more developers in 4 years than any other language
 
 ## Body
-Herb Sutter's BeCPP Symposium keynote (March 30 2026, Howest, Belgium) opened with a SlashData chart that has been quietly travelling through C++ Slack channels for the past six weeks: **C++ developer population grew 72% from Q1 2022 to Q1 2025 -- 9.5M -> 16.3M**. The headline line: "There are more C++ developers today than the #1 language had four years ago."
+Herb Sutter's BeCPP Symposium keynote (March 30 2026, Howest, Belgium) opened with a SlashData chart that has been quietly travelling through C++ Slack channels for the past six weeks: **C++ developer population grew 72% from Q1 2022 to Q1 2025 (9.5M -> 16.3M)**. The headline line: "There are more C++ developers today than the #1 language had four years ago."
 
 Two honest reads of the data, both true:
-- **Rust grew fastest in percentage** -- 137% over three years, from 2.1M to 5.1M. Strong signal of language health on a smaller base.
-- **C++ grew fastest in absolute developer count among the perf/Watt-honest languages** -- +6.8M added, more than C and Rust combined. JavaScript and Java added similar absolute numbers but started 13M and 7M ahead.
+- **Rust grew fastest in percentage**: 137% over three years, from 2.1M to 5.1M. Strong signal of language health on a smaller base.
+- **C++ grew fastest in absolute developer count among the perf/Watt-honest languages**: +6.8M added, more than C and Rust combined. JavaScript and Java added similar absolute numbers but started 13M and 7M ahead.
 
-Sutter's framing: the languages targeting durable perf-per-Watt are short -- C, C++, Rust. (DSLs/ASICs/FPGAs always at the leading edge.) Compute demand has outstripped supply for 80 years; he sees no reason that changes in the next 80. The population data is downstream of that thesis: languages that map onto perf-per-Watt get a steady tailwind.
+Sutter's framing: the languages targeting durable perf-per-Watt are short (C, C++, Rust). (DSLs/ASICs/FPGAs always at the leading edge.) Compute demand has outstripped supply for 80 years; he sees no reason that changes in the next 80. The population data is downstream of that thesis: languages that map onto perf-per-Watt get a steady tailwind.
 
 What the chart does NOT say:
-- C++ did not overtake JavaScript / Java / Python -- the gap closed, none was passed
-- Rust is not shrinking or in trouble -- the two stories are complementary
+- C++ did not overtake JavaScript / Java / Python; the gap closed, none was passed
+- Rust is not shrinking or in trouble; the two stories are complementary
 - SlashData polls the developer population (do you write C++ at least sometimes), not lines of code or new project starts
 
 For anyone arguing internally that C++ is dying: 6.8M developers added in three years is a hard rebuttal. For anyone picking C++ for a new system: the talent pool is growing, not shrinking. For anyone building tooling, libraries, or training in this space: the demand signal is favourable.

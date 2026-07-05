@@ -13,43 +13,43 @@ draft: false
 
 import PostLink from '../../components/PostLink.astro';
 
-WG21's pre-Brno mailing landed in early May -- **116 papers**, the largest pre-meeting volume since the C++20 design crunch. Browse the full list at [open-std.org/jtc1/sc22/wg21/docs/papers/2026/](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/) or via the searchable [wg21.org mailings index](https://wg21.org/). Brno meets **8-13 June 2026**.
+WG21's pre-Brno mailing landed in early May (**116 papers**, the largest pre-meeting volume since the C++20 design crunch). Browse the full list at [open-std.org/jtc1/sc22/wg21/docs/papers/2026/](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/) or via the searchable [wg21.org mailings index](https://wg21.org/). Brno meets 8-13 June 2026.
 
 Five papers are doing the heavy lifting for the threads wro.cpp covers.
 
-## 1. P5000R1 -- "Direction for ISO C++29"
+## 1. P5000R1: "Direction for ISO C++29"
 
-**Authors:** Daveed Vandevoorde, John Garland, Paul E. McKenney, Roger Orr, Bjarne Stroustrup, Michael Wong (R0 2026-02-23, R1 2026-05-11)
+Authors: Daveed Vandevoorde, John Garland, Paul E. McKenney, Roger Orr, Bjarne Stroustrup, Michael Wong (R0 2026-02-23, R1 2026-05-11)
 
-The formal direction-setting paper for C++29 (not to be confused with P2000R5 "Direction for ISO C++," the general direction paper). **Safety is named as the headline axis** -- the line the committee adopted explicitly is that "C++29 must deliver on the safety story C++26 began but did not finish." Concurrency continues to evolve (`std::execution` is the framework C++26 shipped; C++29 builds on it), and the paper sketches incremental work on reflection, modules, and language ergonomics.
+The formal direction-setting paper for C++29 (not to be confused with P2000R5 "Direction for ISO C++," the general direction paper). Safety is named as the headline axis. The line the committee adopted explicitly is that "C++29 must deliver on the safety story C++26 began but did not finish." Concurrency continues to evolve (`std::execution` is the framework C++26 shipped; C++29 builds on it), and the paper sketches incremental work on reflection, modules, and language ergonomics.
 
-For wro.cpp readers: this is the document that retroactively justifies the [memory-safety-cpp26-and-beyond](/toolset/memory-safety-cpp26-and-beyond/) toolset page's "deferred to C++29" framing. The direction paper makes that deferral non-negotiable -- you cannot ship C++29 without a profile attribute story.
+For wro.cpp readers: this is the document that retroactively justifies the [memory-safety-cpp26-and-beyond](/toolset/memory-safety-cpp26-and-beyond/) toolset page's "deferred to C++29" framing. The direction paper makes that deferral non-negotiable. You cannot ship C++29 without a profile attribute story.
 
-## 2. D3704R0 -- "A type-safety profile"
+## 2. D3704R0: "A type-safety profile"
 
-**Author:** Bjarne Stroustrup (Jan 2026, revised for May mailing)
+Author: Bjarne Stroustrup (Jan 2026, revised for May mailing)
 
-The next iteration past the C++26 deferral. Stroustrup's R0 explicitly re-aligns the type-safety profile on top of Gabriel Dos Reis's general profiles framework ([P3589](https://isocpp.org/files/papers/P3589R1.pdf)), addressing the Bloomberg counter-paper ([P3543](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3543r0.pdf)) critiques head-on -- granularity at the per-rule level, structured error reporting, explicit migration paths from non-conforming code.
+The next iteration past the C++26 deferral. Stroustrup's R0 explicitly re-aligns the type-safety profile on top of Gabriel Dos Reis's general profiles framework ([P3589](https://isocpp.org/files/papers/P3589R1.pdf)), addressing the Bloomberg counter-paper ([P3543](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3543r0.pdf)) critiques head-on: granularity at the per-rule level, structured error reporting, explicit migration paths from non-conforming code.
 
-**SG23 focus at Brno.** The page above gets a re-review the week after Brno wraps.
+SG23 focus at Brno. The page above gets a re-review the week after Brno wraps.
 
-## 3. P3970R0 -- "Profiles and Safety: a call to action"
+## 3. P3970R0: "Profiles and Safety: a call to action"
 
-**Authors:** Vandevoorde, Garland, McKenney, Orr, Stroustrup, Wong -- same author group as P2000R0 (Jan 2026)
+Authors: Vandevoorde, Garland, McKenney, Orr, Stroustrup, Wong (same author group as P2000R0, Jan 2026)
 
-A short paper (8 pages) co-signed by all the C++29-direction authors. The argument: the committee owes the community concrete profile timelines, not just direction prose. Names three milestones (SG23 framework R1 at Brno, type-safety profile R1 by autumn, vote at the post-Brno meeting in November). This is the committee leadership defending the timeline -- the May mailing version is signal that the C++29 deliverable isn't slipping further.
+A short paper (8 pages) co-signed by all the C++29-direction authors. The argument: the committee owes the community concrete profile timelines, not just direction prose. Names three milestones (SG23 framework R1 at Brno, type-safety profile R1 by autumn, vote at the post-Brno meeting in November). This is the committee leadership defending the timeline. The May mailing version is signal that the C++29 deliverable isn't slipping further.
 
-## 4. P4003R0 -- "Coroutines for I/O"
+## 4. P4003R0: "Coroutines for I/O"
 
-**Authors:** Phillip Liard, Lewis Baker, Pavel Voržáček (Croydon onward)
+Authors: Phillip Liard, Lewis Baker, Pavel Voržáček (Croydon onward)
 
-Targets **first LEWG review at Brno** in June. The proposal is the standard-library complement to `std::execution`: a coroutine-aware I/O model that composes with the C++26 senders / receivers framework. Doesn't promise C++29 (LEWG first review is the earliest possible milestone for major library proposals); doesn't promise to look exactly like Lewis Baker's [`libunifex`](https://github.com/facebookexperimental/libunifex) or Eric Niebler's pre-WG21 sketches; **does** promise to stop reinventing socket-loop integration for every reactor library in the ecosystem.
+Targets first LEWG review at Brno in June. The proposal is the standard-library complement to `std::execution`: a coroutine-aware I/O model that composes with the C++26 senders / receivers framework. Doesn't promise C++29 (LEWG first review is the earliest possible milestone for major library proposals); doesn't promise to look exactly like Lewis Baker's [`libunifex`](https://github.com/facebookexperimental/libunifex) or Eric Niebler's pre-WG21 sketches; does promise to stop reinventing socket-loop integration for every reactor library in the ecosystem.
 
 Worth tracking in particular because: every wro.cpp reader who has hand-rolled an async-I/O coroutine wrapper for `boost::asio` or `liburing` is the target audience.
 
-## 5. P3294 -- "Token sequence injection" (latest revision in May mailing)
+## 5. P3294: "Token sequence injection" (latest revision in May mailing)
 
-**Authors:** Barry Revzin, Andrei Alexandrescu, Daveed Vandevoorde
+Authors: Barry Revzin, Andrei Alexandrescu, Daveed Vandevoorde
 
 The paper that wro.cpp's "Where this is heading" triptych sections all gesture at. Revzin re-revised for the May mailing with refined ergonomics and updated example output. **Implementation status remains: no shipping compiler.** Clang-p2996 is the closest to having the substrate; a prototype likely lives in a research branch but isn't surfaceable through Compiler Explorer yet.
 
@@ -59,20 +59,20 @@ Cross-link: <PostLink slug="revzin-reflection-is-only-half">Revzin's C++Now keyn
 
 Beyond the five above, the mailing has:
 
-- **P2300 / std::execution** ratification follow-ups -- a half-dozen LEWG-issued fixups
-- **Pattern matching** (`P1371`) revisions -- still alive, slowly grinding toward a complete-enough proposal
-- **Linear algebra** (`P1673` / `<linalg>`) maintenance papers -- the C++26 feature is shipping; the May mailing has bug fixes and a couple of small API revisions
-- **Reflection follow-ups** -- most notably P3687R0 "Final Adjustments to C++26 Reflection," which proposes deferring splice template arguments to C++29 (wording and implementation not fully baked for C++26). Additional papers tighten annotation lifetime, friend reflection, and error-quality edge cases
-- **Modules** -- continued progress on `import std;` ergonomics across implementations
+- **P2300 / std::execution** ratification follow-ups: a half-dozen LEWG-issued fixups
+- **Pattern matching** (`P1371`) revisions: still alive, slowly grinding toward a complete-enough proposal
+- **Linear algebra** (`P1673` / `<linalg>`) maintenance papers: the C++26 feature is shipping; the May mailing has bug fixes and a couple of small API revisions
+- **Reflection follow-ups**: most notably P3687R0 "Final Adjustments to C++26 Reflection," which proposes deferring splice template arguments to C++29 (wording and implementation not fully baked for C++26). Additional papers tighten annotation lifetime, friend reflection, and error-quality edge cases
+- **Modules**: continued progress on `import std;` ergonomics across implementations
 
 ## How to read along
 
-- **Searchable mailings index:** [wg21.org](https://wg21.org/)
-- **Bjarne Stroustrup's tracker** of his own papers: [stroustrup.com/WG21.html](https://www.stroustrup.com/WG21.html)
-- **Daveed Vandevoorde's commentary** typically lands on [edg.com/insights](https://www.edg.com/insights) within a week of each mailing
+- Searchable mailings index: [wg21.org](https://wg21.org/)
+- Bjarne Stroustrup's tracker of his own papers: [stroustrup.com/WG21.html](https://www.stroustrup.com/WG21.html)
+- Daveed Vandevoorde's commentary typically lands on [edg.com/insights](https://www.edg.com/insights) within a week of each mailing
 
 **Brno (8-13 June)** is the next milestone. Sutter's trip reports typically post within 48 hours of the meeting closing. wro.cpp will run a Brno trip-report news short in the week of 15 June.
 
 ---
 
-**Also from this week:** if you ship C++, the [ISO C++ Foundation's 2026 Developer Survey "Lite"](https://isocpp.org/blog/2026/04/2026-annual-cpp-developer-survey-lite1) is open. 10 minutes of feedback that the standards committee + the major tool vendors (GCC, clang, MSVC, Bloomberg's clang-p2996, NVIDIA, Intel) all read directly.
+Also from this week: if you ship C++, the [ISO C++ Foundation's 2026 Developer Survey "Lite"](https://isocpp.org/blog/2026/04/2026-annual-cpp-developer-survey-lite1) is open. 10 minutes of feedback that the standards committee + the major tool vendors (GCC, clang, MSVC, Bloomberg's clang-p2996, NVIDIA, Intel) all read directly.

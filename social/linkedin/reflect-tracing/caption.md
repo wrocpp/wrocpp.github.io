@@ -3,7 +3,7 @@
 ## Body
 Tracing and metrics split into sibling libraries: `reflect_telemetry` (post 23) for aggregates over time, `reflect_tracing` for spans at microsecond resolution. The hot-path engine is **Maciek Gajewski's 2021 wro.cpp technique**: thread-local ring buffers, ~200 ns per span, function address as payload, DWARF resolution at dump time. The reflection contribution is the instrumentation layer.
 
-Today (C++26): one explicit scope-guard per traced function. Reflection at compile time gives you the function's name, signature, source location -- no `__PRETTY_FUNCTION__` macro, no preprocessor magic:
+Today (C++26): one explicit scope-guard per traced function. Reflection at compile time gives you the function's name, signature, source location, with no `__PRETTY_FUNCTION__` macro and no preprocessor magic:
 
 ```cpp
 void with_reflection() {
@@ -15,7 +15,7 @@ void with_reflection() {
 trace::dump_chrome_json("/tmp/trace.json");
 ```
 
-Output (Chrome / Perfetto trace JSON -- both speak the same dialect):
+Output (Chrome / Perfetto trace JSON, both speak the same dialect):
 
 ```json
 {"traceEvents":[
@@ -31,7 +31,7 @@ Tomorrow (C++29): `[[trace]]` annotation + P3294 token injection makes the scope
 
 What this REPLACES: ad-hoc `clock::now()` + log-line trace patterns; per-team tracing macros (Tracy / EASY_PROFILER are great but each has its own integration story); the hand-written JSON-emit code that ships sideways through the build.
 
-What this does NOT replace: distributed tracing (W3C Trace-Context headers across service boundaries -- still OpenTelemetry's job); span sampling strategies (your collector); cross-process correlation. The reflection layer is the in-process span surface; the rest is operational tracing infrastructure.
+What this does NOT replace: distributed tracing (W3C Trace-Context headers across service boundaries, still OpenTelemetry's job); span sampling strategies (your collector); cross-process correlation. The reflection layer is the in-process span surface; the rest is operational tracing infrastructure.
 
 Series post 24 of 25 in the wro.cpp C++26 reflection arc. Live demo on Godbolt with clang-p2996.
 

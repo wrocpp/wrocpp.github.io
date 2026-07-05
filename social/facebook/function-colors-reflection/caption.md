@@ -1,7 +1,7 @@
 # Define your own function colors
 
 ## Body
-"What color is your function?" is a decade-old complaint about async/await splitting code into async and sync halves. But C++ has had colored functions for years -- consteval, CUDA's __device__, Clang's [[clang::nonblocking]] all restrict who can call what. Each one needed a compiler change.
+"What color is your function?" is a decade-old complaint about async/await splitting code into async and sync halves. But C++ has had colored functions for years: consteval, CUDA's __device__, Clang's [[clang::nonblocking]] all restrict who can call what. Each one needed a compiler change.
 
 C++26 reflection lets you define your own. std::meta::current_function() hands a callee the reflection of its caller at compile time, so in about 20 lines you can build audio-thread safety, capability tokens, or architectural-layer checks that refuse to compile when called from the wrong place.
 

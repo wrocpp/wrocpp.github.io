@@ -25,7 +25,7 @@ int main(int argc, char** argv) {
 
 What the post covers: the per-field annotation taxonomy (`flag`, `option`, `positional`, `default_value`, `description`), the help-text generation walker, the std::expected error path with field-name + expected-type-aware messages, integration with subcommands (one struct per subcommand, dispatch via type-erased variant).
 
-What this does NOT replace: CLI11 (mature ecosystem, polished error messages, completion scripts for bash/zsh), Boost.Program_options (broad compatibility), argparse (header-only, popular). The reflection version is for codebases that prefer schema-as-spec -- the same struct annotations may already drive your JSON serializer + ORM + REST API definitions.
+What this does NOT replace: CLI11 (mature ecosystem, polished error messages, completion scripts for bash/zsh), Boost.Program_options (broad compatibility), argparse (header-only, popular). The reflection version is for codebases that prefer schema-as-spec. The same struct annotations may already drive your JSON serializer + ORM + REST API definitions.
 
 Series post 12 of 25 in the wro.cpp C++26 reflection arc.
 

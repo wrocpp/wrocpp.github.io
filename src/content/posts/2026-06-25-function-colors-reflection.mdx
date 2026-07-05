@@ -23,21 +23,21 @@ The joke in the title is that you do not need `async` to have colored functions.
 
 A "color" is just a constraint on which functions may call which, checked by the compiler. C++ enforces several:
 
-- **`consteval`** -- a `consteval` function may only be called from a constant-evaluated context. Call it at runtime and the program is ill-formed.
-- **CUDA `__host__` / `__device__`** -- a `__host__` function that calls a `__device__` function is a compile error. Execution space is a color.
-- **Clang `[[clang::nonblocking]]`** -- a function marked nonblocking that calls anything which might block, allocate, or throw is a diagnostic. The audio and safety-critical crowd uses it (paired with [RealtimeSanitizer](https://clang.llvm.org/docs/RealtimeSanitizer.html)) to keep `malloc` and locks off the audio thread.
+- `consteval`: a `consteval` function may only be called from a constant-evaluated context. Call it at runtime and the program is ill-formed.
+- CUDA `__host__` / `__device__`: a `__host__` function that calls a `__device__` function is a compile error. Execution space is a color.
+- Clang `[[clang::nonblocking]]`: a function marked nonblocking that calls anything which might block, allocate, or throw is a diagnostic. The audio and safety-critical crowd uses it (paired with [RealtimeSanitizer](https://clang.llvm.org/docs/RealtimeSanitizer.html)) to keep `malloc` and locks off the audio thread.
 
-Some colors are weaker promises rather than enforced constraints -- `noexcept` lets you call a throwing function, it just terminates if one actually throws. But the strong ones above are real, compile-time caller checks.
+Some colors are weaker promises rather than enforced constraints. `noexcept` lets you call a throwing function; it just terminates if one actually throws. But the strong ones above are real, compile-time caller checks.
 
-Every one of them required a compiler change. `consteval` is a language keyword; `__device__` is an NVCC extension; `[[clang::nonblocking]]` is a Clang [function-effect analysis](https://clang.llvm.org/docs/FunctionEffectAnalysis.html) pass. If you want a color the compiler does not ship -- "this may only run on the render thread," "this needs the crypto capability," "this belongs to the data layer" -- you have historically been out of luck.
+Every one of them required a compiler change. `consteval` is a language keyword; `__device__` is an NVCC extension; `[[clang::nonblocking]]` is a Clang [function-effect analysis](https://clang.llvm.org/docs/FunctionEffectAnalysis.html) pass. If you want a color the compiler does not ship ("this may only run on the render thread," "this needs the crypto capability," "this belongs to the data layer"), you have historically been out of luck.
 
 Reflection changes that.
 
 ## A callee that can see its caller
 
-C++26 added `std::meta::current_function()`. It returns the reflection of the function the call lexically sits in. It arrived in [P3795R1](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3795r1.html) (a reflection-cleanup paper -- before it, you spelled this `std::meta::access_context::current().scope()`).
+C++26 added `std::meta::current_function()`, which returns the reflection of the function the call lexically sits in. It arrived in [P3795R1](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3795r1.html) (a reflection-cleanup paper; before it, you spelled this `std::meta::access_context::current().scope()`).
 
-The interesting part is what happens when you use it as a **default argument**. Like `std::source_location::current()`, a default argument is evaluated at the *call site*, not at the declaration. So a parameter whose default is `current_function()` reflects whoever is calling -- the caller, not the callee:
+The interesting part is what happens when you use it as a **default argument**. Like `std::source_location::current()`, a default argument is evaluated at the *call site*, not at the declaration. So a parameter whose default is `current_function()` reflects whoever is calling (the caller, not the callee):
 
 ```cpp
 #include <meta>
@@ -66,7 +66,7 @@ Now make that `consteval` evaluation do more than read a name. Make it *reject* 
 
 ## Painting a color as a library
 
-Here is the whole thing -- about twenty lines, reused verbatim for every color you want:
+Here is the whole thing, about twenty lines, reused verbatim for every color you want:
 
 ```cpp
 #include <meta>
@@ -123,7 +123,7 @@ void process_block(float* buf, int n) {
 
 There are two ways to satisfy the guard, and the difference matters:
 
-- **An annotation** (`[[= paint<audio_safe> ]]`) marks a function colored, but says nothing about *its* callers. It is a trust boundary -- the entry point where you assert "everything below here runs on the audio thread."
+- **An annotation** (`[[= paint<audio_safe> ]]`) marks a function colored, but says nothing about *its* callers. It is a trust boundary, the entry point where you assert "everything below here runs on the audio thread."
 - **A guard parameter** (`needs<audio_safe>`) marks a function colored *and* propagates: because its defaulted guard re-evaluates at every call site, the color flows onto whoever calls it. `mix` may only be called from audio-safe code.
 
 Call `write_samples` from a function that is neither, and it does not compile:
@@ -139,7 +139,7 @@ error: uncaught exception of type 'std::meta::exception'; 'what()':
 
 The mechanism is indifferent to what the color *means*. Swap the tag type and you have a different policy with the same twenty lines.
 
-**A capability token.** Signing a release may only happen in code that was granted the capability:
+A capability token. Signing a release may only happen in code that was granted the capability:
 
 ```cpp
 struct crypto_cap_t {};
@@ -156,7 +156,7 @@ void publish_release(std::string_view a) { sign_release(a); }   // OK: granted
 
 <GodboltEmbed id="P479baofK" title="crypto_cap: a compile-time capability token" gccOnly={true} />
 
-**An architectural layer.** Raw SQL belongs to the data layer; the HTTP controller must not reach past the repository:
+An architectural layer. Raw SQL belongs to the data layer; the HTTP controller must not reach past the repository:
 
 ```cpp
 struct data_layer_t {};
@@ -173,7 +173,7 @@ void user_repository_find(int id) { execute_sql("SELECT ..."); }  // OK
 
 <GodboltEmbed id="Wh3W9oqdf" title="data_layer: compile-time layering" gccOnly={true} />
 
-This is the same idea Java modules (`exports ... to`), [ArchUnit](https://www.archunit.org/), and .NET's `InternalsVisibleTo` chase -- "this code may only be reached from there" -- but checked by the C++ compiler with no extra tooling, and with a message you wrote.
+This is the same idea Java modules (`exports ... to`), [ArchUnit](https://www.archunit.org/), and .NET's `InternalsVisibleTo` chase ("this code may only be reached from there"), but checked by the C++ compiler with no extra tooling, and with a message you wrote.
 
 ## Where it breaks
 
@@ -191,15 +191,15 @@ void process_block(float* buf, int n) {
 
 <GodboltEmbed id="bqMno5cTE" title="The limit: a painted function that blocks compiles fine" gccOnly={true} />
 
-This is the line between this trick and `[[clang::nonblocking]]`: Clang's pass analyzes the body and rejects the `sleep_for`. The reflection guard only trusts the label. For real audio work, `[[clang::nonblocking]]` plus RealtimeSanitizer is the production tool today -- not this.
+This is the line between this trick and `[[clang::nonblocking]]`: Clang's pass analyzes the body and rejects the `sleep_for`. The reflection guard only trusts the label. For real audio work, `[[clang::nonblocking]]` plus RealtimeSanitizer is the production tool today, not this.
 
 **Propagation is opt-in.** Effect systems (Koka, Scala 3's `CanThrow`) and `[[clang::nonblocking]]` propagate automatically: color one function and the requirement flows up the entire call graph on its own. Here, every function in the chain must opt in by hand, with either the annotation or the guard parameter. Forget one and the color simply stops.
 
-**Only the direct lexical caller is checked.** `current_function()` sees the function the call sits in -- nothing further up, and nothing reached through a layer of indirection. A lambda body, a virtual override, or a `std::function` target cannot carry the annotation ergonomically, so the moment a call goes through a pointer or an interface, the color is gone.
+**Only the direct lexical caller is checked.** `current_function()` sees the function the call sits in, nothing further up and nothing reached through a layer of indirection. A lambda body, a virtual override, or a `std::function` target cannot carry the annotation ergonomically, so the moment a call goes through a pointer or an interface, the color is gone.
 
 ## The bigger pattern
 
-The interesting thing is not function coloring. It is that reflection turned a *compiler feature* into a *library feature*. `consteval`, `__device__`, and `[[clang::nonblocking]]` each took a compiler patch and a standards process. A domain-specific color -- render thread, transaction scope, tenant boundary, audited-for-PII -- took twenty lines and an afternoon, and it ships its own diagnostics.
+The interesting thing is not function coloring. It is that reflection turned a *compiler feature* into a *library feature*. `consteval`, `__device__`, and `[[clang::nonblocking]]` each took a compiler patch and a standards process. A domain-specific color (render thread, transaction scope, tenant boundary, audited-for-PII) took twenty lines and an afternoon, and it ships its own diagnostics.
 
 That is the same arc the rest of this series keeps tracing: the <PostLink slug="annotations">annotations post</PostLink> moved serialization config out of macros and into the type; the <PostLink slug="annotations-for-hashing">hashing post</PostLink> put field-level policy next to the field. This puts call-site policy next to the function. None of it needed a new keyword.
 
