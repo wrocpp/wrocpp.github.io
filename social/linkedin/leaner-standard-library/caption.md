@@ -1,17 +1,19 @@
 # Less standard library, faster program
 
 ## Body
-We are trained to expect a tradeoff. Pystd did not deliver one.
+Faster builds usually cost you something later: a slower binary, a bigger one, less headroom for the optimizer. Pystd broke that pattern.
 
-Jussi Pakkanen (creator of the Meson build system) rewrote a subset of the C++ standard library from scratch, throwing out ISO conformance to chase compile speed. Then he converted his real, shipping CapyPDF library to use it. The result broke the usual bargain: compile time down about 80%, unstripped binary down about 75%, and runtime about 25% FASTER -- all at once.
+Jussi Pakkanen (creator of the Meson build system) rewrote a subset of the C++ standard library from scratch, throwing out ISO conformance to chase compile speed. Then he converted his real, shipping CapyPDF library to use it. Compile time dropped about 80%, the unstripped binary about 75%, and runtime came out about 25% faster, all at once.
 
-Why it happens: the slowness we blame on "C++" is often the library implementation, not the language. Preprocess one #include <vector> and it blooms to ~29,000 lines; <filesystem> hits ~80,000. Less abstraction for the compiler to instantiate means a smaller binary and less runtime indirection too.
+Here is why. The slowness we blame on "C++" is often the library implementation rather than the language. Preprocess one #include <vector> and it blooms to ~29,000 lines; <filesystem> hits ~80,000. Less abstraction for the compiler to instantiate means a smaller binary and less runtime indirection too.
 
-The catch is real: Pystd is not std::, so every boundary with the ecosystem needs a conversion; it does not build on MSVC; and it stays quiet on the hard parts (exceptions, allocators, iterator invalidation). The committee's own answer to header bloat is import std; and modules.
+The limits are real. Pystd does not speak std::, so every boundary with the ecosystem needs a conversion; it does not build on MSVC; and it stays quiet on the hard parts (exceptions, allocators, iterator invalidation). The committee's own answer to header bloat is import std; and modules.
 
-Still, one discipline ports to any codebase today: a hard per-header compile budget in CI. Pystd's is 0.15s, enforced even on a Raspberry Pi.
+One discipline ports to any codebase today: a hard per-header compile budget in CI. Pystd's is 0.15s, enforced even on a Raspberry Pi.
 
-Full breakdown (pros and cons) on wro.cpp: https://wrocpp.github.io/posts/leaner-standard-library/ -- would you trade std:: conformance for an 80% faster build?
+Full breakdown (pros and cons) on wro.cpp: https://wrocpp.github.io/posts/leaner-standard-library/
+
+Would you trade std:: conformance for an 80% faster build?
 
 ## Hashtags
 #cpp #cplusplus #cpp26 #buildtimes #performance #stdlib #meson
