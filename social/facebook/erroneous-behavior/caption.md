@@ -1,19 +1,19 @@
-# C++26 ends a 40-year footgun: uninitialized reads
+# C++26 makes an uninitialized read a defined bug
 
 ## Body
-Reading an uninitialized variable has been undefined behavior in C++ for 40 years -- the kind optimizers exploit into real bugs. C++26 (P2795) reclassifies it as erroneous behavior: still a bug, still warned about, but defined, bounded, and not exploitable.
+Read an uninitialized variable in C++ and for forty years it was undefined behavior: the compiler could assume it never happened and optimize the surrounding code away, turning a forgotten initialization into a real bug.
 
-The demo poisons the stack, then reads an uninitialized int. As C++23 it prints garbage; as C++26, the same code prints a defined 0, every run. Live in your browser.
+C++26 (P2795) makes it erroneous behavior instead. It is still a bug the compiler warns about, but the value is now defined, and the optimizer can no longer reason it away.
 
-And [[indeterminate]] lets you opt back out when you really want an uninitialized buffer -- on purpose this time.
+The demo fills the stack with 0xDEADBEEF, then reads an uninitialized int. As C++23 it prints garbage. As C++26 the same code prints a defined 0. You can also opt back out with [[indeterminate]] when you want a raw buffer on purpose.
 
-Read it: https://wrocpp.github.io/posts/erroneous-behavior/
+https://wrocpp.github.io/posts/erroneous-behavior/
 
 ## Hashtags
 #cpp #cplusplus #cpp26 #safety #programming
 
 ## Alt-text
-A cream wro.cpp-branded social card titled "C++26 ends a 40-year footgun" with a sub-claim that reading an uninitialized variable is now erroneous behavior: defined, diagnosable, and not exploitable.
+A cream wro.cpp-branded social card titled "C++26 makes an uninitialized read a defined bug" about P2795 reclassifying uninitialized reads from undefined to erroneous behavior.
 
 ## Suggested post time
 Sunday 2026-07-05, 14:00 CET

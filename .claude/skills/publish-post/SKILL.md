@@ -127,11 +127,28 @@ The script:
 
 The discussion link surfaces in `PostLayout`'s article meta as `· discuss` and in the post's own CTA paragraph.
 
+### 7c. Voice self-review (prose-lint gate)
+
+The house writing style is in `docs/STYLE.md`; read it if it is not already in context. Our posts were flagged as AI-written on r/cpp, so this gate is not optional. Run:
+
+```
+python3 scripts/prose-lint.py --slug <slug>
+```
+
+- **ERROR aborts publish.** Fix the flagged lines and re-run until it exits 0.
+- **WARN**: read each flagged line and either fix it or justify keeping it (one deliberate dash, one real "not X, but Y" misconception-correction, etc.).
+
+Budgets (full do/don't in `docs/STYLE.md`): dashes <=2, formulaic closers 0 (incl. title), negative parallelism <=1, generic headers 0, rule-of-three anaphora <=1, bold <=8. Then read the post once by eye for what the linter cannot see:
+- The opener is NOT "usually pitched as..." / "we are trained to expect..." (vary the entry point).
+- Section headers name their content, not "Why it matters" / "What's next".
+- The last paragraph ends on a concrete fact, not a meta sign-off telling the reader what the point was.
+
 ### 8. Build sanity check + link sweep + drift watch
 
 ```
 NODE_ENV=production npm run build
 python3 scripts/check-post-links.py --slug <slug>
+python3 scripts/prose-lint.py --slug <slug>
 ```
 
 `npm run build` must complete without warnings. The `prebuild` hook
@@ -222,6 +239,12 @@ Print the PR URL + the cron job id + the discussion URL. Remind the user that:
 | shortener returns 4xx | wrong compiler id / API down | retry; check src/data/godbolt-permalinks.yml header |
 | build warns about missing TODO id | step 5 missed a GodboltEmbed | re-grep `id="TODO`, wire it |
 | series prev/next bar empty in dev | filter `isPublished` excluded the post | confirm draft flip applied; restart dev server |
+
+## Community cross-posting gate
+
+The website, LinkedIn, and Facebook are our own channels; the pipeline posts there automatically.
+
+**Communities that ban AI-generated content (r/cpp, r/programming, and Hacker News in practice) are off-limits to automation.** Do not queue, schedule, or auto-cross-post a raw draft to them. Anything going to those venues needs a genuine edit or rewrite pass by a human who posts it under their own authorship. Passing `prose-lint` does not make a draft human-authored, and it is not a licence to post AI drafts where they are disallowed. See `docs/STYLE.md` community policy.
 
 ## Out of scope
 

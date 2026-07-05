@@ -1,25 +1,21 @@
-# C++26 ends a 40-year footgun: uninitialized reads
+# C++26 makes an uninitialized read a defined bug
 
 ## Body
-`int x;` then reading x has been undefined behavior in C++ for four decades -- not "you get a random number", but "the compiler may assume this never happens" and optimize accordingly (deleted branches, time-travel miscompiles, security bugs).
+Declare int x, read it before you assign to it, and for forty years the C++ standard said your whole program was undefined. Not "x holds some leftover value," but "the compiler may assume this never happens." Compilers act on that: they delete the dependent branch and propagate the impossibility backward, so a forgotten initialization becomes a miscompile or a security bug.
 
-C++26 changes the rule. Under P2795, reading an uninitialized variable is now ERRONEOUS behavior: a new category between fine and undefined.
+C++26 narrows it. Under P2795 an uninitialized read is erroneous behavior: a bug the compiler still diagnoses, but with defined limits. The value is a fixed one the implementation picks, not an indeterminate one the optimizer can reason away. The compiler may not delete the surrounding code on the assumption the read never runs, and a sanitizer can trap it.
 
-Still a bug, still diagnosed -- but with defined bounds. The read yields a fixed erroneous value (GCC uses 0), not indeterminate garbage. The optimizer may not time-travel on it. It is not exploitable, and sanitizers can trap it.
+The demo fills a stack frame with 0xDEADBEEF, then reads an uninitialized int. As C++23 it prints leftover garbage. As C++26 the same source prints a defined 0, on every run and every optimization level, because GCC initializes the variable to a fixed value. Both standards still warn with -Wuninitialized.
 
-The demo makes it concrete: it poisons a stack frame with 0xDEADBEEF, then reads an uninitialized int. Built as C++23 it prints leftover garbage (and it was UB). Built as C++26 -- same source -- it prints a defined 0, every run. GCC still warns either way. Runs live on Compiler Explorer.
+When you actually want an uninitialized buffer, mark it [[indeterminate]] and you get the old behavior back as an annotation you can grep for.
 
-And when you genuinely want an uninitialized buffer, C++26 keeps the door open: declare it [[indeterminate]] -- now a deliberate, greppable annotation instead of an accident.
-
-The quiet kind of feature that retires a whole bug class without breaking one correct program.
-
-Demo + details: https://wrocpp.github.io/posts/erroneous-behavior/ -- how many uninitialized-read bugs has this class cost you?
+https://wrocpp.github.io/posts/erroneous-behavior/
 
 ## Hashtags
 #cpp #cplusplus #cpp26 #safety #undefinedbehavior #memorysafety #moderncpp
 
 ## Alt-text
-A cream wro.cpp-branded social card titled "C++26 ends a 40-year footgun" with a sub-claim that reading an uninitialized variable is now erroneous behavior: defined, diagnosable, and not exploitable.
+A cream wro.cpp-branded social card titled "C++26 makes an uninitialized read a defined bug" about P2795 reclassifying uninitialized reads from undefined to erroneous behavior.
 
 ## Suggested post time
 Sunday 2026-07-05, 14:00 CET

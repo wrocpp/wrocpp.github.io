@@ -57,7 +57,7 @@ Write a LinkedIn-shaped and a Facebook-shaped caption. Anatomy (mirror the thesi
 ## Body
 <1-2 line hook>
 
-<2-3 short paragraphs: what changed, why it matters, one concrete payoff>
+<2-3 short paragraphs: what changed, the concrete consequence, one payoff a reader can act on>
 
 <CTA: link to the post + invitation to discuss>
 
@@ -69,12 +69,20 @@ Write a LinkedIn-shaped and a Facebook-shaped caption. Anatomy (mirror the thesi
 
 ## Suggested post time
 <weekday YYYY-MM-DD>, 10:00 CET
-Reason: <why that slot -- audience timezone, day-of-week priors>
+Reason: <why that slot (audience timezone, day-of-week priors)>
 ```
 
 LinkedIn caption can run longer (~250 words) and lean technical. Facebook caption should be tighter (~120 words), less jargon-heavy, more focused on the punchline. Both end with the same `https://wrocpp.github.io/posts/<slug>/` link.
 
-ASCII only in caption text per the user's CLAUDE.md global standard (no em-dashes, smart quotes; use `--` and `"`).
+**Charset:** ASCII only in caption text (no em-dashes, no smart quotes). Do NOT use `--` as a dash. End the sentence with a period, or use parentheses or a comma. Captions carry **zero** `--` (this matches the owner's global standard and is enforced by `scripts/prose-lint.py --caption`).
+
+**Caption anti-tell rules (house style, see `docs/STYLE.md`).** Captions are the most public copy we ship and are what got flagged as AI-written on Reddit. Follow these:
+- **No dash asides.** Zero `--` or em-dashes; use periods or parentheses.
+- **No formulaic closer.** Do not end with "that is the point," "the whole point," or "worth remembering." End on the concrete claim, then the link.
+- **No stock tics.** Never write "Live in your browser." or a drama run like "No exception. No assertion." These are burned; vary or drop them.
+- **At most one "Not X, but Y,"** and only to correct a genuine misconception.
+- **Minimal bold.** None, or a single term of art. Captions do not need emphasis.
+- **Voice:** concrete and understated (see `docs/STYLE.md#voice-in-one-sentence`), not a launch announcement.
 
 Show the user both drafts via `AskUserQuestion` (or print + ask for "ok"); apply edits in place if requested before continuing.
 
@@ -218,6 +226,15 @@ python3 scripts/check-social-title.py
 
 Drop the caption from step 2 into `social/<platform>/<slug>/caption.md` (LinkedIn copy in the linkedin/ folder, Facebook copy in the facebook/ folder).
 
+Then run the prose-lint gate on both captions:
+
+```bash
+python3 scripts/prose-lint.py --caption social/linkedin/<slug>/caption.md
+python3 scripts/prose-lint.py --caption social/facebook/<slug>/caption.md
+```
+
+An ERROR (a `--`, a stock tic, a formulaic closer) **blocks** the card build. Fix the caption text and re-run until both exit 0. A WARN means read the flagged line and decide. See `docs/STYLE.md`.
+
 ### 9. Build -> INJECT -> image  (the inject step is MANDATORY)
 
 > **CRITICAL**: the order is `build` -> `inject.sh` -> `image`. If you
@@ -330,7 +347,8 @@ Print:
 - Both `caption.md` paths.
 - Both `image.png` paths.
 - Suggested post times (from caption.md).
-- A 1-line reminder: "Manual posting -- copy caption + upload image to LinkedIn / Facebook page."
+- A 1-line reminder: "Manual posting: copy caption + upload image to LinkedIn / Facebook page."
+- A community reminder: "These captions are for LinkedIn / Facebook automation only. Do NOT cross-post the raw draft to r/cpp, r/programming, or other communities that ban AI-generated content. Those get a human edit/rewrite pass first (see `docs/STYLE.md` community policy)."
 
 Do NOT post anywhere. The skill stops here.
 
