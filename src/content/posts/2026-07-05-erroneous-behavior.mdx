@@ -1,0 +1,46 @@
+---
+title: "C++26 ends a 40-year footgun: uninitialized reads"
+slug: "erroneous-behavior"
+pubDate: 2026-07-05
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, cpp26, safety, undefined-behavior, memory-safety]
+summary: "Reading an uninitialized variable has been undefined behavior in C++ for four decades, and optimizers have happily exploited it. C++26 (P2795) reclassifies it as erroneous behavior: still a bug, still diagnosed, but with defined, bounded, non-exploitable semantics. A poisoned-stack demo shows the same code printing garbage under C++23 and a defined 0 under C++26."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+`int x;` and then reading `x` is one of the oldest ways to shoot yourself in the foot in C++. For forty years the standard called it **undefined behavior** — not "you get a random number," but "the program is meaningless and the compiler may assume this never happens." That licence is not theoretical: optimizers delete branches that depend on the read, propagate impossible assumptions backwards through your code ("time-travel"), and turn a sloppy local into a security bug.
+
+C++26 changes the rule. Thanks to **P2795**, reading an uninitialized variable is now **erroneous behavior** — a new, third category that sits between "fine" and "undefined."
+
+## What "erroneous" means
+
+Erroneous behavior is still a bug, and the compiler is explicitly *encouraged to diagnose it*. But unlike undefined behavior, it has **defined bounds**:
+
+- The read produces a fixed **erroneous value** — an implementation-chosen bit pattern, not indeterminate garbage, and not a value the optimizer may assume is impossible.
+- The compiler may **not** "time-travel" or delete surrounding code on the assumption that the read never happens.
+- It is **not exploitable** the way UB is, and sanitizers can trap it.
+
+In other words: still wrong, still worth fixing, but no longer a trapdoor into nasal-demon territory.
+
+## The same code, two standards
+
+The demo dirties a stack frame on purpose, then reads an uninitialized `int`:
+
+<GodboltEmbed id="3W71aG1cz" gccOnly title="Uninitialized read: garbage under C++23, a defined 0 under C++26" gcc_subtitle="x86-64 GCC 16.1 · -std=c++26 -O2 -Wall · runs live" />
+
+Built as **C++26**, it prints `erroneous value = 0` — every run, even though the stack was deliberately filled with `0xDEADBEEF` a moment earlier. That determinism is the whole point: GCC initializes the variable to the erroneous value (0) rather than leaving it indeterminate. Compile the exact same source as **C++23** and it prints leftover garbage (`8`, in my run) — the old indeterminate-value world, where the read was also UB. And in both standards GCC still emits `-Wuninitialized`: erroneous behavior does not silence the diagnostic, it *strengthens* the guarantee about what happens if you ignore it.
+
+## When you actually wanted the old behavior
+
+Zero-initializing every local has a cost, and sometimes you genuinely want an uninitialized buffer (you are about to fill it yourself). C++26 keeps that door open with an explicit opt-out: declare the variable `[[indeterminate]]` and you are back to indeterminate value — but now it is a deliberate, greppable annotation instead of an accident.
+
+This is the quiet kind of C++26 feature that will not trend, but it retires an entire class of "how is this even possible" bugs — and it does it without breaking a single correct program. The reads that were fine stay fine; the reads that were bugs become *defined, diagnosable* bugs.
+
+---
+
+**Sources**: [P2795 "Erroneous behaviour for uninitialized reads"](https://wg21.link/p2795) (Thomas Köppe) · the standard wording in [\[basic.indet\]](https://eel.is/c++draft/basic.indet).
