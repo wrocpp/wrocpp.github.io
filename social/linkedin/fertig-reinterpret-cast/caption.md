@@ -5,7 +5,7 @@ Andreas Fertig's post **"What reinterpret_cast doesn't do"** (re-shared on isocp
 
 The punchline: `reinterpret_cast` and C++23's `std::start_lifetime_as` look interchangeable, but only if you don't read the abstract-machine fine print.
 
-`reinterpret_cast<T*>(p)` re-interprets a bit pattern as a pointer of a different type. That's a **pointer operation**, not an object-lifetime operation. The compiler still believes whatever object was at that address is whatever it was before. Accessing the new type through the `reinterpret_cast`-derived pointer is undefined behaviour under strict aliasing for nearly every non-pointer-character type pair. It "works" because compilers tolerate the pattern most of the time -- until they don't, usually on a release build, on a customer's machine, after an unrelated optimisation pass.
+`reinterpret_cast<T*>(p)` re-interprets a bit pattern as a pointer of a different type. That's a **pointer operation**, not an object-lifetime operation. The compiler still believes whatever object was at that address is whatever it was before. Accessing the new type through the `reinterpret_cast`-derived pointer is undefined behaviour under strict aliasing for nearly every non-pointer-character type pair. It "works" because compilers tolerate the pattern most of the time, until they don't, usually on a release build, on a customer's machine, after an unrelated optimisation pass.
 
 C++23's `std::start_lifetime_as<T>(ptr)` returns a `T*` AND tells the abstract machine "an object of type T now begins its lifetime at this address." That second half is precisely what `reinterpret_cast` cannot do.
 
@@ -28,7 +28,7 @@ Header* h = reinterpret_cast<Header*>(buffer);   // UB on access
 Header* h = std::start_lifetime_as<Header>(buffer);
 ```
 
-The wro.cpp reflection arc walks a lot of bytes -- JSON deserializer, SBOM emitter, sanitizers-2026's parse_struct -- every one of those crosses the buffer-to-struct boundary. This is the C++23 facility the next quarterly refresh of our memory-safety + hardened-stdlib + lifetime-safety toolset entries needs to add.
+The wro.cpp reflection arc walks a lot of bytes (JSON deserializer, SBOM emitter, sanitizers-2026's parse_struct), and every one of those crosses the buffer-to-struct boundary. This is the C++23 facility the next quarterly refresh of our memory-safety + hardened-stdlib + lifetime-safety toolset entries needs to add.
 
 https://wrocpp.github.io/posts/fertig-reinterpret-cast/
 

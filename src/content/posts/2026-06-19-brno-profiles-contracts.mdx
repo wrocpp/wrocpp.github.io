@@ -18,7 +18,7 @@ If the <PostLink slug="brno-undefined-behavior">undefined-behavior catalogue</Po
 
 ## Profiles get a framework
 
-A "profile" is a named bundle of restrictions a compiler enforces -- think of it as a dialect of C++ that forbids some unsafe operations. The idea has floated for a couple of years; what was missing was the plumbing. **P3589R2, "C++ Profiles: The Framework"** (Dos Reis) supplies it, and the important detail is that it is built from attributes, not pragmas:
+A "profile" is a named bundle of restrictions a compiler enforces, a dialect of C++ that forbids some unsafe operations. The idea has floated for a couple of years; what was missing was the plumbing. **P3589R2, "C++ Profiles: The Framework"** (Dos Reis) supplies it, and the important detail is that it is built from attributes, not pragmas:
 
 ```cpp
 [[profiles::enforce(std::type, std::ranges)]];   // file scope, before any declaration
@@ -30,13 +30,13 @@ A "profile" is a named bundle of restrictions a compiler enforces -- think of it
 int* p = reinterpret_cast<int*>(addr);
 ```
 
-`enforce` turns a profile on for a translation unit; `require` can demand one on an `import`; `suppress` is the local escape hatch, scoped to a statement and forced to carry a justification string. The asymmetry is deliberate -- as Dos Reis puts it, the purpose of profiles is to enforce additional rules, not to opt out of existing ones, so enforcement is broad and suppression is narrow and loud.
+`enforce` turns a profile on for a translation unit; `require` can demand one on an `import`; `suppress` is the local escape hatch, scoped to a statement and forced to carry a justification string. The asymmetry is deliberate. As Dos Reis puts it, the purpose of profiles is to enforce additional rules, not to opt out of existing ones, so enforcement is broad and suppression is narrow and loud.
 
 ## Two profiles to enforce
 
 Stroustrup brought two concrete profiles built on that framework.
 
-**P4222, "An initialization profile"** has one job: "every object is initialized or noted by the compiler not to be," and "an object that is uninitialized cannot be read." It is fully compile-time enforced, and backward-compatible -- code that already initializes everything means exactly the same thing with the profile on. When you genuinely want uninitialized storage, you say so:
+**P4222, "An initialization profile"** has one job: "every object is initialized or noted by the compiler not to be," and "an object that is uninitialized cannot be read." It is fully compile-time enforced, and backward-compatible: code that already initializes everything means exactly the same thing with the profile on. When you genuinely want uninitialized storage, you say so:
 
 ```cpp
 [[profiles::enforce(std::initialization)]];
@@ -45,7 +45,7 @@ int x;                          // diagnosed: could be read uninitialized
 [[uninitialized]] char buf[N];  // explicitly opted out, intentional
 ```
 
-**P3984, "A type-safety profile"** is the broader one, pursuing two guarantees: every object is used according to its type, and no resource is leaked. It works by composing smaller companion profiles -- `casting` (no old-style unverifiable casts), `union` (use `std::variant` instead of raw unions), `ranges` (all subscripting and pointer arithmetic range-checked), and `arithmetic` (no implicit narrowing, overflow, or underflow). The model Stroustrup keeps returning to: subset a superset of C++ -- add safe facilities, then statically forbid the unsafe ones.
+**P3984, "A type-safety profile"** is the broader one, pursuing two guarantees: every object is used according to its type, and no resource is leaked. It works by composing smaller companion profiles: `casting` (no old-style unverifiable casts), `union` (use `std::variant` instead of raw unions), `ranges` (all subscripting and pointer arithmetic range-checked), and `arithmetic` (no implicit narrowing, overflow, or underflow). The model Stroustrup keeps returning to: subset a superset of C++. Add safe facilities, then statically forbid the unsafe ones.
 
 These are still moving. Per the <PostLink slug="brno-2026-trip-report">trip report</PostLink>, SG23 is building the formal specification, with the profiles targeting C++29 or a concurrent white paper. But the framework now has syntax you can read, which is further than "profiles" has ever been.
 
@@ -53,7 +53,7 @@ These are still moving. Per the <PostLink slug="brno-2026-trip-report">trip repo
 
 The cleanest single adoption for anyone who followed the contracts saga: **P3097, "Contracts for C++: Virtual functions"** (Doumler, Berne).
 
-C++26 shipped contracts -- `pre`, `post`, `contract_assert`, with four evaluation semantics (ignore, observe, enforce, quick_enforce). But virtual functions were cut from that MVP at Hagenberg in early 2025. The reason, from the paper itself: the design drew objections that it diverged from the inheritance model in Eiffel and D and lacked deployment experience, and EWG could not resolve the disagreement in time, so C++26 shipped contracts without virtual-function support.
+C++26 shipped contracts (`pre`, `post`, `contract_assert`) with four evaluation semantics (ignore, observe, enforce, quick_enforce). But virtual functions were cut from that MVP at Hagenberg in early 2025. The reason, from the paper itself: the design drew objections that it diverged from the inheritance model in Eiffel and D and lacked deployment experience, and EWG could not resolve the disagreement in time, so C++26 shipped contracts without virtual-function support.
 
 P3097 brings them back, and the key decision is what it does *not* do: there is no implicit inheritance of assertions. An override's contracts are independent of the function it overrides.
 
@@ -69,13 +69,13 @@ struct Derived : Base {
 };
 ```
 
-On a virtual call, the assertions of **both** the statically chosen function and the final overrider are evaluated. Eiffel-style automatic inheritance was rejected on purpose: it interacts badly with type erasure, and base and derived classes often live in separate libraries that have to evolve independently. The re-proposal rebases its wording on the finished C++26 draft and ships with a complete implementation in GCC -- which is a large part of why it was ready to move where it was not in 2025.
+On a virtual call, the assertions of **both** the statically chosen function and the final overrider are evaluated. Eiffel-style automatic inheritance was rejected on purpose: it interacts badly with type erasure, and base and derived classes often live in separate libraries that have to evolve independently. The re-proposal rebases its wording on the finished C++26 draft and ships with a complete implementation in GCC, which is a large part of why it was ready to move where it was not in 2025.
 
 A fuller treatment of the C++26 contracts model itself (the four semantics, the migration path) is coming to the wro.cpp toolset later this summer. The Brno news is narrower and satisfying: the one piece the MVP deferred is already on its way back.
 
 ## The shape of C++29
 
-Put the three Brno safety threads together and the next standard's outline is visible. The <PostLink slug="brno-undefined-behavior">UB catalogue</PostLink> enumerates what to fix. Profiles give you an opt-in switch to enforce the fixes a translation unit at a time. Contracts -- now including the virtual-function piece -- give you the runtime checks the UB program leans on. C++26 was the features release. C++29 is being built, deliberately, as the safety one.
+Put the three Brno safety threads together and the next standard's outline is visible. The <PostLink slug="brno-undefined-behavior">UB catalogue</PostLink> enumerates what to fix. Profiles give you an opt-in switch to enforce the fixes a translation unit at a time. Contracts (now including the virtual-function piece) give you the runtime checks the UB program leans on. C++26 was the features release. C++29 is being built, deliberately, as the safety one.
 
 ---
 

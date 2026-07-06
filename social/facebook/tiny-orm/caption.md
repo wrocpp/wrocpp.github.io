@@ -1,7 +1,7 @@
 # A tiny ORM in 100 lines
 
 ## Body
-C++26 reflection walks a struct and emits `CREATE TABLE` + `INSERT INTO ... VALUES (?, ?, ?)` + the typed bind helper. Annotations (`primary_key`, `rename`, `not_null`) drive per-field SQL behaviour. Same annotation taxonomy as the JSON walker (post 8) and the CLI parser (post 12) -- one struct definition, four consumers.
+C++26 reflection walks a struct and emits `CREATE TABLE` + `INSERT INTO ... VALUES (?, ?, ?)` + the typed bind helper. Annotations (`primary_key`, `rename`, `not_null`) drive per-field SQL behaviour. Same annotation taxonomy as the JSON walker (post 8) and the CLI parser (post 12). One struct definition, four consumers.
 
 Series post 13 of 25 in the wro.cpp C++26 reflection arc.
 

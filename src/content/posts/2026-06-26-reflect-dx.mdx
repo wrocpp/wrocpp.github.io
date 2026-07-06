@@ -40,9 +40,9 @@ The default LLDB / GDB / Visual Studio debugger view of a nested struct is a tre
 }
 ```
 
-You can make this nicer by writing a pretty-printer — a `.natvis` XML blob for Visual Studio, a Python formatter for LLDB, a Python formatter for GDB. Every team I've worked with writes one for their critical types and then watches it go stale as the types evolve.
+You can make this nicer by writing a pretty-printer: a `.natvis` XML blob for Visual Studio, a Python formatter for LLDB, a Python formatter for GDB. Every team I've worked with writes one for their critical types and then watches it go stale as the types evolve.
 
-`reflect-pretty` emits the formatter **at build time** from your reflected types:
+`reflect-pretty` emits the formatter at build time from your reflected types:
 
 ```sh
 $ reflect-pretty include/models.hpp \
@@ -64,7 +64,7 @@ Change a struct, re-run the tool, the formatter follows.
 
 Doxygen is 30 years old and still the standard. Its output looks 30 years old too. Modern alternatives (Sphinx-cpp, Hugo-doc) mostly parse Doxygen XML under the hood.
 
-The real problem: Doxygen doesn't know about your *annotations* — the `[[=json_name("id")]]` that names the JSON wire field, the `[[=gen::range(0, 150)]]` that constrains property test inputs. Those are where the actual semantic information lives in a reflection-driven codebase, and Doxygen can't see them.
+The real problem: Doxygen doesn't know about your *annotations*, the `[[=json_name("id")]]` that names the JSON wire field, the `[[=gen::range(0, 150)]]` that constrains property test inputs. Those are where the actual semantic information lives in a reflection-driven codebase, and Doxygen can't see them.
 
 `reflect-docs` walks your headers with reflection, extracts identifiers + annotations + comments, and emits modern markdown / HTML:
 
@@ -104,17 +104,17 @@ Your `struct` declaration is your documentation source of truth.
 
 ## How the build step works
 
-`reflect-pretty` and `reflect-docs` are thin binaries built on top of the **clang-p2996 compiler frontend as a library**. When you run `reflect-pretty models.hpp`, it:
+`reflect-pretty` and `reflect-docs` are thin binaries built on top of the clang-p2996 compiler frontend as a library. When you run `reflect-pretty models.hpp`, it:
 
 1. Invokes clang-p2996 frontend to parse `models.hpp`.
-2. Walks every top-level struct/class reflection (`namespace_members_of(^^your_namespace)` — a P3547-ish capability via namespace reflection).
+2. Walks every top-level struct/class reflection (`namespace_members_of(^^your_namespace)`, a P3547-ish capability via namespace reflection).
 3. For each type, generates an emitter snippet in the target format:
-   - **natvis:** XML with `<DisplayString>` + `<Expand>` blocks.
-   - **LLDB:** Python class subclassing `lldb.SBSyntheticValueProvider`.
-   - **GDB:** Python class subclassing `gdb.printing.PrettyPrinter`.
+   - natvis: XML with `<DisplayString>` + `<Expand>` blocks.
+   - LLDB: Python class subclassing `lldb.SBSyntheticValueProvider`.
+   - GDB: Python class subclassing `gdb.printing.PrettyPrinter`.
 4. Writes the output file.
 
-The generated Python/XML files are small — you can check them in, review diffs, rerun in CI.
+The generated Python/XML files are small, so you can check them in, review diffs, rerun in CI.
 
 ## Walking for pretty-printers (sketch)
 
@@ -170,19 +170,19 @@ One function walks the fields, emits the visualisation. `reflect-pretty` compose
 
 `reflect-pretty` and `reflect-docs` share 80% of their plumbing: a frontend wrapper around clang-p2996 that exposes reflection to a host program as a C++ library. Splitting them would duplicate that infrastructure. Keeping them together lets teams opt into one or both without adding a second dependency.
 
-Future sibling tool in the same repo: `reflect-bindings` — emit Python / Lua / WASM bindings from a C++ header. Follow-up post.
+Future sibling tool in the same repo: `reflect-bindings`, which emits Python / Lua / WASM bindings from a C++ header. Follow-up post.
 
 ## What the library ships
 
 Under [github.com/wrocpp/reflect_dx](https://github.com/wrocpp/reflect_dx):
 
-- `reflect-pretty` CLI — emits .natvis / .lldb.py / .gdb.py.
-- `reflect-docs` CLI — emits markdown / HTML / JSON Schema.
-- `libreflect_dx_core.a` — the shared clang-p2996-frontend wrapper.
+- `reflect-pretty` CLI, emits .natvis / .lldb.py / .gdb.py.
+- `reflect-docs` CLI, emits markdown / HTML / JSON Schema.
+- `libreflect_dx_core.a`, the shared clang-p2996-frontend wrapper.
 - CMake integration: `reflect_dx_generate()` CMake function drops the outputs into your build tree automatically.
 - Sample `.natvis` / LLDB output for common STL types.
 
-## What's next
+## Next in the reflection arc
 
-- **[Post 23 — reflect_telemetry](/posts/reflect-telemetry/)** — compile-time metrics for production.
+- [Post 23: reflect_telemetry](/posts/reflect-telemetry/), compile-time metrics for production.
 - Companion Monday short: *"How LLDB summary providers actually work"*.

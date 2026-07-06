@@ -16,7 +16,7 @@ discussion: https://github.com/wrocpp/wrocpp.github.io/discussions/55
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
-The grand old way to get types out of a SQL database in C++ is ODB — a preprocessor that parses your headers, generates persistence glue, and integrates into the build system. It works, but it's a compiler alongside your compiler.
+The grand old way to get types out of a SQL database in C++ is ODB, a preprocessor that parses your headers, generates persistence glue, and integrates into the build system. It works, but it's a compiler alongside your compiler.
 
 With reflection, a tiny ORM becomes a one-header library:
 
@@ -96,7 +96,7 @@ Because `create_table_sql<T>` is `consteval`, the resulting string is computed a
 
 ## Generating DML
 
-`INSERT`, `UPDATE`, `SELECT`, `DELETE` all follow the same pattern — walk columns, emit SQL.
+`INSERT`, `UPDATE`, `SELECT`, `DELETE` all follow the same pattern: walk columns, emit SQL.
 
 ```cpp
 template <typename T>
@@ -120,7 +120,7 @@ consteval std::string insert_sql() {
 }
 ```
 
-Autoincrement PKs skipped via `if constexpr (continue)` — no generated code, no runtime branch.
+Autoincrement PKs skipped via `if constexpr (continue)`. The compiled function has no generated code and no runtime branch for them.
 
 ## Binding to prepared statements
 
@@ -200,9 +200,9 @@ auto q = orm::select<User>()
 // Params: ("filip@example.com", true)
 ```
 
-`User::email` is accessed via reflection — the library generates a per-field column handle that participates in expression templates producing both SQL and parameter bindings. The expression template is evaluated at compile time; the resulting prepared statement + param pack is constructed once and reused.
+`User::email` is accessed via reflection. The library generates a per-field column handle that participates in expression templates producing both SQL and parameter bindings. The expression template is evaluated at compile time; the resulting prepared statement + param pack is constructed once and reused.
 
-Full implementation is heavy (~500 lines) — it's essentially a tiny compiler for SQL subset expressions. But it fits cleanly because each member becomes a typed handle with static metadata from reflection.
+Full implementation is heavy (~500 lines). It's essentially a tiny compiler for SQL subset expressions. But it fits cleanly because each member becomes a typed handle with static metadata from reflection.
 
 ## What about migrations?
 
@@ -213,14 +213,14 @@ A fun extension: given *two versions* of a struct (via reflection on each), gene
 Missing from the naive version:
 
 - **Relationships.** Foreign keys and joins beyond declarative annotations. ODB handles `boost::shared_ptr<Address>` fields as referenced rows. Doable, but complex.
-- **Session / transaction management.** A real ORM wraps `sqlite3_stmt*` in a session that batches, caches, and rolls back on error. Orthogonal to reflection — bolt on.
+- **Session / transaction management.** A real ORM wraps `sqlite3_stmt*` in a session that batches, caches, and rolls back on error. This is orthogonal to reflection, so you bolt it on separately.
 - **Query-language expressiveness.** SQL has CTEs, window functions, GROUP BY aggregates. Translating those from C++ expressions is a significant DSL effort.
 
-But the *common case* — CRUD on flat tables — is comfortably in reach, and the library fits in one header.
+But the *common case* (CRUD on flat tables) is comfortably in reach, and the library fits in one header.
 
 <GodboltEmbed id="jWoYKK9Wo" title="reflect_orm — struct → SQL" />
 
-## What's next
+## Next reflection recipes in the series
 
-- **[Post 14 — Autowired dependency injection](/posts/dependency-injection/)** — reflect constructor parameters.
-- **[Post 15 — Auto-generated mocks](/posts/auto-mocks/)** — interface → test double.
+- **[Post 14: Autowired dependency injection](/posts/dependency-injection/)** reflects constructor parameters.
+- **[Post 15: Auto-generated mocks](/posts/auto-mocks/)** turns an interface into a test double.

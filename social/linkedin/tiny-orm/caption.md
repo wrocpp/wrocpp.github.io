@@ -31,7 +31,7 @@ What the post covers: the type -> SQL mapping (int, string, bool, optional, blob
 
 What this does NOT replace: production ORMs with migration management, query builders, eager/lazy joins, dialect-aware SQL generation. The 100-line version is for the codebase that wants ORM ergonomics for ~20 tables without taking on a library dependency.
 
-Cross-link: this is the same annotation taxonomy as the JSON walker (post 8) + CLI parser (post 12). Schema-as-spec across formats, CLI, persistence -- one struct definition, four consumers.
+Cross-link: this is the same annotation taxonomy as the JSON walker (post 8) + CLI parser (post 12). Schema-as-spec across formats, CLI, persistence. One struct definition, four consumers.
 
 Series post 13 of 25 in the wro.cpp C++26 reflection arc.
 

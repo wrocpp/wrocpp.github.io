@@ -35,7 +35,7 @@ public:
 
 Every method you mock is a `MOCK_METHOD` line mirroring the interface. Change the interface, update the mock.
 
-Java's Mockito and C#'s Moq don't need this — they reflect the interface and generate the mock at runtime. Reflection + `define_aggregate` brings the same ergonomics to C++, at compile time.
+Java's Mockito and C#'s Moq don't need this. They reflect the interface and generate the mock at runtime. Reflection + `define_aggregate` brings the same ergonomics to C++, at compile time.
 
 ## The goal
 
@@ -127,7 +127,7 @@ void set_return(R value) {
 }
 ```
 
-`key_for<Method>()` — a `consteval` function that turns a member-function pointer into a stable hash. Implementation-defined; we use the `std::meta::info` of the function as the key, since `info` values are `constexpr`-comparable.
+`key_for<Method>()` is a `consteval` function that turns a member-function pointer into a stable hash. Implementation-defined; we use the `std::meta::info` of the function as the key, since `info` values are `constexpr`-comparable.
 
 ## Verifying interactions
 
@@ -157,7 +157,7 @@ EXPECT_EQ(calls.size(), 3);
 EXPECT_EQ(std::get<0>(calls[0]), "started");
 ```
 
-The tracker stores a `std::vector<std::tuple<Args...>>` per method — one entry per call. Argument types come from reflection on the function's parameters.
+The tracker stores a `std::vector<std::tuple<Args...>>` per method, one entry per call. Argument types come from reflection on the function's parameters.
 
 ## Comparison
 
@@ -188,13 +188,13 @@ Each field names a method; each value is a callable. A designated-initializer-st
 
 ## Interaction with gmock
 
-You can keep using gmock for complex cases (expectations, matchers, etc.) and reach for `reflect_mocks` when you just want a quick stub. They compose — a `reflect_mocks` mock can be `dynamic_cast`-ed, captured by a `gmock::EXPECT_CALL`, whatever. Reflection isn't replacing gmock; it's removing the boilerplate for the 80% case.
+You can keep using gmock for complex cases (expectations, matchers, etc.) and reach for `reflect_mocks` when you just want a quick stub. They compose. A `reflect_mocks` mock can be `dynamic_cast`-ed, captured by a `gmock::EXPECT_CALL`, whatever. Reflection isn't replacing gmock; it's removing the boilerplate for the 80% case.
 
 <GodboltEmbed id="jbeWEa3ex" title="reflect_mocks — interface → test double" />
 
-## What's next
+## Arc 5: the advanced track
 
-Arc 5 starts — the "advanced" track.
+The next two posts open the advanced track.
 
-- **[Post 16 — `define_aggregate`: type synthesis](/posts/define-aggregate/)** — the machinery underneath auto-mocks.
-- **[Post 17 — Replacing Qt's MOC](/posts/qt-moc-replacement/)** — native property introspection without a preprocessor.
+- **[Post 16, `define_aggregate`: type synthesis](/posts/define-aggregate/)**: the machinery underneath auto-mocks.
+- **[Post 17, Replacing Qt's MOC](/posts/qt-moc-replacement/)**: native property introspection without a preprocessor.

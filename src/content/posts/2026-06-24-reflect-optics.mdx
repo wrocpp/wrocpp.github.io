@@ -30,7 +30,7 @@ Fine if it's one place. Painful if you need the same access pattern across twent
 company & departments . ix 2 . teams . ix 0 . members . ix 5 . address . postalCode .~ 54321
 ```
 
-Each of `departments`, `teams`, `members`, `address`, `postalCode` is a **lens** — a composable first-class getter/setter pair. You can build them, compose them, pipe them, and the compiler proves the whole chain type-correct.
+Each of `departments`, `teams`, `members`, `address`, `postalCode` is a **lens**, a composable first-class getter/setter pair. You can build them, compose them, pipe them, and the compiler proves the whole chain type-correct.
 
 C++ has tried: Boost.Fusion, graninas/cpp_lenses, Scelta, various macro-heavy attempts. Every one required generating per-field boilerplate. Reflection removes the generator.
 
@@ -62,7 +62,7 @@ Team team2 = optics::set(team, fifth_member_postal, 54321);
 Team team3 = optics::over(team, fifth_member_postal, [](int p) { return p + 1; });
 ```
 
-Each `optics::field<...>` is a small value type (pointer-to-member plus reflection metadata). `|` is a constexpr composition that produces a new lens type. The whole chain compiles to the same machine code as the hand-written access — genuinely zero-overhead.
+Each `optics::field<...>` is a small value type (pointer-to-member plus reflection metadata). `|` is a constexpr composition that produces a new lens type. The whole chain compiles to the same machine code as the hand-written access, genuinely zero-overhead.
 
 ## The shape of a lens
 
@@ -75,7 +75,7 @@ struct Lens {
 };
 ```
 
-In our real library the `std::function` goes away — we template on function-pointer-like non-type template parameters so the whole thing is stamped out by the compiler per lens. No runtime allocation; no virtual dispatch. `constexpr auto` all the way down.
+In our real library the `std::function` goes away. We template on function-pointer-like non-type template parameters so the whole thing is stamped out by the compiler per lens. No runtime allocation; no virtual dispatch. `constexpr auto` all the way down.
 
 ## Reflection's job
 
@@ -134,7 +134,7 @@ Team team_norm = optics::over(team, every_member_postal,
                               [](int p) { return (p / 1000) * 1000; });
 ```
 
-A traversal is "zero or more" access — the composition of a traversal with a lens produces another traversal. The type system tracks this.
+A traversal is "zero or more" access. The composition of a traversal with a lens produces another traversal. The type system tracks this.
 
 ## Comparison
 
@@ -158,19 +158,19 @@ Barry Revzin pointed out in his 2025 CppCon talk that the splicer + expansion st
 
 Under [github.com/wrocpp/reflect_optics](https://github.com/wrocpp/reflect_optics):
 
-- `optics::field<&T::member>` — field lens.
-- `optics::at(index)` — index lens (for `std::vector`, `std::array`).
-- `optics::key(key)` — key lens (for `std::map`).
-- `optics::just` / `optics::nothing` — `std::optional` prisms.
-- `optics::alt<I>` — `std::variant` alternative prisms.
-- `optics::traverse()` — range traversal.
-- `optics::iso<F, G>` — isomorphism between two types (via round-trippable functions).
+- `optics::field<&T::member>`: field lens.
+- `optics::at(index)`: index lens (for `std::vector`, `std::array`).
+- `optics::key(key)`: key lens (for `std::map`).
+- `optics::just` / `optics::nothing`: `std::optional` prisms.
+- `optics::alt<I>`: `std::variant` alternative prisms.
+- `optics::traverse()`: range traversal.
+- `optics::iso<F, G>`: isomorphism between two types (via round-trippable functions).
 - Static laws checker.
 - `|` composition.
 
 Depends on `reflect_dx` (next post) for the compile-time ADL-fu that makes `|` find the right combinators.
 
-## What's next
+## Next in the series
 
-- **[Post 22 — reflect_dx](/posts/reflect-dx/)** — pretty-printers + documentation generator.
+- **[Post 22: reflect_dx](/posts/reflect-dx/)**: pretty-printers + documentation generator.
 - Companion Monday short: *"A Haskell lens primer for C++ developers"*.

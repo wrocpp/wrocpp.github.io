@@ -1,7 +1,7 @@
 # C++ is writing down all of its undefined behavior
 
 ## Body
-The structural move at WG21 Brno was not a feature -- it was a catalogue. You cannot systematically eliminate what you have not first enumerated.
+The structural move at WG21 Brno was not a feature. It was a catalogue. You cannot systematically eliminate what you have not first enumerated.
 
 P3596R3, "Undefined Behavior and IFNDR Annexes" (Berne, Doumler, Maurer, Yaghmour), adds two non-normative annexes: one catalogues every case of undefined behavior, the other every ill-formed-no-diagnostic-required corner. Each entry gets a stable name like [ub:dcl.ref], cross-linked back into the normative text.
 

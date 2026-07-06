@@ -15,7 +15,7 @@ draft: false
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
-> **Library repo:** [github.com/wrocpp/reflect_telemetry](https://github.com/wrocpp/reflect_telemetry) · v0.1.0 · MIT.
+> Library repo: [github.com/wrocpp/reflect_telemetry](https://github.com/wrocpp/reflect_telemetry) · v0.1.0 · MIT.
 
 Prometheus is the observability default. Every production C++ service you run has code like this, once per metric:
 
@@ -30,7 +30,7 @@ auto& http_requests = prometheus::BuildCounter()
 http_requests.Increment();
 ```
 
-Add `.Labels({"method", "GET"})`, histograms, gauges — each is lines of boilerplate. Worse: **the metric name is a string literal, and the variable name is a C++ identifier**. They drift. Rename `http_requests_total` to `api_requests_total` in the registry, forget to rename the variable, and you have a pipeline of dashboards watching an orphan metric.
+Add `.Labels({"method", "GET"})`, histograms, gauges. Each is lines of boilerplate. Worse: the metric name is a string literal, and the variable name is a C++ identifier. They drift. Rename `http_requests_total` to `api_requests_total` in the registry, forget to rename the variable, and you have a pipeline of dashboards watching an orphan metric.
 
 `reflect_telemetry`'s answer: annotate the field, let reflection do the rest.
 
@@ -134,7 +134,7 @@ Runtime registration (what the Prometheus C++ client library does today) has thr
 
 ## OpenTelemetry OTLP export
 
-For the other big observability backend — OTLP over HTTP/gRPC — the same walk emits protobuf messages instead of text:
+For the other big observability backend, OTLP over HTTP/gRPC, the same walk emits protobuf messages instead of text:
 
 ```cpp
 #include <reflect_telemetry/otlp.hpp>
@@ -172,7 +172,7 @@ The `labeled_counter<Labels...>` type receives the label spec via CTAD + reflect
 | Java Micrometer | `@Timed` annotations | Runtime reflection | Yes |
 | **C++26 reflect_telemetry** | **Annotated struct fields** | **Zero** | **Yes (compile-time tied)** |
 
-Among runtime-reflection-using frameworks this matches Java's Micrometer ergonomics. Among compile-time approaches it goes further than Rust's `prometheus` macros because it can consume arbitrary annotations — chaos-injection, owners, SLIs — with the same reflection walk.
+Among runtime-reflection-using frameworks this matches Java's Micrometer ergonomics. Among compile-time approaches it goes further than Rust's `prometheus` macros because it can consume arbitrary annotations (chaos-injection, owners, SLIs) with the same reflection walk.
 
 ## Chaos / fault-injection sibling
 
@@ -193,12 +193,12 @@ Under [github.com/wrocpp/reflect_telemetry](https://github.com/wrocpp/reflect_te
 
 - `metrics::counter`, `metrics::gauge`, `metrics::histogram` annotations.
 - `metrics::help`, `metrics::namespace_`, `metrics::labels` modifiers.
-- `expose_prometheus(obj)` — text exposition for the `/metrics` endpoint.
-- `otlp::exporter` — OTLP over HTTP/gRPC.
-- `labeled_counter<Labels...>` — multi-dimensional counters.
+- `expose_prometheus(obj)` for text exposition on the `/metrics` endpoint.
+- `otlp::exporter` for OTLP over HTTP/gRPC.
+- `labeled_counter<Labels...>` for multi-dimensional counters.
 - Benchmark: ~15 ns per increment on modern x86, ~5 ns per gauge read, ~250 ns per exposition walk over 50 metrics.
 
-## What's next
+## Coming up: reflect_tracing and a chaos short
 
-- **[Post 24 — reflect_tracing](/posts/reflect-tracing/)** — span tracing on Maciek Gajewski's low-overhead engine.
+- **[Post 24: reflect_tracing](/posts/reflect-tracing/)**: span tracing on Maciek Gajewski's low-overhead engine.
 - Companion Monday short: *"Chaos engineering, annotation-driven"*.
