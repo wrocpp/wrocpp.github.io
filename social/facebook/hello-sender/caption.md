@@ -1,7 +1,7 @@
 # Hello, sender: your first std::execution pipeline
 
 ## Body
-C++26 has three big features: reflection, contracts, and std::execution. The first two get the attention. std::execution -- the new standard way to write asynchronous and parallel code -- is the one most projects will use first.
+C++26 has three big features: reflection, contracts, and std::execution. The first two get the attention. std::execution (the new standard way to write asynchronous and parallel code) is the one most projects will use first.
 
 The idea: a "sender" describes work lazily. You chain steps with the pipe operator, and nothing runs until you wait for the result. Unlike a std::future (eager, use-once), a sender is a recipe you keep building on.
 

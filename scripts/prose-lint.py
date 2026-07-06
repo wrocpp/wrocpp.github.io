@@ -327,7 +327,15 @@ def lint_caption(path: Path, strict: bool):
 
 def resolve_slug(root: Path, slug: str):
     hits = sorted(root.glob(f"src/content/posts/*-{slug}.mdx"))
-    return hits[0] if hits else None
+    if hits:
+        return hits[0]
+    # Fall back to the frontmatter `slug:` field (some posts have a filename
+    # that differs from their slug, e.g. ai-cpp-workflow.mdx -> ai-cpp-workflow-2026).
+    for p in sorted(root.glob("src/content/posts/*.mdx")):
+        m = re.search(r'^slug:\s*["\']?(.+?)["\']?\s*$', p.read_text(encoding="utf-8"), re.MULTILINE)
+        if m and m.group(1).strip() == slug:
+            return p
+    return None
 
 
 def emit(label, issues):

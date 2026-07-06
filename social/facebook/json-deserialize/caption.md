@@ -1,7 +1,7 @@
 # JSON -> struct with std::expected errors
 
 ## Body
-Inverse of post 8: take untrusted JSON, build a typed struct, fail closed on bad input with path-aware errors. `std::expected<User, parse_error>` -- no exceptions, no out-parameters. Unknown fields rejected by default (trust-boundary safe); opt-in `[[=json::allow_unknown{}]]` annotation when you genuinely want lenient parsing.
+Inverse of post 8: take untrusted JSON, build a typed struct, fail closed on bad input with path-aware errors. `std::expected<User, parse_error>`. No exceptions, no out-parameters. Unknown fields rejected by default (trust-boundary safe); opt-in `[[=json::allow_unknown{}]]` annotation when you genuinely want lenient parsing.
 
 Series post 10 of 25 in the wro.cpp C++26 reflection arc.
 

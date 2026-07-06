@@ -78,7 +78,7 @@ std::println("{}", u);
 // User{name: Filip, age: 40, admin: true, home: Address{city: Warsaw, postal_code: 12345}}
 ```
 
-Nested aggregates work automatically — `Address` has the same partial specialisation applied. Containers of aggregates work — `std::vector<User>` prints via `std::formatter<std::vector<T>>` which recurses into each element's `std::formatter<User>`.
+Nested aggregates work automatically. `Address` has the same partial specialisation applied. Containers of aggregates work too: `std::vector<User>` prints via `std::formatter<std::vector<T>>` which recurses into each element's `std::formatter<User>`.
 
 ## What the compiler does
 
@@ -197,7 +197,7 @@ The `{fmt}` library has `FMT_FORMAT_AS(T, ...)` macros for teaching `fmt::format
 
 <GodboltEmbed id="Wbeq4oEP5" title="reflect_print -- the core 30 lines (gcc 16.1)" />
 
-## What's next
+## The same walker, reused for equality and JSON
 
-- **[Post 7 — Deriving equality, hashing, and ordering](/posts/derive-eq-hash/)** — same walker pattern, different emission.
-- **[Post 8 — A 40-line JSON serializer](/posts/json-naive/)** — the flagship use-case.
+- **[Post 7: Deriving equality, hashing, and ordering](/posts/derive-eq-hash/)**. Same walker pattern, different emission.
+- **[Post 8: A 40-line JSON serializer](/posts/json-naive/)**. The flagship use-case.

@@ -26,15 +26,15 @@ All three major compilers can compile `import std;`:
 | Clang 18+ | Works (libc++ or libstdc++) | `-std=c++23` or later |
 | MSVC (VS 2026) | Works | Default for new C++20 projects |
 
-GCC 16.1 added `--compile-std-module`, which auto-builds the `std` and `std.compat` BMIs before compilation -- no separate pre-build step needed. MSVC has had `import std;` since VS 2022 17.5. The compilers are ready. Everything else is not.
+GCC 16.1 added `--compile-std-module`, which auto-builds the `std` and `std.compat` BMIs before compilation. No separate pre-build step needed. MSVC has had `import std;` since VS 2022 17.5. The compilers are ready. Everything else is not.
 
 ## Boost: the per-library prototype
 
 Ruben Perez Hidalgo (Boost.MySQL author) has been the primary driver of bringing modules to Boost. His [three-part blog series](https://anarthal.github.io/cppblog/modules) documents the effort:
 
-- **Per-library modules**: `import boost.mp11;`, `import boost.charconv;` -- not one monolithic `import boost;`.
-- **Dual-mode via compatibility headers**: a `BOOST_USE_MODULES` macro toggles between `#include <boost/mp11.hpp>` and `import boost.mp11`. Same source code, both modes.
-- **Measured results**: an Asio-based server shows a consistent [~45% build-time reduction](https://anarthal.github.io/cppblog/modules2) with modules vs headers. Some test suites see up to 3x speedup.
+- Per-library modules: `import boost.mp11;`, `import boost.charconv;` (not one monolithic `import boost;`).
+- Dual-mode via compatibility headers: a `BOOST_USE_MODULES` macro toggles between `#include <boost/mp11.hpp>` and `import boost.mp11`. Same source code, both modes.
+- Measured results: an Asio-based server shows a consistent [~45% build-time reduction](https://anarthal.github.io/cppblog/modules2) with modules vs headers. Some test suites see up to 3x speedup.
 
 The prototype covers Mp11, Charconv, and a few core libraries. It is **not merged** into mainline Boost. Perez paused the work, [waiting for CMake](https://lists.boost.org/Archives/boost/2025/01/259005.php) `import std` to stabilize and MSVC bugs to be fixed.
 
@@ -44,11 +44,11 @@ This is where modules stall.
 
 **CMake** (latest: 4.3): Named modules work with Ninja generators since CMake 3.28. But `import std` is still gated behind `CMAKE_EXPERIMENTAL_CXX_IMPORT_STD` with a version-specific GUID that [breaks between CMake releases](https://discourse.cmake.org/t/import-std-appears-to-be-broken-in-release-4-0-2/14062). Header units (`import <header.hpp>`) are not supported at all. Visual Studio generators cannot build BMIs for imported targets.
 
-**clangd**: Experimental modules support [exists](https://chuanqixu9.github.io/c++/2025/12/03/Clangd-support-for-Modules.en.html), but editing a module interface does not update the BMI -- you must rebuild the project. The clangd version must match your Clang version exactly.
+**clangd**: Experimental modules support [exists](https://chuanqixu9.github.io/c++/2025/12/03/Clangd-support-for-Modules.en.html), but editing a module interface does not update the BMI. You must rebuild the project. The clangd version must match your Clang version exactly.
 
 **VS 2026 IntelliSense**: "C++ IntelliSense support for C++20 Modules is currently experimental." This label has been unchanged for seven years.
 
-**CLion 2026.1**: Partial support -- syntax highlighting and code assistance via clangd work, but only for `.ixx`/`.cppm`/`.mxx` extensions. Refactoring across module boundaries is limited.
+**CLion 2026.1**: Partial support. Syntax highlighting and code assistance via clangd work, but only for `.ixx`/`.cppm`/`.mxx` extensions. Refactoring across module boundaries is limited.
 
 **VS Code**: The cpptools extension flags `import std;` as errors with GCC 15+. Using clangd with `compile_commands.json` works better.
 
@@ -71,20 +71,20 @@ Until libraries ship module definitions, `import std;` is the only module you ca
 
 The headline numbers are real but context-dependent:
 
-- **Best case**: Alibaba measured `import std` vs `#include <iostream>` at [40x faster](https://www.alibabacloud.com/blog/42%25-boost-in-compilation-efficiency-a-practical-analysis-of-c%2B%2B-modules_601974) for a hello-world (0.03s vs 1.2s, debug mode).
-- **Realistic case**: Boost's Asio server sees ~45% improvement.
-- **Reflection case**: Romeo's benchmarks from <PostLink slug="reflection-compile-time-cost">the compile-time cost post</PostLink> show modules are **2.2x slower than plain includes** on GCC 16.1 for `<meta>` (397ms vs 181ms). PCH beats both at 74ms.
+- Best case: Alibaba measured `import std` vs `#include <iostream>` at [40x faster](https://www.alibabacloud.com/blog/42%25-boost-in-compilation-efficiency-a-practical-analysis-of-c%2B%2B-modules_601974) for a hello-world (0.03s vs 1.2s, debug mode).
+- Realistic case: Boost's Asio server sees ~45% improvement.
+- Reflection case: Romeo's benchmarks from <PostLink slug="reflection-compile-time-cost">the compile-time cost post</PostLink> show modules are **2.2x slower than plain includes** on GCC 16.1 for `<meta>` (397ms vs 181ms). PCH beats both at 74ms.
 
 The module performance gap on GCC 16.1 is an implementation artifact, not a fundamental limitation. GCC's BMI format is not yet optimized for the scale of `<meta>`. Expect this to improve in GCC 17+.
 
-## What this means for reflection users
+## What reflection users should do today
 
 If you are building the wro.cpp reflection examples or shipping reflection-heavy code:
 
-1. **Today**: use PCH. Three lines of CMake, 2.3x speedup, works everywhere. See <PostLink slug="reflection-compile-time-cost">the compile-time cost post</PostLink>.
-2. **Don't**: switch to `import std;` for reflection on GCC 16.1 -- it is currently slower.
-3. **Watch**: GCC module performance, CMake `import std` stabilization, and the Boost prototype merge.
-4. **Long-term**: `import std.meta;` (or `import std;`) will eventually replace the PCH. We are not there yet.
+1. Today: use PCH. Three lines of CMake, 2.3x speedup, works everywhere. See <PostLink slug="reflection-compile-time-cost">the compile-time cost post</PostLink>.
+2. Don't: switch to `import std;` for reflection on GCC 16.1 -- it is currently slower.
+3. Watch: GCC module performance, CMake `import std` stabilization, and the Boost prototype merge.
+4. Long-term: `import std.meta;` (or `import std;`) will eventually replace the PCH. We are not there yet.
 
 The honest assessment: modules are a solved problem in the compiler frontend and an unsolved problem everywhere else. The standard landed in C++20. The ecosystem will catch up -- but in May 2026, PCH remains the pragmatic choice for reflection projects.
 

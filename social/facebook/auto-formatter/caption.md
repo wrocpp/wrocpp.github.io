@@ -1,7 +1,7 @@
 # Reflect_print: auto std::formatter for any aggregate
 
 ## Body
-Rust has `#[derive(Debug)]`. C++ until 2026 had `operator<<` written by hand per type. C++26 reflection ends that: one `std::formatter` specialisation walks any aggregate at compile time and prints all fields with names. Nested aggregates print recursively. Rename a field -- print follows.
+Rust has `#[derive(Debug)]`. C++ until 2026 had `operator<<` written by hand per type. C++26 reflection ends that: one `std::formatter` specialisation walks any aggregate at compile time and prints all fields with names. Nested aggregates print recursively. Rename a field, and the print follows.
 
 Series post 6 of 25 in the wro.cpp C++26 reflection arc. Live demo on Godbolt.
 

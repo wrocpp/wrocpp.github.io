@@ -47,7 +47,7 @@ struct [[=hashable]] User
 };
 ```
 
-Read that carefully -- the `[[=skipped_for_hash]]` annotation can be applied to a *specific base class* in the inheritance list, not just to the struct as a whole. The same syntax works on data members. Both cases route through the same `annotations_of_with_type` query.
+Read that carefully. The `[[=skipped_for_hash]]` annotation can be applied to a *specific base class* in the inheritance list, not just to the struct as a whole. The same syntax works on data members. Both cases route through the same `annotations_of_with_type` query.
 
 ## The opt-in check
 
@@ -92,16 +92,16 @@ size_t calculate_hash(const T& obj, size_t seed = 0)
 
 Four reflection primitives carry the load:
 
-1. **`subobjects_of(^^T, ctx)`** -- returns reflections for the bases AND non-static data members in declaration order. Unlike `nonstatic_data_members_of`, this captures the inheritance hierarchy too.
-2. **`annotations_of_with_type(r, ^^T)`** -- queries annotations of a specific type. Returns a `vector<info>`.
-3. **`type_of(r)`** -- extracts the type from a member or base reflection, for the `Hashable` concept check.
-4. **`obj.[: r :]`** -- splices the reflection into a regular member access expression.
+1. **`subobjects_of(^^T, ctx)`** returns reflections for the bases AND non-static data members in declaration order. Unlike `nonstatic_data_members_of`, this captures the inheritance hierarchy too.
+2. **`annotations_of_with_type(r, ^^T)`** queries annotations of a specific type. Returns a `vector<info>`.
+3. **`type_of(r)`** extracts the type from a member or base reflection, for the `Hashable` concept check.
+4. **`obj.[: r :]`** splices the reflection into a regular member access expression.
 
 The `template for` is post 4 of the wro.cpp <PostLink slug="template-for-expansion-statements">expansion statements post</PostLink>. The splice is post 3.
 
-## Why this matters
+## The boilerplate this removes
 
-Writing your own hash for a class almost always means writing the boilerplate "combine these fields, but not those." Without reflection, you write the function by hand, or you write a macro that does roughly the same thing but interacts badly with IDEs and refactoring. With reflection alone, you get all-or-nothing -- either hash every field or don't.
+Writing your own hash for a class almost always means writing the boilerplate "combine these fields, but not those." Without reflection, you write the function by hand, or you write a macro that does roughly the same thing but interacts badly with IDEs and refactoring. With reflection alone, you get all-or-nothing: either hash every field or don't.
 
 Annotations bridge the gap. The annotation lives on the field declaration. You can rename a field, and the annotation moves with it. You can refactor a base class out, and the annotation goes with it. The "do not hash this" decision lives next to the field it applies to, in the type definition where it belongs.
 
@@ -124,9 +124,9 @@ Multiple annotations on one declaration is part of P3394. Each reflection-driven
 
 ## Where this is heading
 
-With C++26, the annotation processing happens inside helper templates -- `calculate_hash<T>`, `to_json<T>`, `insert<T>`. The annotations are observed; the generated code is fixed at template instantiation time.
+With C++26, the annotation processing happens inside helper templates (`calculate_hash<T>`, `to_json<T>`, `insert<T>`). The annotations are observed; the generated code is fixed at template instantiation time.
 
-With C++29 token injection (P3294), the annotation processing could happen at the call site itself, generating a custom function body per annotation pattern. That is speculative -- token injection has no shipping compiler. But it's the direction the reflection arc has been pointing at since post 1.
+With C++29 token injection (P3294), the annotation processing could happen at the call site itself, generating a custom function body per annotation pattern. That is speculative; token injection has no shipping compiler. But it's the direction the reflection arc has been pointing at since post 1.
 
 For now, the helper-template-with-annotations pattern is the production shape. It works on GCC 16.1 and Bloomberg's clang-p2996 fork today. It composes with the serialization, schema, and ORM patterns the rest of the wro.cpp series already documented.
 

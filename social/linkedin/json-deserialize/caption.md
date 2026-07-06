@@ -18,11 +18,11 @@ auto bad = rjson::parse<User>(R"({"name":"Filip","age":"forty","admin":true})");
 
 Three things this gets right that hand-rolled deserializers usually don't:
 
-1. **`std::expected<T, parse_error>`** -- no exceptions, no out-parameters, no exit code conventions. Caller pattern-matches on success/failure.
-2. **Path-aware error reporting** -- `.users[3].address.postal_code` not "parse error". Reflection knows the field name; the recursive walker accumulates the path automatically.
-3. **Fail-closed on unknown fields** -- protects against trust-boundary attacks (extra fields in attacker-controlled payloads) by default; opt-in `[[=json::allow_unknown{}]]` annotation when you genuinely want lenient parsing.
+1. **`std::expected<T, parse_error>`**. No exceptions, no out-parameters, no exit code conventions. Caller pattern-matches on success/failure.
+2. **Path-aware error reporting**: `.users[3].address.postal_code` not "parse error". Reflection knows the field name; the recursive walker accumulates the path automatically.
+3. **Fail-closed on unknown fields**: protects against trust-boundary attacks (extra fields in attacker-controlled payloads) by default; opt-in `[[=json::allow_unknown{}]]` annotation when you genuinely want lenient parsing.
 
-What this does NOT replace: nlohmann/json (mature error recovery, JSON Pointer support, deep ecosystem), Glaze (faster + already on P2996), simdjson (raw speed). The reflection-driven deserializer is for the common case where you control both ends and want type-safe parsing with clean errors. The same walker grows annotations for renaming, default values, and skip behaviour -- post 9 covers those.
+What this does NOT replace: nlohmann/json (mature error recovery, JSON Pointer support, deep ecosystem), Glaze (faster + already on P2996), simdjson (raw speed). The reflection-driven deserializer is for the common case where you control both ends and want type-safe parsing with clean errors. The same walker grows annotations for renaming, default values, and skip behaviour. Post 9 covers those.
 
 Series post 10 of 25 in the wro.cpp C++26 reflection arc.
 
