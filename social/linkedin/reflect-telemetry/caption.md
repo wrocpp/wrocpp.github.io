@@ -15,7 +15,7 @@ struct Metrics {
 std::println("{}", reflect_telemetry::expose<Metrics>(m));
 ```
 
-Output (Prometheus exposition format -- the standard `/metrics` endpoint shape):
+Output (Prometheus exposition format, the standard `/metrics` endpoint shape):
 
 ```
 # TYPE http_requests_total counter
@@ -31,7 +31,7 @@ What this REPLACES: the parallel `prometheus.cpp` registration file every servic
 
 What this does NOT replace: histogram bucket strategy (still your call), label cardinality discipline (the kind of mistake that takes Prometheus down), the metric-to-alert mapping in your monitoring stack. The reflection layer is the schema-to-exposition pipe; everything else is operational.
 
-The pattern is genuinely novel -- nobody is doing this in C++ today. Rust has `metrics-derive` for the runtime-attribute-based version; the C++26 compile-time-attribute version is a wro.cpp first.
+The pattern is genuinely novel. Nobody is doing this in C++ today. Rust has `metrics-derive` for the runtime-attribute-based version; the C++26 compile-time-attribute version is a wro.cpp first.
 
 Series post 23 of 25 in the wro.cpp C++26 reflection arc. Live demo on Godbolt with clang-p2996.
 

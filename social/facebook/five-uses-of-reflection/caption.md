@@ -3,11 +3,11 @@
 ## Body
 C++26 reflection sounds like a metaprogramming PhD project. It is not. Here are five concrete things you can build with it, ranked by effort:
 
-1. enum-to-string -- 5 minutes. Retires `magic_enum`.
-2. struct-to-JSON -- 1 hour. Forty lines, no macros.
-3. derived equality + hash -- 1 hour. One source of truth.
-4. dependency injection container -- 1 day. Spring-style, sixty lines.
-5. domain-specific code generation -- weeks. ORMs, CLI parsers, schema validators -- no codegen step.
+1. enum-to-string (5 minutes). Retires `magic_enum`.
+2. struct-to-JSON (1 hour). Forty lines, no macros.
+3. derived equality + hash (1 hour). One source of truth.
+4. dependency injection container (1 day). Spring-style, sixty lines.
+5. domain-specific code generation (weeks). ORMs, CLI parsers, schema validators, no codegen step.
 
 Pick #1 first. If it sticks, you will naturally walk up the list.
 

@@ -1,7 +1,7 @@
 # reflect_telemetry
 
 ## Body
-Annotate a field with `[[=metric(counter)]]` or `[[=metric(gauge)]]`; reflection emits the Prometheus exposition + OpenTelemetry OTLP exporter from struct shape. Add a metric -- wire format updates. No parallel registration file, no late-night "the metric was added but not exposed" incident.
+Annotate a field with `[[=metric(counter)]]` or `[[=metric(gauge)]]`; reflection emits the Prometheus exposition + OpenTelemetry OTLP exporter from struct shape. Add a metric, and the wire format updates. No parallel registration file, no late-night "the metric was added but not exposed" incident.
 
 Series post 23 of 25 in the wro.cpp C++26 reflection arc.
 

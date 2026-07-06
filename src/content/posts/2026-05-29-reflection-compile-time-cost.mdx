@@ -14,7 +14,7 @@ relatedPosts: [enum-to-string, gcc-16-hands-on, first-reflection, glaze-vs-handr
 
 import PostLink from '../../components/PostLink.astro';
 
-Every post in the wro.cpp reflection series starts with `#include <experimental/meta>` (or `<meta>` on GCC 16.1). None of them mention what that include costs. Vittorio Romeo measured it -- twice -- and the answer is worth knowing before you ship reflection to production.
+Every post in the wro.cpp reflection series starts with `#include <experimental/meta>` (or `<meta>` on GCC 16.1). None of them mention what that include costs. Vittorio Romeo measured it twice, and the answer is worth knowing before you ship reflection to production.
 
 ## The headline number
 
@@ -22,7 +22,7 @@ Romeo's [March 2026 article](https://vittorioromeo.com/index/blog/refl_compileti
 
 **The `<meta>` header costs ~181ms to parse. The reflection algorithm itself costs ~0.07ms per enumerator.**
 
-The header is roughly 2500x more expensive than the logic. Enabling `-freflection` without including any header adds zero overhead (33.2ms vs 33.9ms -- within noise). The tax is not reflection; the tax is the standard library machinery that `<meta>` pulls in: `<ranges>`, `<vector>`, `<string_view>`, `<optional>`, and their transitive dependencies.
+The header is roughly 2500x more expensive than the logic. Enabling `-freflection` without including any header adds zero overhead (33.2ms vs 33.9ms, within noise). The tax is not reflection; the tax is the standard library machinery that `<meta>` pulls in: `<ranges>`, `<vector>`, `<string_view>`, `<optional>`, and their transitive dependencies.
 
 ## The benchmark data
 
@@ -33,9 +33,9 @@ Romeo's enum-to-string comparison (May 2026, GCC 16.1.1, i9-13900K) measured fou
 | X-macro (`const char*`) | 25.7 | 6.8 | ~0.027 |
 | X-macro (`string_view`) | 136.0 | 17.0 | ~0.06 |
 | enchantum (`__PRETTY_FUNCTION__`) | 147.1 | 37.0 | varies |
-| **C++26 reflection** | **180.8** | **34.2** | **~0.07** |
+| C++26 reflection | 180.8 | 34.2 | ~0.07 |
 
-The reflection algorithm scales at 0.07ms per enumerator -- the same order as hand-written X-macros using `string_view`. At N=1024, reflection (74.2ms algorithm cost) beats enchantum (124.9ms) and is within 8% of X-macros with `string_view` (68.5ms). The only thing faster is raw `const char*` X-macros -- which nobody writes by choice.
+The reflection algorithm scales at 0.07ms per enumerator, the same order as hand-written X-macros using `string_view`. At N=1024, reflection (74.2ms algorithm cost) beats enchantum (124.9ms) and is within 8% of X-macros with `string_view` (68.5ms). The only thing faster is raw `const char*` X-macros, which nobody writes by choice.
 
 **The entire cost difference is the header.**
 
@@ -46,7 +46,7 @@ Romeo tested precompiled headers, and they cut the `<meta>` overhead by 2.3x:
 | Configuration | Header only (ms) | With N=256 enum (ms) |
 |---------------|-------------------|----------------------|
 | Plain `#include <meta>` | 180.8 | 215.0 |
-| **With PCH** | **73.8** | **97.5** |
+| With PCH | 73.8 | 97.5 |
 | With modules | 397.4 | 423.2 |
 
 The PCH stanza in CMake:
@@ -58,17 +58,17 @@ target_precompile_headers(my_target PRIVATE
 )
 ```
 
-That is the three-line fix. Every project using reflection should add it. The `<meta>` header is parsed once, serialized to disk, and reused across every TU in the target. At 500 TUs with N=16 enumerators each, the difference is ~94 seconds (plain) vs ~40 seconds (PCH) -- nearly a minute saved on a clean build.
+That is the three-line fix. Every project using reflection should add it. The `<meta>` header is parsed once, serialized to disk, and reused across every TU in the target. At 500 TUs with N=16 enumerators each, the difference is ~94 seconds (plain) vs ~40 seconds (PCH). Nearly a minute saved on a clean build.
 
 ## Modules: surprisingly worse (for now)
 
-The intuition is that `import std;` should help even more than PCH. Romeo's data says otherwise -- on GCC 16.1, modules are **2.2x slower** than plain includes:
+The intuition is that `import std;` should help even more than PCH. Romeo's data says otherwise. On GCC 16.1, modules are 2.2x slower than plain includes:
 
 | Configuration | Header only (ms) |
 |---------------|-------------------|
 | Plain include | 180.8 |
 | PCH | 73.8 |
-| **Modules** | **397.4** |
+| Modules | 397.4 |
 
 This is a GCC 16.1 implementation artifact, not a fundamental limitation. Module compilation in GCC is young; the binary module interface (BMI) format is not yet optimized for the scale of `<meta>`. Expect this to improve in GCC 17 and future Clang releases. Today, **PCH is the right answer**.
 
@@ -76,19 +76,19 @@ This is a GCC 16.1 implementation artifact, not a fundamental limitation. Module
 
 Jonathan Mueller's [P3429R1 "`<meta>` should minimize standard library dependencies"](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3429r1.html) proposes the structural fix: make `<meta>` stop pulling in `<ranges>`, `<vector>`, and `<optional>`. Replace `std::vector` returns with a lightweight `std::meta::info_array`; return `const char*` instead of `std::string_view` from `identifier_of()`; eliminate the `std::optional` dependency in `data_member_spec`.
 
-The paper has prototype implementation experience on Bloomberg's clang-p2996. The changes are source-compatible for most code (a few examples need explicit `std::ranges::to<std::vector>()`). If adopted, it would bring `<meta>` closer to `<type_traits>` weight -- tens of milliseconds, not hundreds.
+The paper has prototype implementation experience on Bloomberg's clang-p2996. The changes are source-compatible for most code (a few examples need explicit `std::ranges::to<std::vector>()`). If adopted, it would bring `<meta>` closer to `<type_traits>` weight (tens of milliseconds, not hundreds).
 
 P3429 has not been adopted yet. Watch the Brno meeting (June 8-13) for movement.
 
-## What this means for the reflection series
+## The fix for production builds
 
-Every example in the wro.cpp series compiles in isolation -- a single TU, a single `#include`. For hands-on learning, the 181ms is invisible. For production code that reflects types across hundreds of TUs, the 181ms compounds. The fix is mechanical:
+Every example in the wro.cpp series compiles in isolation: a single TU, a single `#include`. For hands-on learning, the 181ms is invisible. For production code that reflects types across hundreds of TUs, the 181ms compounds. The fix is mechanical:
 
 1. **Today**: add `<meta>` (and `<ranges>` if you use it) to your PCH. Three lines of CMake.
 2. **Watch**: GCC module performance will improve. When it does, `import std;` replaces the PCH.
 3. **Long-term**: P3429 (or something like it) makes the PCH unnecessary.
 
-The reflection itself -- the `^^T`, the `nonstatic_data_members_of`, the `identifier_of` -- is effectively free. The cost is the standard library. That is a solvable problem.
+The reflection itself (the `^^T`, the `nonstatic_data_members_of`, the `identifier_of`) is effectively free. The cost is the standard library. That is a solvable problem.
 
 ---
 

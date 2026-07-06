@@ -1,19 +1,19 @@
 # The five most useful things C++26 reflection unlocks (in effort order)
 
 ## Body
-C++26 reflection looks like it requires a PhD in template metaprogramming. It does not. Five concrete projects you can build with it -- ranked from "5 minutes" to "weeks". Use this list as a triage when you pick your first reflection-powered project.
+C++26 reflection looks like it requires a PhD in template metaprogramming. It does not. Five concrete projects you can build with it, ranked from "5 minutes" to "weeks". Use this list as a triage when you pick your first reflection-powered project.
 
 The list:
 
-1. enum-to-string -- 5 minutes. Twelve lines, no `magic_enum`, no `__PRETTY_FUNCTION__` parsing trick. The smallest possible win and the one that retires the most legacy code.
+1. enum-to-string (5 minutes). Twelve lines, no `magic_enum`, no `__PRETTY_FUNCTION__` parsing trick. The smallest possible win and the one that retires the most legacy code.
 
-2. struct-to-JSON -- 1 hour. Forty lines and `to_json(T)` works for any aggregate. No `NLOHMANN_DEFINE_TYPE_INTRUSIVE` macros, no Boost.Describe registration block, no codegen step.
+2. struct-to-JSON (1 hour). Forty lines and `to_json(T)` works for any aggregate. No `NLOHMANN_DEFINE_TYPE_INTRUSIVE` macros, no Boost.Describe registration block, no codegen step.
 
-3. derived equality + hash -- 1 hour. C++20 gave us `= default` for `==` and `<=>` but never `std::hash`. Reflection closes the gap with one source of truth across equality, ordering, and hashing.
+3. derived equality + hash (1 hour). C++20 gave us `= default` for `==` and `<=>` but never `std::hash`. Reflection closes the gap with one source of truth across equality, ordering, and hashing.
 
-4. dependency injection container -- 1 day. Spring-style autowiring in roughly sixty lines. Reflection asks "what are the constructor parameters of T?" at compile time, looks each one up in a registry, and assembles the call.
+4. dependency injection container (1 day). Spring-style autowiring in roughly sixty lines. Reflection asks "what are the constructor parameters of T?" at compile time, looks each one up in a registry, and assembles the call.
 
-5. domain-specific code generation -- weeks. ORMs, schema validators, CLI parsers, gRPC stubs -- all without a separate code-generator step. The open-ended payoff and the reason reflection was worth waiting for.
+5. domain-specific code generation (weeks). ORMs, schema validators, CLI parsers, gRPC stubs, all without a separate code-generator step. The open-ended payoff and the reason reflection was worth waiting for.
 
 Pick #1 first. If it sticks, you'll naturally walk up the list.
 

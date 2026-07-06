@@ -29,7 +29,7 @@ What this REPLACES: hand-written `.natvis` per project, custom `~/.lldbinit` for
 
 What this does NOT replace: domain-specific visualisers (a `Quaternion` that should display as Euler angles, a `Color` that should show a swatch, a `Bitmap` that should render a thumbnail). Those still need a manual specialisation. The default exists for the common case: structural display matching the field layout, kept in sync with the struct.
 
-The same `nonstatic_data_members_of` walker drives every emit format in the reflection arc -- print, JSON, LLM schema, lens, generator, natvis. Six destinations, one walker.
+The same `nonstatic_data_members_of` walker drives every emit format in the reflection arc: print, JSON, LLM schema, lens, generator, natvis. Six destinations, one walker.
 
 Series post 22 of 25 in the wro.cpp C++26 reflection arc. Live demo on Godbolt with clang-p2996.
 

@@ -1,7 +1,7 @@
 # Derive eq + hash + ordering from struct shape
 
 ## Body
-C++20's `bool operator==(T const&) const = default` covers two-thirds of what value types need. The missing third is `std::hash<T>` -- which still requires a manual specialisation for every aggregate you put in an `unordered_map` -- and per-field customisation (skip a field, compare a `double` within epsilon, normalise a string before hashing) that defaulted ops can't express.
+C++20's `bool operator==(T const&) const = default` covers two-thirds of what value types need. The missing third is `std::hash<T>` (which still requires a manual specialisation for every aggregate you put in an `unordered_map`) and per-field customisation (skip a field, compare a `double` within epsilon, normalise a string before hashing) that defaulted ops can't express.
 
 C++26 reflection fills both gaps. One header (`reflect_eq`):
 
@@ -18,7 +18,7 @@ struct std::hash<T> {  // for any reflectable aggregate
 };
 ```
 
-Rename a field -- hash follows. Add a member -- it's included. Same shape with annotations for opt-in customisation: `[[skip_in_hash]]`, `[[approx_eq(0.001)]]`, `[[normalise_first]]` mark per-field policy that the generic `operator==` and `hash` honor at compile time. Schema-as-spec: edit the struct, the comparison and hash stay correct.
+Rename a field and the hash follows. Add a member and it's included. Same shape with annotations for opt-in customisation: `[[skip_in_hash]]`, `[[approx_eq(0.001)]]`, `[[normalise_first]]` mark per-field policy that the generic `operator==` and `hash` honor at compile time. Schema-as-spec: edit the struct, the comparison and hash stay correct.
 
 The post also covers the gotchas: float comparison defaults are fragile (use epsilon annotations); std::hash mixing with the FNV-style boilerplate above is OK for hashmaps but NOT for cryptographic use; defaulted `operator<=>` interacts subtly with annotated equality.
 

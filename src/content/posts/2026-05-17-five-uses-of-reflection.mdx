@@ -7,41 +7,41 @@ language: en
 kind: short
 audience: working-cpp
 tags: [cpp26, p2996, reflection, opinion, news]
-summary: "C++26 reflection looks like it requires a PhD in template metaprogramming. It does not. Five concrete projects you can build with it, ranked from five minutes to weeks -- use this as a triage when picking your first reflection-powered project."
+summary: "C++26 reflection looks like it requires a PhD in template metaprogramming. It does not. Five concrete projects you can build with it, ranked from five minutes to weeks. Use this as a triage when picking your first reflection-powered project."
 draft: false
 ---
 
 import PostLink from '../../components/PostLink.astro';
 
-C++26 reflection looks like it requires a PhD in template metaprogramming. It does not. Here are five concrete things you can do with it, ranked by how much effort each takes -- from "5 minutes" to "weeks". Use this list as a triage when you're picking your first reflection-powered project.
+C++26 reflection looks like it requires a PhD in template metaprogramming. It does not. Here are five concrete things you can do with it, ranked by how much effort each takes, from "5 minutes" to "weeks". Use this list as a triage when you're picking your first reflection-powered project.
 
-## #1 -- enum-to-string (effort: 5 minutes)
+## #1 enum-to-string (effort: 5 minutes)
 
 This is the smallest possible win and the one that converts the most skeptics. For a decade, every non-trivial codebase has carried either a hand-maintained `switch` that drifts out of sync with the enum, an X-macro that nobody wants to touch, or a vendored copy of `magic_enum` that leans on a compiler-specific `__PRETTY_FUNCTION__` parsing trick.
 
 Reflection retires all three. A dozen lines of standard C++26 walk the enumerators of any enum, splice each one into a `case`, and return the identifier as a `string_view`. No third-party header. No undefined-behavior corners. No "doesn't work on MSVC". It compiles, it's `constexpr`, and it's the gateway drug to the rest of the list. See <PostLink slug="enum-to-string">post 5</PostLink>.
 
-## #2 -- struct-to-JSON (effort: 1 hour)
+## #2 struct-to-JSON (effort: 1 hour)
 
 Forty lines of code, and you have a generic `to_json(T)` that walks any aggregate's non-static data members, formats each one, and emits a JSON object. No `NLOHMANN_DEFINE_TYPE_INTRUSIVE(...)` macro pollution per type. No Boost.Describe registration block. No code generator step in your build.
 
 The "1 hour" includes the time it takes to handle the four cases that actually matter: numbers, strings, nested aggregates, and ranges. Once that scaffolding exists, every new struct in your codebase is JSON-serializable for free, the moment it's defined. See <PostLink slug="json-naive">post 8</PostLink>.
 
-## #3 -- derived equality + hash (effort: 1 hour)
+## #3 derived equality + hash (effort: 1 hour)
 
 C++20 gave us `operator== = default` and `<=> = default`, which is great until you realize the standard never gave you the matching `std::hash`. You still have to hand-roll the field combine, and it has to stay in lockstep with the equality definition or your hashed containers go subtly wrong.
 
-Reflection closes the gap. The same field walk that powers JSON gives you a structural equality, a stable hash that mixes every member with the same combinator, and -- if you want -- field-level opt-outs via attributes. One source of truth, no drift. See <PostLink slug="derive-eq-hash">post 7</PostLink>.
+Reflection closes the gap. The same field walk that powers JSON gives you a structural equality, a stable hash that mixes every member with the same combinator, and, if you want, field-level opt-outs via attributes. One source of truth, no drift. See <PostLink slug="derive-eq-hash">post 7</PostLink>.
 
-## #4 -- dependency injection container (effort: 1 day)
+## #4 dependency injection container (effort: 1 day)
 
 A Spring-style container in roughly sixty lines of C++26. The trick is that reflection lets you ask "what are the constructor parameters of `T`?" at compile time, look each one up in a type-keyed registry, and assemble the call site. Autowiring, in standard C++, with no XML, no annotations beyond what you already write, and no runtime cost beyond a hash lookup.
 
 This is the project that quietly disproves the claim "C++ doesn't have an ecosystem story for application code". A weekend with this primitive and you can wire a non-trivial service the way a Java or C# developer would in 2009. See <PostLink slug="dependency-injection">post 14</PostLink>.
 
-## #5 -- domain-specific code generation (effort: weeks)
+## #5 domain-specific code generation (effort: weeks)
 
-This is the open-ended payoff and the reason reflection was worth waiting for. Once you have a struct walk, a constexpr type identity, and splicing, you can generate ORMs from a domain model, schema validators from a struct, CLI parsers from a settings type, gRPC stubs from a service interface -- all without a separate code-generator step bolted onto your build.
+This is the open-ended payoff and the reason reflection was worth waiting for. Once you have a struct walk, a constexpr type identity, and splicing, you can generate ORMs from a domain model, schema validators from a struct, CLI parsers from a settings type, gRPC stubs from a service interface, all without a separate code-generator step bolted onto your build.
 
 It's "weeks" because the hard part is no longer the C++; it's the design of the DSL you embed in your aggregates. The wro.cpp series builds toward exactly this in posts 11 through 17, each one picking off a single domain (ORM, CLI, schema, mocks, MOC replacement) and showing the same primitives composed differently.
 

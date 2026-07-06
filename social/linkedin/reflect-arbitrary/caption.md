@@ -1,7 +1,7 @@
 # reflect_arbitrary: property-based test generators from struct shape
 
 ## Body
-QuickCheck in Haskell, mockall in Rust, jqwik in Java -- every major language auto-derives `Arbitrary<T>` from a struct declaration. C++ was last. Reflection fixes that:
+QuickCheck in Haskell, mockall in Rust, jqwik in Java. Every major language auto-derives `Arbitrary<T>` from a struct declaration. C++ was last. Reflection fixes that:
 
 ```cpp
 struct User {

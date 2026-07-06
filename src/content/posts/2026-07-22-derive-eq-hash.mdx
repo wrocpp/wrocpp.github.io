@@ -9,7 +9,7 @@ series: cpp26-reflection
 series_order: 7
 audience: working-cpp
 tags: [reflection, cpp26, equality, hash, ordering]
-summary: "C++20 gave us `= default` for operator== and <=>. Reflection lets us do the same for hashing, plus go beyond default: include/exclude fields, custom combinators, floating-point tolerances — all declarative."
+summary: "C++20 gave us `= default` for operator== and <=>. Reflection lets us do the same for hashing, plus go beyond default: include/exclude fields, custom combinators, and floating-point tolerances. All declarative."
 draft: false
 discussion: https://github.com/wrocpp/wrocpp.github.io/discussions/46
 ---
@@ -22,9 +22,9 @@ C++20 introduced defaulted comparison:
 struct Point { int x; int y;  bool operator==(Point const&) const = default; };
 ```
 
-That's two-thirds of what you need. The missing third is **hashing** — `std::hash<Point>` still requires a manual specialisation. And when you need non-default behaviour (skip a field, compare a `double` within epsilon, normalise a string before hashing), `= default` doesn't help.
+That's two-thirds of what you need. The missing third is **hashing**. `std::hash<Point>` still requires a manual specialisation. And when you need non-default behaviour (skip a field, compare a `double` within epsilon, normalise a string before hashing), `= default` doesn't help.
 
-Reflection fills the gap. One header — `reflect_eq` — handles defaulted hashing for any aggregate, plus opt-in annotations for per-field customisation.
+Reflection fills the gap. One header (`reflect_eq`) handles defaulted hashing for any aggregate, plus opt-in annotations for per-field customisation.
 
 ## The core: structural hash
 
@@ -71,7 +71,7 @@ That single partial specialisation makes every aggregate hashable. `std::unorder
 
 ## Ordering, too
 
-`<=>` handles ordering. For aggregates you can `= default` it — and reflection lets us do the same without writing it on every struct:
+`<=>` handles ordering. For aggregates you can `= default` it, and reflection lets us do the same without writing it on every struct:
 
 ```cpp
 template <typename T>
@@ -173,14 +173,14 @@ Reflection version: zero bytes of per-type code. Opt out when you need custom lo
 
 ## Runtime cost
 
-Each struct hash becomes an unrolled sequence of `hash_combine` calls. For a struct with N fields, that's N hash-of-field calls plus N seed updates. Identical to what you'd hand-write. No reflection cost at runtime — `template for` unrolled before codegen.
+Each struct hash becomes an unrolled sequence of `hash_combine` calls. For a struct with N fields, that's N hash-of-field calls plus N seed updates. Identical to what you'd hand-write. No reflection cost at runtime; the `template for` is unrolled before codegen.
 
 <GodboltEmbed id="43WMPKPMq" title="Derived hash + ordering from structure" />
 
 ## When not to use this
 
 - **Huge structs.** The unroll is linear in field count. At ~100 fields the compile time cost grows. Use runtime iteration for wide structs.
-- **Types with invariants.** If only some combinations of field values are valid, structural comparison may produce surprising results — e.g., two "equal" objects that are in different logical states. Hand-written comparators encode intent.
+- **Types with invariants.** If only some combinations of field values are valid, structural comparison may produce surprising results. Two "equal" objects can be in different logical states. Hand-written comparators encode intent.
 
 ## The `reflect_print` → `reflect_eq` → `reflect_json` family
 
@@ -192,10 +192,10 @@ By [post 7], we've built three utilities from the same walker pattern:
 
 Every one of them is "walk members, do X." The walker is ~10 lines of reflection. The X is the library.
 
-## What's next
+## Arc 3: serialization as a first-class library
 
 Arc 3 starts: serialization as a first-class library.
 
-- **[Post 8 — A 40-line JSON serializer](/posts/json-naive/)** — the naive version, complete and testable.
-- **[Post 9 — Annotations](/posts/annotations/)** — per-field renames, skips, case conversion.
-- **[Post 10 — Deserialization + `std::expected`](/posts/json-deserialize/)** — the inverse.
+- **[Post 8: A 40-line JSON serializer](/posts/json-naive/)**. The naive version, complete and testable.
+- **[Post 9: Annotations](/posts/annotations/)**. Per-field renames, skips, case conversion.
+- **[Post 10: Deserialization + `std::expected`](/posts/json-deserialize/)**. The inverse.

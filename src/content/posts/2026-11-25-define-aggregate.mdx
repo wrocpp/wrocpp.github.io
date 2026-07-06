@@ -134,7 +134,7 @@ using UserPatch = Partial<User>;
 // struct { optional<string> name; optional<int> age; ... };
 ```
 
-`substitute` is the other key primitive — it instantiates a template with given arguments at compile time, returning an `info`. `substitute(^^std::optional, {type_of(m)})` gives the reflection of `std::optional<T>` for that field's `T`.
+`substitute` is the other key primitive. It instantiates a template with given arguments at compile time, returning an `info`. `substitute(^^std::optional, {type_of(m)})` gives the reflection of `std::optional<T>` for that field's `T`.
 
 ## `Required<T>`: inverse of Partial
 
@@ -176,14 +176,14 @@ consteval auto build_readonly() {
 
 ## Beyond TypeScript
 
-TypeScript's utility types stop at the type level — you can't inspect why they work at runtime. In C++, `Pick<User, "name">` *is* a first-class type:
+TypeScript's utility types stop at the type level. You can't inspect why they work at runtime. In C++, `Pick<User, "name">` *is* a first-class type:
 
 - You can serialise a `Pick<User, "name">` with `reflect_json`.
 - You can pass it across a network as a MessagePack `Pick<User, ...>`.
 - You can store it in a database column-by-column via `reflect_orm`.
 - You can diff two `Partial<User>`s field-by-field.
 
-Every library we've built in this series composes with every synthesised type automatically — because they all walk reflection, and the synthesised type has genuine reflection.
+Every library we've built in this series composes with every synthesised type automatically, because they all walk reflection, and the synthesised type has genuine reflection.
 
 ## Data transfer objects
 
@@ -200,9 +200,9 @@ Each is a proper type you can return from API handlers, serialise, validate. You
 
 ## Cost model
 
-`define_aggregate` runs at compile time. The synthesised type has no runtime marker — it's a genuine C++ type with a proper layout, alignment, size, and `std::is_standard_layout_v`-ness (when applicable). Zero runtime overhead.
+`define_aggregate` runs at compile time. The synthesised type has no runtime marker. It's a genuine C++ type with a proper layout, alignment, size, and `std::is_standard_layout_v`-ness (when applicable). Zero runtime overhead.
 
-Compile-time cost scales with the number of `data_member_spec`s — linear in field count. For types with a few dozen fields, the overhead is negligible. For types with hundreds, measure; but it's still cheaper than the equivalent tuple-based TMP.
+Compile-time cost scales with the number of `data_member_spec`s, linear in field count. For types with a few dozen fields, the overhead is negligible. For types with hundreds, measure; but it's still cheaper than the equivalent tuple-based TMP.
 
 ## Caveats (again, implementation-dependent)
 
@@ -210,11 +210,11 @@ Compile-time cost scales with the number of `data_member_spec`s — linear in fi
 
 ## What this enables long-term
 
-Combined with the serialization, CLI, ORM, DI, and mocking machinery from earlier posts, `define_aggregate` closes the loop. You can describe data **shapes** declaratively — by filtering, transforming, or combining existing types — and every surface (wire formats, database columns, help text, test doubles) follows. That's the programming model TypeScript has offered since 2016. C++ has it now, at compile time, zero-cost.
+Combined with the serialization, CLI, ORM, DI, and mocking machinery from earlier posts, `define_aggregate` closes the loop. You can describe data **shapes** declaratively (by filtering, transforming, or combining existing types), and every surface (wire formats, database columns, help text, test doubles) follows. That's the programming model TypeScript has offered since 2016. C++ has it now, at compile time, zero-cost.
 
 <GodboltEmbed id="3o8T5h1od" title="Pick / Omit / Partial in C++26" />
 
-## What's next
+## Retiring MOC, then crossing languages
 
-- **[Post 17 — Replacing Qt's MOC](/posts/qt-moc-replacement/)** — a famous codegen tool retired by reflection.
-- **[Post 18 — Reflection across languages](/posts/cross-language-comparison/)** — the capstone.
+- **[Post 17: Replacing Qt's MOC](/posts/qt-moc-replacement/)**. A famous codegen tool retired by reflection.
+- **[Post 18: Reflection across languages](/posts/cross-language-comparison/)**. The capstone.

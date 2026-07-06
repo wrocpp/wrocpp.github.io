@@ -149,7 +149,7 @@ Falsifiable after 17 tests and 8 shrinks:
   User { name = "\t", age = 0, admin = false }
 ```
 
-`reflect_arbitrary` works with RapidCheck's built-in shrinker — you get **minimal counterexamples** for free.
+`reflect_arbitrary` works with RapidCheck's built-in shrinker — you get minimal counterexamples for free.
 
 ## FuzzTest adapter
 
@@ -176,27 +176,27 @@ The `arb::fuzztest_domain<T>` helper produces a FuzzTest `Domain<T>` from the sa
 | Java (jqwik) | Yes (runtime reflection) | Yes |
 | Python (Hypothesis) | Yes (`@given(builds(MyClass))`) | Yes |
 | C++ (pre-reflect) | No | No |
-| **C++26 (reflect_arbitrary)** | **Yes** | **Yes — and at compile time** |
+| **C++26 (reflect_arbitrary)** | **Yes** | **Yes, and at compile time** |
 
-The last column is the unusual one: constraint annotations on fields are consumed by the generator builder at compile time, so the generated `Gen<T>` isn't holding runtime metadata — it's a direct composition of primitive generators.
+The last column is the unusual one: constraint annotations on fields are consumed by the generator builder at compile time, so the generated `Gen<T>` isn't holding runtime metadata. It's a direct composition of primitive generators.
 
 ## Research context
 
-Property-based testing has matured as a field, and the academic literature explicitly names **C++'s lack of reflection** as the barrier to better adoption. Nilesh Jagnik's 2024 paper *"Property Based And Fuzz Testing in C++"* lists reflection as the missing piece between C++ and Haskell/Rust ecosystems. `reflect_arbitrary` is the implementation of that missing piece.
+Property-based testing has matured as a field, and the academic literature explicitly names C++'s lack of reflection as the barrier to better adoption. Nilesh Jagnik's 2024 paper *"Property Based And Fuzz Testing in C++"* lists reflection as the missing piece between C++ and Haskell/Rust ecosystems. `reflect_arbitrary` is the implementation of that missing piece.
 
 ## What the library ships
 
 Under [github.com/wrocpp/reflect_arbitrary](https://github.com/wrocpp/reflect_arbitrary):
 
-- `arb::arbitrary<T>()` — `rc::Gen<T>` for any reflectable type.
-- `arb::fuzztest_domain<T>()` — FuzzTest `Domain<T>`.
+- `arb::arbitrary<T>()` returns `rc::Gen<T>` for any reflectable type.
+- `arb::fuzztest_domain<T>()` returns a FuzzTest `Domain<T>`.
 - Adapters for Catch2 property tests (`CATCH_CHECK_PROPERTY`).
 - Annotation vocabulary: 7 constraint annotations.
 - Opt-out: `[[=gen::arbitrary_fn(&my_custom_gen)]]` to skip auto-derive for a single field.
 
 v0.1.0 handles aggregates, ranges, `std::optional`, enums. v0.2 roadmap: variant types, recursive types with depth bound, shrinking-aware annotations.
 
-## What's next
+## Next in the series
 
-- **[Post 21 — reflect_optics](/posts/reflect-optics/)** — Haskell-style lenses, finally.
-- Companion Monday short-form: *"Building reflect_arbitrary — design notes"*.
+- **[Post 21: reflect_optics](/posts/reflect-optics/)** brings Haskell-style lenses, finally.
+- Companion Monday short-form: *"Building reflect_arbitrary: design notes"*.
