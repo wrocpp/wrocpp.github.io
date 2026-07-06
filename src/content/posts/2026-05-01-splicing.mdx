@@ -17,9 +17,9 @@ discussion: https://github.com/wrocpp/wrocpp.github.io/discussions/19
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 import PostLink from "../../components/PostLink.astro";
 
-<PostLink slug="first-reflection">Post 2</PostLink> covered reflecting *into* `std::meta::info`. The hard question was: how do we get *out* again — how do we use a reflection as if we'd written the original name?
+<PostLink slug="first-reflection">Post 2</PostLink> covered reflecting *into* `std::meta::info`. The hard question was: how do we get *out* again (use a reflection as if we'd written the original name)?
 
-The answer is the splicer, `[: r :]`. It's the inverse of `^^`. Where `^^int` gives you an `info`, `[:r:]` (for a reflection `r` of `int`) gives you back `int` — in a type position, an expression position, or wherever the original entity would fit.
+The answer is the splicer, `[: r :]`. It's the inverse of `^^`. Where `^^int` gives you an `info`, `[:r:]` (for a reflection `r` of `int`) gives you back `int`, usable in a type position, an expression position, or wherever the original entity would fit.
 
 ## Four things you can splice
 
@@ -59,7 +59,7 @@ array_of<[:r_size:]> a;   // array_of<10>
 
 This is how you get a value out of an `info` for use in a template-id position.
 
-### Member accesses — the load-bearing one
+### Member accesses: the load-bearing one
 
 This is the move that powers every serializer, printer, and walker we'll write:
 
@@ -78,28 +78,28 @@ auto read(T const& obj) {
 [:  r  :]
 ```
 
-Two colons, each next to a bracket. Whitespace inside is optional but conventional for readability. The syntax is a nod to the `::` scope operator — "open the reflection, let me in."
+Two colons, each next to a bracket. Whitespace inside is optional but conventional for readability. The syntax is a nod to the `::` scope operator ("open the reflection, let me in").
 
 ## What `r` has to be
 
-`r` must be a **constant expression** of type `std::meta::info`. This is why post 2's `nonstatic_data_members_of` returns a `vector` (fine for iteration) but we can't splice `members[0]` directly — `members` is a `consteval` vector, not a `constexpr` one.
+`r` must be a **constant expression** of type `std::meta::info`. This is why post 2's `nonstatic_data_members_of` returns a `vector` (fine for iteration) but we can't splice `members[0]` directly. `members` is a `consteval` vector, not a `constexpr` one.
 
 Three patterns for making reflections splice-ready:
 
-1. **Template non-type parameter** — our favourite:
+1. **Template non-type parameter**, our favourite:
    ```cpp
    template <std::meta::info M, typename T>
    void do_thing(T const& obj) { /* [:M:] is fine, M is a template NTTP */ }
    ```
    Usable inside a `template for` loop by passing `m` as a template argument each iteration.
 
-2. **`constexpr auto` variable** — direct:
+2. **`constexpr auto` variable**, direct:
    ```cpp
    constexpr auto r = ^^int;
    [:r:] x = 0;   // int x = 0;
    ```
 
-3. **`std::define_static_array`** — promote a `consteval` vector to a `constexpr` span:
+3. **`std::define_static_array`**, promote a `consteval` vector to a `constexpr` span:
    ```cpp
    constexpr auto members = std::define_static_array(
        std::meta::nonstatic_data_members_of(^^T, ctx));
@@ -115,7 +115,7 @@ using Same = [: ^^int :];          // int
 static_assert(std::is_same_v<Same, int>);
 ```
 
-That's not useful on its own — but swap `^^int` for *a computation that produces `^^int`* and you've got code generation:
+That's not useful on its own, but swap `^^int` for *a computation that produces `^^int`* and you've got code generation:
 
 ```cpp
 template <typename T>
@@ -156,7 +156,7 @@ int main() {
 }
 ```
 
-`dump_field<m>` — we pass the reflection as a template argument so `M` is a constant expression inside the helper, and `obj.[:M:]` is a real member access the compiler can check.
+In `dump_field<m>` we pass the reflection as a template argument so `M` is a constant expression inside the helper, and `obj.[:M:]` is a real member access the compiler can check.
 
 <GodboltEmbed id="bhdq9We19" title="Splicing — reflections back to code" />
 
@@ -166,7 +166,7 @@ int main() {
 - **Not runtime.** Every splice is resolved during compilation. By the time `main` starts, `obj.[:M:]` has become `obj.x` or `obj.y` in object code.
 - **Not ambiguous.** The context (type position, expression position, member position) determines which form the splicer takes. You don't need to annotate it.
 
-## What's next
+## Where splicing goes next
 
-- **<PostLink slug="template-for-expansion-statements">Post 4 — `template for`</PostLink>** — loops that unroll at compile time, the natural partner to splicing.
-- **<PostLink slug="json-naive">Post 8 — A 40-line JSON serializer</PostLink>** — full payoff: `^^` + `[:r:]` + `template for` fused into a working library.
+- <PostLink slug="template-for-expansion-statements">Post 4 — `template for`</PostLink>. Loops that unroll at compile time, the natural partner to splicing.
+- <PostLink slug="json-naive">Post 8 — A 40-line JSON serializer</PostLink>. Full payoff: `^^` + `[:r:]` + `template for` fused into a working library.

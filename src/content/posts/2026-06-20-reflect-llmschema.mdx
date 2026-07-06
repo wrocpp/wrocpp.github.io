@@ -16,11 +16,11 @@ draft: false
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
 > **Library repo:** [github.com/wrocpp/reflect_llmschema](https://github.com/wrocpp/reflect_llmschema) · v0.1.0 · MIT.
-> **Installs via** `find_package(reflect_llmschema)` (vcpkg recipe attached below).
+> Installs via `find_package(reflect_llmschema)` (vcpkg recipe attached below).
 
 Arc 6 kicks off with the use case that didn't exist when Arc 1 started: feeding C++ functions to large language models as **tools**.
 
-In 2026 OpenAI's function-calling API, Anthropic's `tool_use`, and Anthropic's MCP all expect a JSON-Schema object describing each callable tool — its name, parameters, types, descriptions. Today your C++ function and its schema live in two places, and they drift:
+In 2026 OpenAI's function-calling API, Anthropic's `tool_use`, and Anthropic's MCP all expect a JSON-Schema object describing each callable tool: its name, parameters, types, descriptions. Today your C++ function and its schema live in two places, and they drift:
 
 ```json
 {
@@ -152,20 +152,20 @@ Four lines register four tools. Each registration:
 
 ## Why this was impossible before 2026
 
-Runtime reflection (Java, C#, Python) can walk a function's parameters and emit the schema — at startup, with reflective metadata in the binary.
+Runtime reflection (Java, C#, Python) can walk a function's parameters and emit the schema at startup, carrying reflective metadata in the binary.
 
-Code generation (Rust, protobuf) can do it at compile time — via a derive macro that sees the token tree and emits a second compilation unit.
+Code generation (Rust, protobuf) can do it at compile time, via a derive macro that sees the token tree and emits a second compilation unit.
 
 C++26 reflection does both cheaper than either:
-- **Cheaper than runtime reflection** — no metadata carried at runtime; the JSON string is a literal, the dispatch is a direct call.
-- **Cheaper than proc_macros / codegen** — single compilation, no two-phase build, no generated files to check into your repo.
+- **Cheaper than runtime reflection**: no metadata carried at runtime; the JSON string is a literal, the dispatch is a direct call.
+- **Cheaper than proc_macros / codegen**: single compilation, no two-phase build, no generated files to check into your repo.
 
 ## Comparison with current C++ practice
 
 Without reflection, you'd use one of:
-- **Hand-written JSON literals** — error-prone; every renaming is a silent bug.
-- **nlohmann/json builders** — runtime construction of the schema at startup.
-- **Schema-first codegen** (OpenAPI, JSON Schema → C++) — external tool, two-phase build, generated files.
+- **Hand-written JSON literals**: error-prone; every renaming is a silent bug.
+- **nlohmann/json builders**: runtime construction of the schema at startup.
+- **Schema-first codegen** (OpenAPI, JSON Schema → C++): external tool, two-phase build, generated files.
 
 reflect_llmschema removes all three. Your C++ declaration *is* the schema.
 
@@ -173,17 +173,17 @@ reflect_llmschema removes all three. Your C++ declaration *is* the schema.
 
 Under [github.com/wrocpp/reflect_llmschema](https://github.com/wrocpp/reflect_llmschema):
 
-- `llm::openai_tool<Fn, "name">()` — OpenAI function-calling JSON.
-- `llm::anthropic_tool<Fn, "name">()` — Anthropic tool_use JSON.
-- `llm::mcp_tool<Fn, "name">()` — MCP `tools/list` entry.
-- `llm::mcp::server` — drop-in MCP server class that handles JSON-RPC + tool dispatch.
+- `llm::openai_tool<Fn, "name">()`: OpenAI function-calling JSON.
+- `llm::anthropic_tool<Fn, "name">()`: Anthropic tool_use JSON.
+- `llm::mcp_tool<Fn, "name">()`: MCP `tools/list` entry.
+- `llm::mcp::server`: drop-in MCP server class that handles JSON-RPC + tool dispatch.
 - Annotations: `description`, `format`, `default_value`, `range`, `pattern`, `enum_values`.
 
 Status: v0.1.0 covers the MVP scope above. v0.2 roadmap: streaming tool-responses, ref schemas for shared sub-types, parameter validation with `std::expected` errors.
 
-## What's next
+## Next in the series, and the example sources
 
-- **[Post 20 — reflect_arbitrary](/posts/reflect-arbitrary/)** — property-based test generators from types.
+- **[Post 20: reflect_arbitrary](/posts/reflect-arbitrary/)**: property-based test generators from types.
 - The example file exercises the type-mapping walk; see `posts/19-reflect-llmschema/examples/` in the [`cpp26-reflection-examples` repo](https://github.com/wrocpp/cpp26-reflection-examples).
 
 Questions / corrections / your own MCP server use case: drop in [Discussions](https://github.com/wrocpp/wrocpp.github.io/discussions) or on [Slack](https://wrocpp.slack.com).

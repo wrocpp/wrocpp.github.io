@@ -28,7 +28,7 @@ Everything reflection-related lives in one header:
 #include <experimental/meta>
 ```
 
-In clang-p2996 this also exists as plain `<meta>`. Both work; stick with `experimental` while the feature is, well, experimental. (GCC 16.1 ships only `<meta>` -- the `experimental` alias is a clang-p2996 thing. The Compiler Explorer link below has both buttons: clang-p2996 runs the source as-is, GCC 16.1 runs the same source with a one-line include rewrite.)
+In clang-p2996 this also exists as plain `<meta>`. Both work; stick with `experimental` while the feature is, well, experimental. (GCC 16.1 ships only `<meta>`. The `experimental` alias is a clang-p2996 thing. The Compiler Explorer link below has both buttons: clang-p2996 runs the source as-is, GCC 16.1 runs the same source with a one-line include rewrite.)
 
 ## The reflect operator
 
@@ -41,7 +41,7 @@ constexpr std::meta::info r_printf = ^^std::printf;
 constexpr std::meta::info r_std    = ^^std;
 ```
 
-An "entity" is anything your program can name: types, variables, functions, namespaces, templates, even expressions. `std::meta::info` is opaque — you can compare two of them (`r_int == ^^int`), copy them, store them in containers, pass them to `consteval` functions — but you can't inspect their bits directly. All access goes through `std::meta::` queries.
+An "entity" is anything your program can name: types, variables, functions, namespaces, templates, even expressions. `std::meta::info` is opaque. You can compare two of them (`r_int == ^^int`), copy them, store them in containers, pass them to `consteval` functions, but you can't inspect their bits directly. All access goes through `std::meta::` queries.
 
 Three things worth internalising:
 
@@ -65,7 +65,7 @@ constexpr auto members = std::meta::nonstatic_data_members_of(^^Point, ctx);
 Two things to name:
 
 1. **`access_context`.** Member queries take an access context because what's visible depends on "who is asking." `::unchecked()` ignores access control; `::current()` uses the caller's privileges; `::unprivileged()` limits to public. For library code that walks members anyway, `unchecked` is the right choice.
-2. **Returns a `std::vector`, not a pack.** The result is a regular consteval `std::vector` of reflections. That's simple to work with but — heads up — a `vector` can't be used directly as a `template for` range because its storage is heap-transient. We fix that next post.
+2. Returns a `std::vector`, not a pack. The result is a regular consteval `std::vector` of reflections. That's simple to work with, but (heads up) a `vector` can't be used directly as a `template for` range because its storage is heap-transient. We fix that next post.
 
 Querying each member:
 
@@ -78,9 +78,9 @@ for (auto m : members) {
 }
 ```
 
-- `identifier_of(info)` — name as a `std::string_view`.
-- `type_of(info)` — reflection of the member's type.
-- `display_string_of(info)` — a human-readable string for printing (pretty-printer, not a mangled name).
+- `identifier_of(info)`: name as a `std::string_view`.
+- `type_of(info)`: reflection of the member's type.
+- `display_string_of(info)`: a human-readable string for printing (pretty-printer, not a mangled name).
 
 ## Putting it together
 
@@ -138,12 +138,12 @@ Everything else in the series composes these.
 
 Two obvious gaps:
 
-1. **Actually reading the field values.** `members[i]` reflects `Point::x` the field declaration — it doesn't give you the value of `p.x` for a specific `p`. You need the *splicer* `[: r :]` for that: `obj.[:m:]`. That's <PostLink slug="splicing">post 3</PostLink>.
-2. **Iterating at compile time without a plain `for`.** The walk above uses a runtime `for` that happens to run during `consteval`. To emit per-member code in a non-`consteval` context, you need an *expansion statement* — `template for`. That's <PostLink slug="template-for-expansion-statements">post 4</PostLink>.
+1. **Actually reading the field values.** `members[i]` reflects `Point::x` the field declaration. It doesn't give you the value of `p.x` for a specific `p`. You need the *splicer* `[: r :]` for that: `obj.[:m:]`. That's <PostLink slug="splicing">post 3</PostLink>.
+2. **Iterating at compile time without a plain `for`.** The walk above uses a runtime `for` that happens to run during `consteval`. To emit per-member code in a non-`consteval` context, you need an *expansion statement*: `template for`. That's <PostLink slug="template-for-expansion-statements">post 4</PostLink>.
 
-Once we have splicing and expansion statements, the post-1 JSON serializer teaser isn't a teaser anymore — it's the natural composition of these primitives.
+Once we have splicing and expansion statements, the post-1 JSON serializer teaser isn't a teaser anymore. It's the natural composition of these primitives.
 
-## What's next
+## The next two posts
 
-- **<PostLink slug="splicing">Post 3 — Splicing with `[: r :]`</PostLink>** — turn a reflection back into code.
-- **<PostLink slug="template-for-expansion-statements">Post 4 — `template for`</PostLink>** — iterate reflections at compile time.
+- **<PostLink slug="splicing">Post 3 — Splicing with `[: r :]`</PostLink>**. Turn a reflection back into code.
+- **<PostLink slug="template-for-expansion-statements">Post 4 — `template for`</PostLink>**. Iterate reflections at compile time.

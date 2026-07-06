@@ -25,7 +25,7 @@ template for (constexpr auto m : some_range) {
 }
 ```
 
-Each iteration produces a **separate instantiation** of the body, with its own `m` that is a constant expression inside that instantiation. This is what makes `[: m :]` legal inside the loop — `m` really is constexpr per-iteration, not just a runtime variable.
+Each iteration produces a **separate instantiation** of the body, with its own `m` that is a constant expression inside that instantiation. This is what makes `[: m :]` legal inside the loop. Here `m` really is constexpr per-iteration, not just a runtime variable.
 
 ## Ranges that work
 
@@ -33,12 +33,12 @@ Each iteration produces a **separate instantiation** of the body, with its own `
 
 | Range | Example |
 |---|---|
-| **`std::span<const T>` over static memory** | `std::define_static_array(vec_of_info)` — the reflection-friendly idiom |
-| **`std::integer_sequence`** | `std::make_index_sequence<N>` |
-| **`std::views::iota`** | `std::views::iota(0zu, N)` if bounds are constant |
-| **Array of constant expressions** | `constexpr std::array xs = {1, 2, 3};` |
-| **Tuples / pairs** | `template for (constexpr auto x : std::tuple{1, "two", 3.0})` — each iteration is typed |
-| **Packs (via `indices_of_pack`)** | advanced |
+| `std::span<const T>` over static memory | `std::define_static_array(vec_of_info)` (the reflection-friendly idiom) |
+| `std::integer_sequence` | `std::make_index_sequence<N>` |
+| `std::views::iota` | `std::views::iota(0zu, N)` if bounds are constant |
+| Array of constant expressions | `constexpr std::array xs = {1, 2, 3};` |
+| Tuples / pairs | `template for (constexpr auto x : std::tuple{1, "two", 3.0})` (each iteration is typed) |
+| Packs (via `indices_of_pack`) | advanced |
 
 What doesn't work: a plain `std::vector` (heap allocation not promoted to constexpr), runtime-dependent ranges, or ranges whose elements aren't constant expressions.
 
@@ -80,15 +80,15 @@ template for (constexpr auto m : members) {
 { double obj_field = default_value_for<double>(); /* body for y */ }
 ```
 
-That's the payoff. A regular runtime `for` over `members` couldn't do this — `obj_field` would need one fixed type.
+That's the payoff. A regular runtime `for` over `members` couldn't do this: `obj_field` would need one fixed type.
 
 ## Control flow
 
 Expansion statements behave like unrolled loops:
 
-- `break` — stops the expansion early.
-- `continue` — skips to the next iteration.
-- `return` — returns from the enclosing function.
+- `break`: stops the expansion early.
+- `continue`: skips to the next iteration.
+- `return`: returns from the enclosing function.
 
 With `if constexpr` inside, you can prune iterations entirely:
 
@@ -105,7 +105,7 @@ The `continue` here triggers on a constant expression, so the iteration with the
 
 ## Iterating over tuples
 
-`template for` also works over `std::tuple` — each iteration's element is its actual type, not `std::variant`-erased:
+`template for` also works over `std::tuple`. Each iteration's element is its actual type, not `std::variant`-erased:
 
 ```cpp
 template for (constexpr auto x : std::tuple{1, std::string{"hi"}, 3.14}) {
@@ -113,7 +113,7 @@ template for (constexpr auto x : std::tuple{1, std::string{"hi"}, 3.14}) {
 }
 ```
 
-Compare with the pre-P1306 equivalent using `std::apply` + fold expressions — two lines vs. an SFINAE-heavy helper.
+Compare with the pre-P1306 equivalent using `std::apply` + fold expressions: two lines vs. an SFINAE-heavy helper.
 
 ## Over enum values
 
@@ -135,7 +135,7 @@ This is the seed of <PostLink slug="enum-to-string">post 5</PostLink>: enum-name
 ## What it isn't
 
 - **Not a runtime loop.** After instantiation, there's no "loop counter" in the generated code. The compiler has emitted N copies of the body, one per element.
-- **Not template metaprogramming.** No recursion, no SFINAE, no `std::integer_sequence` folding with `std::apply`. You write a loop and read a loop.
+- **Not template metaprogramming.** No recursion, no SFINAE, and no `std::integer_sequence` folding with `std::apply`. You write a loop and read a loop.
 - **Not `#pragma unroll`.** That's an optimisation hint. `template for` is a language construct with defined semantics.
 
 ## Putting it together
@@ -178,10 +178,10 @@ Line:
 
 <GodboltEmbed id="asx7hs1qz" title="template for — unroll over members" />
 
-## What's next
+## Arc 2: real tools from these primitives
 
 Arc 1 is done. Arc 2 builds real tools out of these three primitives:
 
-- **<PostLink slug="enum-to-string">Post 5 — Goodbye `magic_enum`</PostLink>** — enum ↔ string without compiler tricks.
-- **<PostLink slug="auto-formatter">Post 6 — Auto `std::formatter<T>`</PostLink>** — pretty-printing any aggregate.
-- **<PostLink slug="derive-eq-hash">Post 7 — Derive equality, hash, ordering</PostLink>**.
+- **<PostLink slug="enum-to-string">Post 5: Goodbye `magic_enum`</PostLink>** (enum ↔ string without compiler tricks).
+- **<PostLink slug="auto-formatter">Post 6: Auto `std::formatter<T>`</PostLink>** (pretty-printing any aggregate).
+- **<PostLink slug="derive-eq-hash">Post 7: Derive equality, hash, ordering</PostLink>**.

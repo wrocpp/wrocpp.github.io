@@ -3,7 +3,7 @@
 ## Body
 Reflection in C++26 has two halves.
 
-The first, `^^T`, takes an entity and returns a `std::meta::info` -- the post-2 territory. The second, the splicer `[: r :]`, takes a reflection and gives the entity back -- a type, an expression, a member access, a template argument, anywhere the original name would fit.
+The first, `^^T`, takes an entity and returns a `std::meta::info`, the post-2 territory. The second, the splicer `[: r :]`, takes a reflection and gives the entity back: a type, an expression, a member access, a template argument, anywhere the original name would fit.
 
 This is the piece that makes reflection composable. Without splicing you can inspect a struct's members all you want, but you can't write code that reads `obj.field` for an arbitrary `field`. With splicing:
 

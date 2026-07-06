@@ -1,7 +1,7 @@
 # reflect_llmschema
 
 ## Body
-Every C++ function you expose to Claude / GPT needs a JSON-Schema description. C++26 reflection emits it at compile time from `parameters_of(^^&fn)` -- types from the C++ signature, descriptions from P3394 annotations. Add a parameter, schema follows; rename, schema renames. Replaces hand-maintained tools.json files.
+Every C++ function you expose to Claude / GPT needs a JSON-Schema description. C++26 reflection emits it at compile time from `parameters_of(^^&fn)`: types from the C++ signature, descriptions from P3394 annotations. Add a parameter, schema follows; rename, schema renames. Replaces hand-maintained tools.json files.
 
 Series post 19 of 25 in the wro.cpp C++26 reflection arc.
 

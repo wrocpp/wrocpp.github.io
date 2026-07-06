@@ -3,7 +3,7 @@
 ## Body
 C++26 reflection has three primitives. Posts 2 + 3 covered two of them (`^^T` and `[: r :]`). The third is the loop.
 
-`template for` is an *expansion statement* (proposal P1306): the compiler unrolls the loop at compile time and instantiates the body once per element. Each iteration gets its own `constexpr` element, so `[: m :]` is legal inside the loop -- `m` really is a constant expression on every pass.
+`template for` is an *expansion statement* (proposal P1306): the compiler unrolls the loop at compile time and instantiates the body once per element. Each iteration gets its own `constexpr` element, so `[: m :]` is legal inside the loop, and `m` really is a constant expression on every pass.
 
 ```
 template for (constexpr auto m
