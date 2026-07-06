@@ -3,7 +3,7 @@
 ## Body
 The hardest part about C++26 reflection isn't the syntax. It's the muscle memory.
 
-For 25 years we simulated reflection through templates, Boost.Hana, and code-generation glue. Now you write `^^Point` and get back a `std::meta::info` -- an opaque compile-time handle. Hand it to `nonstatic_data_members_of` and the compiler gives you the fields.
+For 25 years we simulated reflection through templates, Boost.Hana, and code-generation glue. Now you write `^^Point` and get back a `std::meta::info`, an opaque compile-time handle. Hand it to `nonstatic_data_members_of` and the compiler gives you the fields.
 
 Twelve lines turn into a "describe any struct" utility:
 
@@ -24,7 +24,7 @@ consteval auto describe() {
 
 Run on `struct Point { int x; int y; };` and you get back `x: int / y: int`. No header beyond `<experimental/meta>`. No macros. No `#define BOOST_...`.
 
-This is part 2 of the wro.cpp reflection series. It builds the primitives that the part-1 teaser leaned on. The next post adds splicing -- turning a reflection back into code that actually reads `p.x` for a runtime `p`.
+This is part 2 of the wro.cpp reflection series. It builds the primitives that the part-1 teaser leaned on. The next post adds splicing, turning a reflection back into code that actually reads `p.x` for a runtime `p`.
 
 Read it: https://wrocpp.github.io/posts/first-reflection/
 

@@ -88,7 +88,7 @@ for (std::size_t i = 0; i < x_span.size(); ++i)
     x_span[i] += vx_span[i] * dt;
 ```
 
-`SoaVector<T>` is a `define_aggregate`-synthesised struct whose fields are `std::vector<float> x`, `std::vector<float> y`, and so on — one per reflected field of `Particle`. The storage is the parallel-arrays layout; the access pattern is the positional one.
+`SoaVector<T>` is a `define_aggregate`-synthesised struct whose fields are `std::vector<float> x`, `std::vector<float> y`, and so on, one per reflected field of `Particle`. The storage is the parallel-arrays layout; the access pattern is the positional one.
 
 ## AoSoA: cache-line-aligned blocks
 
@@ -170,23 +170,23 @@ The harness generates all four containers from the same `Particle` reflection, r
 | Zig `MultiArrayList` | Built-in | Manual | Yes |
 | Rust `soa-derive` | `#[derive(StructOfArray)]` | Manual | Partial (derive macro) |
 | Unity DOTS | `IComponentData` + codegen | Yes | Macro-heavy |
-| ISPC | Separate language | Manual | — |
+| ISPC | Separate language | Manual | n/a |
 | **C++26 `reflect_soa`** | **`SoaVector<T>` via reflection** | **`soa::bench::compare`** | **Yes** |
 
 ## When not to use this
 
-- **Hot loops are small / rare.** If you only touch particles occasionally, AoS is simpler and the perf diff is noise.
-- **You need per-particle invariants.** AoS keeps `particle.x` and `particle.y` adjacent; debugging a scrambled AoSoA is harder when you don't know the layout.
-- **`define_aggregate` is too experimental for your project's compiler pin.** The capability was behind `-freflection-latest` in early clang-p2996; production-grade may need to wait for GCC / MSVC implementations to catch up. Keep an eye on the project's "known-good compiler versions" table.
+- Hot loops are small / rare. If you only touch particles occasionally, AoS is simpler and the perf diff is noise.
+- You need per-particle invariants. AoS keeps `particle.x` and `particle.y` adjacent; debugging a scrambled AoSoA is harder when you don't know the layout.
+- `define_aggregate` is too experimental for your project's compiler pin. The capability was behind `-freflection-latest` in early clang-p2996; production-grade may need to wait for GCC / MSVC implementations to catch up. Keep an eye on the project's "known-good compiler versions" table.
 
 ## What the library ships
 
 Under [github.com/wrocpp/reflect_soa](https://github.com/wrocpp/reflect_soa):
 
-- `soa::SoaVector<T>` — synthesised struct-of-arrays.
-- `soa::AoSoAVector<T, N>` — array-of-struct-of-N-arrays.
-- `soa::bench::compare<T>({.layouts = ..., .workload = ...})` — harness.
-- `soa::span_of<&T::field>(container)` — get an `std::span<field_type>` view.
+- `soa::SoaVector<T>`: synthesised struct-of-arrays.
+- `soa::AoSoAVector<T, N>`: array-of-struct-of-N-arrays.
+- `soa::bench::compare<T>({.layouts = ..., .workload = ...})`: harness.
+- `soa::span_of<&T::field>(container)`: get an `std::span<field_type>` view.
 - Compile-time asserts that every layout produces identical numerical output for the same workload (no silent drift).
 
 v0.1.0 handles flat aggregates. v0.2 roadmap: nested SoA (SoaVector where fields are themselves SoA-transformable), GPU / SYCL tuned layouts (padding for SPIR-V), packed-bitfield variants.
@@ -195,16 +195,16 @@ v0.1.0 handles flat aggregates. v0.2 roadmap: nested SoA (SoaVector where fields
 
 Seven libraries over 15 months:
 
-1. `reflect_llmschema` — AI era
-2. `reflect_arbitrary` — property-based testing
-3. `reflect_optics` — lenses
-4. `reflect_dx` — debugger printers + docs
-5. `reflect_telemetry` — metrics
-6. `reflect_tracing` — spans
-7. `reflect_soa` — data layout
+1. `reflect_llmschema`: AI era
+2. `reflect_arbitrary`: property-based testing
+3. `reflect_optics`: lenses
+4. `reflect_dx`: debugger printers + docs
+5. `reflect_telemetry`: metrics
+6. `reflect_tracing`: spans
+7. `reflect_soa`: data layout
 
-Arc 6 ends here. Arc 7 will be decided by what the community asks for most — drop ideas in [Discussions](https://github.com/wrocpp/wrocpp.github.io/discussions) or on [Slack](https://wrocpp.slack.com).
+Arc 6 ends here. Arc 7 will be decided by what the community asks for most. Drop ideas in [Discussions](https://github.com/wrocpp/wrocpp.github.io/discussions) or on [Slack](https://wrocpp.slack.com).
 
-## What's next
+## The Monday companion: shipping seven reflection libraries
 
-Companion Monday short: *"Shipping seven C++26 reflection libraries: what we learned"* — retrospective on Arc 6.
+Companion Monday short: *"Shipping seven C++26 reflection libraries: what we learned"*, a retrospective on Arc 6.

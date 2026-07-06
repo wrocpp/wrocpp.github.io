@@ -27,7 +27,7 @@ class Greeter {
 
 The framework sees the `@Service` annotation, inspects the constructor, and wires the parameters automatically from a registry of services. No `new Greeter(new Clock(), new I18n())` boilerplate.
 
-C++ has had Boost.DI — beautifully engineered template metaprogramming that does the same, but trips into SFINAE cliff-faces when things go wrong. Reflection makes the same container fit in 60 lines.
+C++ has had Boost.DI. It is beautifully engineered template metaprogramming that does the same, but trips into SFINAE cliff-faces when things go wrong. Reflection makes the same container fit in 60 lines.
 
 ## Target API
 
@@ -148,11 +148,11 @@ Production containers do this with lifetime-aware graph analysis; our 60-line ve
 
 Three common lifetimes in DI frameworks:
 
-1. **Singleton** — one instance for the container's lifetime. Our default.
-2. **Transient** — new instance per `get<T>()`. `container::add_transient<T>()`.
-3. **Scoped** — per "logical request" (web-framework terminology). Needs a scope stack.
+1. **Singleton**. One instance for the container's lifetime. Our default.
+2. **Transient**. A new instance per `get<T>()`, via `container::add_transient<T>()`.
+3. **Scoped**. Per "logical request" (web-framework terminology), which needs a scope stack.
 
-The singleton → transient switch is a one-line change in `get<T>`. Scoped is more involved — a scope is itself a container with an inheritance chain.
+The singleton → transient switch is a one-line change in `get<T>`. Scoped is more involved. A scope is itself a container with an inheritance chain.
 
 ## Interface-based resolution
 
@@ -180,7 +180,7 @@ struct [[=di::service{}]] Clock  { /* ... */ };
 di::scan_and_register<translation_unit_reflection>(container);
 ```
 
-`scan_and_register` walks every type in a translation unit's reflection and registers those with `@di::service`. This is future-ish — it assumes [P2988](https://wg21.link/P2988) (namespace-level reflection) or similar, which is still in flight — but the architecture is ready.
+`scan_and_register` walks every type in a translation unit's reflection and registers those with `@di::service`. This is future-ish. It assumes [P2988](https://wg21.link/P2988) (namespace-level reflection) or similar, which is still in flight, but the architecture is ready.
 
 ## Compile-time dependency graph
 
@@ -197,7 +197,7 @@ static_assert(dep_graph(std::make_tuple(^^Greeter)) ==
               std::vector<...>{{"Greeter", {"Clock", "I18n"}}, ...});
 ```
 
-The graph is knowable at compile time because every constructor's parameter types are reflectable. Tools can emit DOT diagrams, detect cycles, check for unreachable services — all without running the program.
+The graph is knowable at compile time because every constructor's parameter types are reflectable. Tools can emit DOT diagrams, detect cycles, and check for unreachable services, all without running the program.
 
 ## Spring vs. our version
 
@@ -210,11 +210,11 @@ The graph is knowable at compile time because every constructor's parameter type
 | Error at misconfiguration | `BeanCreationException` at startup | `static_assert` at compile time |
 | Lines of framework code | ~600k (Spring Core) | ~60 (demo), ~600 (production-adequate) |
 
-Spring has 20 years of production polish; our 60-line demo doesn't. But the architectural core — inspect constructors, resolve parameters from a registry — is exactly the same, and C++ gets it at compile time.
+Spring has 20 years of production polish; our 60-line demo doesn't. But the architectural core (inspect constructors, resolve parameters from a registry) is exactly the same, and C++ gets it at compile time.
 
 <GodboltEmbed id="Wb6zPa1Ex" title="reflect_di — autowired constructors" />
 
-## What's next
+## Next: mocks and type synthesis
 
-- **[Post 15 — Auto-generated mocks](/posts/auto-mocks/)** — take an interface, get a test double back.
-- **[Post 16 — Type synthesis with `define_aggregate`](/posts/define-aggregate/)** — `Pick`/`Omit`/`Partial` in C++.
+- **[Post 15: Auto-generated mocks](/posts/auto-mocks/)**. Take an interface, get a test double back.
+- **[Post 16: Type synthesis with `define_aggregate`](/posts/define-aggregate/)**. `Pick`/`Omit`/`Partial` in C++.

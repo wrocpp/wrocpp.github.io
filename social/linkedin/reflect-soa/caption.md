@@ -17,17 +17,17 @@ for (auto& p : particles) {
 ```
 
 Three layouts derive from the same struct:
-- **AoS** (Array-of-Structures) -- the hand-written default; classic cache miss on partial-field iteration
-- **SoA** (Structure-of-Arrays) -- one column per member, stride-1 SIMD-friendly access
-- **AoSoA** (Array-of-Structures-of-Arrays) -- cache-line-aligned blocks, best of both worlds for mixed-access workloads
+- **AoS** (Array-of-Structures): the hand-written default; classic cache miss on partial-field iteration
+- **SoA** (Structure-of-Arrays): one column per member, stride-1 SIMD-friendly access
+- **AoSoA** (Array-of-Structures-of-Arrays): cache-line-aligned blocks, best of both worlds for mixed-access workloads
 
 And an **A/B benchmark harness**: `reflect_soa::pick<Particle>(workload)` runs the workload three ways and tells you which layout wins. Workload-dependent; benchmarking is the only honest answer.
 
-Prior art: Barry Revzin's 2025 blog post "Implementing a Struct of Arrays" showed the SoA-via-reflection pattern; reflect_soa productises it and adds AoSoA + the A/B harness. Cross-link: the [simd-in-cpp-2026 toolset entry](https://wrocpp.github.io/toolset/simd-in-cpp-2026/) covers std::simd / Highway / ISPC -- pair with reflect_soa for the layout transform that unlocks them.
+Prior art: Barry Revzin's 2025 blog post "Implementing a Struct of Arrays" showed the SoA-via-reflection pattern; reflect_soa productises it and adds AoSoA + the A/B harness. Cross-link: the [simd-in-cpp-2026 toolset entry](https://wrocpp.github.io/toolset/simd-in-cpp-2026/) covers std::simd / Highway / ISPC. Pair with reflect_soa for the layout transform that unlocks them.
 
 What this REPLACES: the parallel `ParticleSoA` struct you write by hand; the discipline of keeping it in sync with `Particle`; the regression where someone added `mass` to Particle but forgot to add a column to the SoA mirror; the test you wrote to catch that regression.
 
-What this does NOT replace: domain-specific layout choices (a `Mesh` with vertex / index / texture-coord arrays already has its own layout; `reflect_soa` is for the case where the struct IS the unit of iteration). Profile your code -- the A/B harness is the answer to "which layout".
+What this does NOT replace: domain-specific layout choices (a `Mesh` with vertex / index / texture-coord arrays already has its own layout; `reflect_soa` is for the case where the struct IS the unit of iteration). Profile your code. The A/B harness is the answer to "which layout".
 
 Series post 25 of 25 in the wro.cpp C++26 reflection arc. The arc closes on the data-oriented thesis Mike Acton was right about all along; reflection just made it ergonomic. Live demo on Godbolt with clang-p2996.
 

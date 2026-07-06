@@ -10,7 +10,7 @@ struct User {
 };
 ```
 
-The same annotations propagate to YAML / TOML / XML walkers -- one struct serves every format. The derive-attribute parity arrives without a codegen step.
+The same annotations propagate to YAML / TOML / XML walkers. One struct serves every format. The derive-attribute parity arrives without a codegen step.
 
 Series post 9 of 25 in the wro.cpp C++26 reflection arc.
 

@@ -1,7 +1,7 @@
 # Dependency injection without the framework: reflection-driven autowiring
 
 ## Body
-Spring / Guice / Dagger / Hilt all solve the same problem in JVM-land: tell the container which constructor parameter is which dependency, and let it wire the graph. C++ has historically gone two routes -- a heavy DI framework (Hypodermic, Boost.DI) with macro registration, or hand-wired factories that nobody wants to refactor.
+Spring / Guice / Dagger / Hilt all solve the same problem in JVM-land: tell the container which constructor parameter is which dependency, and let it wire the graph. C++ has historically gone two routes: a heavy DI framework (Hypodermic, Boost.DI) with macro registration, or hand-wired factories that nobody wants to refactor.
 
 C++26 reflection gives you the autowiring story without the framework. Walk a class's constructor parameters at compile time, look up each parameter's type in a registry, instantiate.
 
@@ -28,7 +28,7 @@ greeter.say_hello();                       // Hello @tick=2
 
 The `make<T>()` call walks T's constructor parameters using `parameters_of(^^T::T)`, looks up each type in the container, and constructs. No `@Inject` annotations, no codegen step, no XML config. The reflection-driven version handles the four-line case in ten lines of header.
 
-What this does NOT replace: full DI frameworks with lifecycle scopes (request / session / singleton), conditional bindings, AOP interception. The lightweight version covers the common case where you've been doing manual factory wiring -- a `Greeter` that needs `Clock` and `Logger`, and a test that wants to swap in mocks.
+What this does NOT replace: full DI frameworks with lifecycle scopes (request / session / singleton), conditional bindings, AOP interception. The lightweight version covers the common case where you've been doing manual factory wiring: a `Greeter` that needs `Clock` and `Logger`, and a test that wants to swap in mocks.
 
 Series post 14 of 25 in the wro.cpp C++26 reflection arc. Cross-link with post 15 (auto-mocks) which produces interface test doubles for the same pattern.
 

@@ -16,9 +16,9 @@ discussion: https://github.com/wrocpp/wrocpp.github.io/discussions/42
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
-[`magic_enum`](https://github.com/Neargye/magic_enum) is one of the cleverest tricks in modern C++. It gives you `enum → string` and back by extracting names from `__PRETTY_FUNCTION__` in a `constexpr` loop over a fixed integer range. It works well — *within its limits*. Those limits:
+[`magic_enum`](https://github.com/Neargye/magic_enum) is one of the cleverest tricks in modern C++. It gives you `enum → string` and back by extracting names from `__PRETTY_FUNCTION__` in a `constexpr` loop over a fixed integer range. It works well, *within its limits*. Those limits:
 
-- Range-bound: default `[-128, 128]`. Outside that, it silently returns nothing. Knob `MAGIC_ENUM_RANGE_MIN`/`MAX` widens — at compile-time cost.
+- Range-bound: default `[-128, 128]`. Outside that, it silently returns nothing. Knob `MAGIC_ENUM_RANGE_MIN`/`MAX` widens, at compile-time cost.
 - Compiler-specific: it parses `__PRETTY_FUNCTION__`, whose format is GCC / Clang / MSVC each different. Format changes break it.
 - Slow to compile: instantiates N specialisations where N is the range size.
 - Can't deal with flags enums that combine values (`1 | 2 | 4` isn't in the range).
@@ -60,11 +60,11 @@ constexpr std::optional<E> from_string(std::string_view name) {
 
 Three moves:
 
-1. **`enumerators_of(^^E)`** — `std::vector<std::meta::info>`, one `info` per enumerator, declared order.
-2. **`template for (constexpr auto e : ...)`** — iteration at compile time. `e` is a reflection of the individual enumerator.
-3. **`[: e :] == value`** — splice the enumerator back into code. In expression context, `[: e :]` is a value of type `E`, equal to that enumerator's constant.
+1. **`enumerators_of(^^E)`**. A `std::vector<std::meta::info>`, one `info` per enumerator, in declared order.
+2. **`template for (constexpr auto e : ...)`**. Iteration at compile time. `e` is a reflection of the individual enumerator.
+3. **`[: e :] == value`**. Splice the enumerator back into code. In expression context, `[: e :]` is a value of type `E`, equal to that enumerator's constant.
 
-The compiler unrolls the loop into a short-circuited if/else chain. `to_string(Color::green)` becomes `return "green"` after optimization — as efficient as a hand-written switch.
+The compiler unrolls the loop into a short-circuited if/else chain. `to_string(Color::green)` becomes `return "green"` after optimization, as efficient as a hand-written switch.
 
 ## Usage
 
@@ -80,7 +80,7 @@ Everything is `constexpr`. You can use these results in static asserts, template
 
 ## What about flags enums?
 
-Flags enums use bitwise combinations — `Permission::read | Permission::write = 3`, which is not itself a declared enumerator. Reflection handles this because you write the decomposition yourself, you're not bound by what `enumerators_of` returned:
+Flags enums use bitwise combinations, like `Permission::read | Permission::write = 3`, which is not itself a declared enumerator. Reflection handles this because you write the decomposition yourself, you're not bound by what `enumerators_of` returned:
 
 ```cpp
 enum class Permission : unsigned { read = 1, write = 2, exec = 4 };
@@ -101,9 +101,9 @@ constexpr std::string to_flags_string(E value) {
 // to_flags_string(Permission::read | Permission::write) == "read|write"
 ```
 
-`magic_enum::enum_flags_name` does this too — but only up to the range limit.
+`magic_enum::enum_flags_name` does this too, but only up to the range limit.
 
-The inverse — string back to flags — has two equivalent shapes. First the imperative form, which is the mental model:
+The inverse (string back to flags) has two equivalent shapes. First the imperative form, which is the mental model:
 
 ```cpp
 // What we want:
@@ -154,17 +154,17 @@ A typo in a config file or CLI flag returns `std::nullopt` rather than a silentl
 
 Honestly, not much that matters:
 
-- **Single-statement usage at any scope.** `magic_enum::enum_name(x)` is usable anywhere without setup. Our version requires you to have included the header. Same.
-- **Automatic detection of scoped vs unscoped enums.** Both work identically in our code.
-- **Works on `enum` (unscoped)**. Works the same.
+- Single-statement usage at any scope. `magic_enum::enum_name(x)` is usable anywhere without setup. Our version requires you to have included the header. Same.
+- Automatic detection of scoped vs unscoped enums. Both work identically in our code.
+- Works on `enum` (unscoped). Works the same.
 
 ## What you gain
 
-- **Unbounded range.** Any enumerator value, including ones larger than `INT_MAX`.
-- **No compile-time knob.** Whatever you declared, reflection sees. No `MAGIC_ENUM_RANGE_MAX`.
-- **Faster compiles.** `magic_enum` at high range instantiates thousands of template specialisations. We instantiate one per real enumerator.
-- **No compiler-specific parsing.** Works the same on clang-p2996 / gcc / MSVC — wherever P2996 ships.
-- **First-class IDE support.** Your debugger and IDE navigate into reflection library calls like any other code. `__PRETTY_FUNCTION__` parsing is invisible to both.
+- Unbounded range. Any enumerator value, including ones larger than `INT_MAX`.
+- No compile-time knob. Whatever you declared, reflection sees. No `MAGIC_ENUM_RANGE_MAX`.
+- Faster compiles. `magic_enum` at high range instantiates thousands of template specialisations. We instantiate one per real enumerator.
+- No compiler-specific parsing. Works the same on clang-p2996 / gcc / MSVC, wherever P2996 ships.
+- First-class IDE support. Your debugger and IDE navigate into reflection library calls like any other code. `__PRETTY_FUNCTION__` parsing is invisible to both.
 
 ## Adding `std::formatter`
 
@@ -204,7 +204,7 @@ int main() {
 
 <GodboltEmbed id="qfKMzGzj8" title="Goodbye magic_enum -- reflection-driven enum to/from string + flags round-trip (GCC 16.1)" />
 
-## What's next
+## The same pattern, applied to structs
 
-- **[Post 6 — Auto `std::formatter<T>` for any aggregate](/posts/auto-formatter/)** — the same pattern, applied to struct printing.
-- **[Post 7 — Derive equality, hashing, ordering](/posts/derive-eq-hash/)** — from struct shape.
+- [Post 6: Auto `std::formatter<T>` for any aggregate](/posts/auto-formatter/). The same pattern, applied to struct printing.
+- [Post 7: Derive equality, hashing, ordering](/posts/derive-eq-hash/). From struct shape.

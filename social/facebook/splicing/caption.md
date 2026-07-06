@@ -3,7 +3,7 @@
 ## Body
 The piece that makes C++26 reflection composable.
 
-`^^T` gives you a reflection. `[: r :]` gives the entity back -- a type, an expression, a member access. Together they round-trip the program: walk a struct's members, then write `obj.[:member:]` and let the compiler emit `obj.x`, `obj.y`, etc.
+`^^T` gives you a reflection. `[: r :]` gives the entity back: a type, an expression, a member access. Together they round-trip the program: walk a struct's members, then write `obj.[:member:]` and let the compiler emit `obj.x`, `obj.y`, etc.
 
 Part 3 of the wro.cpp reflection series. Builds the second half of the toolkit.
 

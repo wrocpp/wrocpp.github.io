@@ -1,7 +1,7 @@
 # Goodbye magic_enum: enum reflection done right
 
 ## Body
-`magic_enum` is one of the cleverest tricks in modern C++ -- it gives you `enum` <-> string by parsing `__PRETTY_FUNCTION__` in a constexpr loop over a fixed integer range. Brilliant. Limited.
+`magic_enum` is one of the cleverest tricks in modern C++. It gives you `enum` <-> string by parsing `__PRETTY_FUNCTION__` in a constexpr loop over a fixed integer range. Brilliant. Limited.
 
 Three things break the trick: range-bound (default `[-128, 128]`; widening costs compile-time), compiler-specific (parses `__PRETTY_FUNCTION__` and breaks on format changes), and powerless against flags enums whose combined values aren't in the declared range.
 

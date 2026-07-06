@@ -3,7 +3,7 @@
 ## Body
 The loop primitive that makes C++26 reflection complete.
 
-`^^T` gives you a reflection. `[: r :]` puts it back into code. `template for` (P1306) unrolls a loop at compile time, instantiating the body once per element -- with `[: m :]` legal on every pass because `m` is genuinely constexpr per iteration.
+`^^T` gives you a reflection. `[: r :]` puts it back into code. `template for` (P1306) unrolls a loop at compile time, instantiating the body once per element, with `[: m :]` legal on every pass because `m` is genuinely constexpr per iteration.
 
 The post-1 JSON serializer teaser stops being a teaser: one loop, N specialisations, zero macros.
 

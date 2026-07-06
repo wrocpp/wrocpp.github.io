@@ -10,7 +10,7 @@ auto get_weather(std::string city, std::string country_code) -> std::string;
 std::println("{}", reflect_llmschema::tool_of<&get_weather>());
 ```
 
-Output (the OpenAI / Anthropic tool-use format -- both standardised on the same shape):
+Output (the OpenAI / Anthropic tool-use format, both standardised on the same shape):
 
 ```json
 {
@@ -34,9 +34,9 @@ The mechanic: walk `parameters_of(^^&fn)` at compile time, infer JSON Schema typ
 
 What this REPLACES: every hand-maintained `tools.json` file in your MCP server, every per-function `register_tool()` call with a manually-typed schema string, the test that verifies the schema matches the C++ signature.
 
-What this does NOT replace: server transport (HTTP / stdio / WebSocket -- still your choice), authentication, rate limiting, prompt-engineering for which tools to expose. The reflection layer is the schema-generation half; server framework is the other half.
+What this does NOT replace: server transport (HTTP / stdio / WebSocket, still your choice), authentication, rate limiting, prompt-engineering for which tools to expose. The reflection layer is the schema-generation half; server framework is the other half.
 
-The same walker pattern drives [auto std::formatter](/posts/auto-formatter/) (post 6) and the [JSON serialiser](/posts/json-naive/) (post 8) -- one walker, three orthogonal output formats. Add a fourth (Anthropic Computer-Use action schema, OpenAPI 3.1 endpoint definition) and the same pattern emits it.
+The same walker pattern drives [auto std::formatter](/posts/auto-formatter/) (post 6) and the [JSON serialiser](/posts/json-naive/) (post 8). One walker, three orthogonal output formats. Add a fourth (Anthropic Computer-Use action schema, OpenAPI 3.1 endpoint definition) and the same pattern emits it.
 
 Series post 19 of 25 in the wro.cpp C++26 reflection arc. Live demo on Godbolt with clang-p2996 (`-std=c++26 -freflection-latest -stdlib=libc++`).
 
