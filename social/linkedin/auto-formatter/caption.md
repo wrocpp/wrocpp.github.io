@@ -3,7 +3,7 @@
 ## Body
 Rust gives you `#[derive(Debug)]`. C++ gave you `operator<<` per type, written by hand. C++26 reflection closes the gap with one header.
 
-`reflect_print<T>` walks any aggregate at compile time and emits a `std::format` specialisation that prints all fields with their names. Recursive: nested aggregates are formatted in turn. Add a field, the print follows automatically -- no hand-maintained overload, no codegen step.
+`reflect_print<T>` walks any aggregate at compile time and emits a `std::format` specialisation that prints all fields with their names. Recursive: nested aggregates are formatted in turn. Add a field, the print follows automatically. No hand-maintained overload, no codegen step.
 
 ```cpp
 struct Address { std::string city; int postal_code; };
@@ -14,7 +14,7 @@ std::println("{}", u);
 // User{name: Filip, age: 40, admin: true, home: Address{city: Warsaw, postal_code: 12345}}
 ```
 
-The trick is a `template <typename T> struct std::formatter` specialisation written ONCE for any aggregate, with the field walk inside `format()` driven by `nonstatic_data_members_of(^^T)`. Rename a field -- print follows. Add an int member -- it shows up. Remove one -- it disappears. The string output is structural, not editorial; for journals and audit logs that's exactly what you want.
+The trick is a `template <typename T> struct std::formatter` specialisation written ONCE for any aggregate, with the field walk inside `format()` driven by `nonstatic_data_members_of(^^T)`. Rename a field and the print follows. Add an int member and it shows up. Remove one and it disappears. The string output is structural, not editorial; for journals and audit logs that's exactly what you want.
 
 What this replaces: every `operator<<(std::ostream&, T const&)` overload in your codebase, plus all the `fmt::format` per-type specialisations you've been maintaining.
 

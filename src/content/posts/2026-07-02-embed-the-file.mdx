@@ -44,7 +44,7 @@ embedded 70 bytes:
 
 `#embed "asset.txt"` expands to a comma-separated list of the file's byte values, so it drops straight into the braces of an array initializer. Because `bytes` is `static constexpr`, those bytes are baked into the program image: there is no file to open at runtime, no path to get wrong, no I/O to fail. We then view the same storage as a `std::string_view` to print it, but it could just as well be a font, a shader, a WASM blob, or a default config.
 
-The contrast with the old way is the entire point. `xxd -i` produced a header you had to regenerate and check in; the array could silently fall out of sync with the file it was made from. `#embed` has no intermediate artifact: the file *is* the source of truth, read fresh on every build. GCC 16.1 ships it today.
+`xxd -i` produced a header you had to regenerate and check in; the array could silently fall out of sync with the file it was made from. `#embed` has no intermediate artifact: the file *is* the source of truth, read fresh on every build. GCC 16.1 ships it today.
 
 <GodboltEmbed id="WazvofM39" gccOnly={true} title="#embed a file into the binary" gcc_subtitle="g161 (GCC 16.1) · -std=c++26" />
 

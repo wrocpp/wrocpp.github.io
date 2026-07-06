@@ -33,17 +33,17 @@ std::println("sptr: {}", s_ptr);   // ill-formed: no formatter<shared_ptr<int>>
 
 ## It is deliberate, not an oversight
 
-`std::format` is conservative about pointers on purpose. Among all pointer types, only `void*`, `const void*`, and `nullptr_t` are formattable. An arbitrary `int*` is **not** -- the `formatter` for it is disabled, so you cannot accidentally print an address when you meant a value. A `unique_ptr<int>` formatter would have to punch a hole in exactly that rule.
+`std::format` is conservative about pointers on purpose. Among all pointer types, only `void*`, `const void*`, and `nullptr_t` are formattable. An arbitrary `int*` is **not**. The `formatter` for it is disabled, so you cannot accidentally print an address when you meant a value. A `unique_ptr<int>` formatter would have to punch a hole in exactly that rule.
 
-And it is not that nobody thought of it. The original proposal that gave `std::format` its library formatters, [P1636 "Formatters for library types"](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p1636r2.pdf) (Dimov/Vollmann, 2019), *did* include `shared_ptr` and `unique_ptr` -- formatting `.get()` cast to `void*`. **LEWG asked for the smart pointers to be removed.** The exclusion has held: the follow-up [P2930 "Formatter specializations for the standard library"](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p2930r0.html) adds formatters for `optional`, `variant`, `expected`, and `any`, and still leaves smart pointers out.
+And it is not that nobody thought of it. The original proposal that gave `std::format` its library formatters, [P1636 "Formatters for library types"](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p1636r2.pdf) (Dimov/Vollmann, 2019), *did* include `shared_ptr` and `unique_ptr` (formatting `.get()` cast to `void*`). **LEWG asked for the smart pointers to be removed.** The exclusion has held: the follow-up [P2930 "Formatter specializations for the standard library"](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p2930r0.html) adds formatters for `optional`, `variant`, `expected`, and `any`, and still leaves smart pointers out.
 
-Why is that defensible? Because "format a smart pointer" has no single obvious meaning. The address (what `operator<<` prints) is rarely what you want and is non-reproducible -- it changes every run under ASLR, which makes it poison for golden-output tests. The pointee is usually what you mean, but that needs the pointee to be formattable and needs null handled. Faced with two reasonable answers and a footgun, the committee declined to guess. The streaming operators predate that philosophy; `std::format` started clean and stayed strict.
+Why is that defensible? Because "format a smart pointer" has no single obvious meaning. The address (what `operator<<` prints) is rarely what you want and is non-reproducible. It changes every run under ASLR, which makes it poison for golden-output tests. The pointee is usually what you mean, but that needs the pointee to be formattable and needs null handled. Faced with two reasonable answers and a footgun, the committee declined to guess. The streaming operators predate that philosophy; `std::format` started clean and stayed strict.
 
 So: not a thing you are missing. Here are the three ways to do it today.
 
 ## 1. The address, like operator&lt;&lt; (plus a C++26 upgrade)
 
-Cast `.get()` to `void*` yourself -- that is the one pointer type `std::format` accepts. C++26's [P2510 "Formatting pointers"](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2510r3.pdf) then lets you dress that `void*` up directly (uppercase, zero-padding) without the old reinterpret-to-integer trick:
+Cast `.get()` to `void*` yourself. That is the one pointer type `std::format` accepts. C++26's [P2510 "Formatting pointers"](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2510r3.pdf) then lets you dress that `void*` up directly (uppercase, zero-padding) without the old reinterpret-to-integer trick:
 
 ```cpp
 const void* p = static_cast<const void*>(u.get());   // arbitrary int* is not formattable
@@ -70,7 +70,7 @@ std::println("n -> {}", show(n));   // n -> (null)
 
 ## 3. Write the formatter the standard left out
 
-If you want `{}` to work directly on the pointer, supply the `std::formatter` yourself. One catch worth knowing: you may only add a specialization to a `std` template when a **program-defined type** is involved. `std::formatter<std::unique_ptr<Point>>` is fine because `Point` is yours; `std::formatter<std::unique_ptr<int>>` would be non-conforming. That is also the realistic case -- you want to print `unique_ptr<YourType>`, not `unique_ptr<int>`:
+If you want `{}` to work directly on the pointer, supply the `std::formatter` yourself. One catch worth knowing: you may only add a specialization to a `std` template when a **program-defined type** is involved. `std::formatter<std::unique_ptr<Point>>` is fine because `Point` is yours; `std::formatter<std::unique_ptr<int>>` would be non-conforming. That is also the realistic case, since you want to print `unique_ptr<YourType>`, not `unique_ptr<int>`:
 
 ```cpp
 template <class CharT>
@@ -91,7 +91,7 @@ If you are already on `{fmt}`, `fmt::ptr(p)` does the `void*`-address version fo
 
 ## The takeaway
 
-The asymmetry between `operator<<` and `std::format` is not a bug to be patched -- it is `std::format` holding a line that `operator<<` never did: pointers are not formattable unless you say `void*` and mean it. Smart pointers were considered, removed, and have stayed removed across two proposals. If a standard formatter for them ever lands, expect it to print the `void*` address and to be gated exactly like the old `operator<<` -- which is the one of the three options above you can already write in a single cast.
+The asymmetry between `operator<<` and `std::format` marks a line that `std::format` holds and `operator<<` never did: pointers are not formattable unless you say `void*` and mean it. Smart pointers were considered, removed, and have stayed removed across two proposals. If a standard formatter for them ever lands, expect it to print the `void*` address and to be gated exactly like the old `operator<<`. That is the one of the three options above you can already write in a single cast.
 
 ---
 

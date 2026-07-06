@@ -21,7 +21,7 @@ Three of these are concrete enough to run today, in the only sense currently pos
 
 ## Designated-initializers that reach through a base class
 
-C++20 gave us designated initializers but forbade them for any aggregate with a base class. **P2287, "Designated-initializers for Base Classes"** (Revzin) lifts that. There is no special base-class designator -- you just name the inherited member directly:
+C++20 gave us designated initializers but forbade them for any aggregate with a base class. **P2287, "Designated-initializers for Base Classes"** (Revzin) lifts that. There is no special base-class designator. You just name the inherited member directly:
 
 ```cpp
 struct A { int a; };
@@ -77,7 +77,7 @@ The defaulted `operator++(int)` synthesizes exactly the canonical body -- copy `
 
 ## constexpr pointer tagging (with a reflection cameo)
 
-Stashing a few bits in a pointer's spare low bits (alignment bits) is an old trick -- LLVM's `PointerIntPair` is the canonical implementation. **P3125, "constexpr pointer tagging"** (Dusikova) standardizes it as `std::pointer_tag_pair`, usable at compile time:
+Stashing a few bits in a pointer's spare low bits (alignment bits) is an old trick. LLVM's `PointerIntPair` is the canonical implementation. **P3125, "constexpr pointer tagging"** (Dusikova) standardizes it as `std::pointer_tag_pair`, usable at compile time:
 
 ```cpp
 using node_ptr = std::pointer_tag_pair<const void*, bool, 1>;
@@ -89,7 +89,7 @@ if (p.tag())
 auto [ptr, tag] = p;   // structured bindings work too
 ```
 
-The detail worth noting on this blog: the default bit count is computed with `pointer_bits_available(^^Ptr)` -- that `^^Ptr` is the reflection operator. A low-level bit-twiddling utility now reaches for C++26 reflection to ask a type how many spare bits its alignment guarantees. The <PostLink slug="first-reflection">reflection</PostLink> we have been writing about all month is already showing up as plumbing in unrelated library proposals.
+The detail worth noting on this blog: the default bit count is computed with `pointer_bits_available(^^Ptr)`. That `^^Ptr` is the reflection operator. A low-level bit-twiddling utility now reaches for C++26 reflection to ask a type how many spare bits its alignment guarantees. The <PostLink slug="first-reflection">reflection</PostLink> we have been writing about all month is already showing up as plumbing in unrelated library proposals.
 
 ## Mandatory intptr_t
 

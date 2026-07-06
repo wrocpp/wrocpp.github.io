@@ -3,7 +3,7 @@
 ## Body
 Big month for C++26 reflection.
 
-GCC 16.1 shipped on 30 April with reflection built in -- five weeks after the standard was frozen. Glaze v7.2 became the first production library to ride the new feature, lifting old caps and auto-serializing enums. Two strong write-ups landed: Barry Revzin on the substitution primitive, and a republished Lemire/Thiesen talk where C++ finally outruns Rust's serde at JSON.
+GCC 16.1 shipped on 30 April with reflection built in, five weeks after the standard was frozen. Glaze v7.2 became the first production library to ride the new feature, lifting old caps and auto-serializing enums. Two strong write-ups landed: Barry Revzin on the substitution primitive, and a republished Lemire/Thiesen talk where C++ finally outruns Rust's serde at JSON.
 
 The honest part: nlohmann/json, magic_enum, protobuf still need months to catch up.
 

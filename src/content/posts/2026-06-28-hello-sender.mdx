@@ -47,7 +47,7 @@ A **sender** is a lazy description of asynchronous work, not the work itself. `j
 
 Nothing has executed yet. The whole `work` object is a value you can pass around, store, or compose further. It only runs when something *drives* it: `sync_wait` runs the pipeline to completion on the calling thread and hands back the result (wrapped in an `optional`-like tuple, because a sender can also complete with an error or a cancellation instead of a value).
 
-That laziness is the whole point. A `std::future` is eager and one-shot: the work is already running and you can only `.get()` it once. A sender is a recipe you can keep building on before anyone lights the stove. The next post does exactly that.
+That laziness is what lets you keep composing before anything runs. A `std::future` is eager and one-shot: the work is already running and you can only `.get()` it once. A sender is a recipe you can keep building on before anyone lights the stove. The next post does exactly that.
 
 ## A note on compilers
 

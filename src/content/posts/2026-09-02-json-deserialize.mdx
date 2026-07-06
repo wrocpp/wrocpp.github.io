@@ -41,9 +41,9 @@ Deserialization has two phases:
 1. **Lex + parse the JSON into a generic AST** (`rjson::value`). Handles escapes, nesting, types.
 2. **Traverse the AST guided by reflection**: for each target struct, walk its members and pull the matching key from the AST.
 
-Phase 1 is boring-but-necessary work (~200 lines). The interesting phase is 2 — where reflection makes it trivial.
+Phase 1 is boring-but-necessary work (~200 lines). The interesting phase is 2, where reflection makes it trivial.
 
-## Phase 2 — reflective walker
+## Phase 2: the reflective walker
 
 ```cpp
 namespace rjson {
@@ -119,14 +119,14 @@ std::expected<T, parse_error> from_json(std::string_view src) {
 
 ## What reflection does for us
 
-1. **Member enumeration**. `template for` over members of `T`. No need to write `from_json<User>`, `from_json<Address>`, etc. — one template works for all.
+1. **Member enumeration**. `template for` over members of `T`. No need to write `from_json<User>`, `from_json<Address>`, etc. One template works for all.
 2. **Type dispatch**. `using M = [: std::meta::type_of(m) :]` splices the member's type. `from_value_primitive<M>` then picks the right parsing branch via `if constexpr`.
 3. **Annotation-aware keys**. `key_of<m>()` (from [post 9](/posts/annotations/)) returns `"userName"` instead of `"user_name"` when `rename_all(camel_case)` is set.
 4. **Defaults**. `has_default_init<m>()` checks if the member declaration has a default initialiser (`int age = 18;`); if yes, a missing key is not an error.
 
 ## Error paths that are actually useful
 
-When a JSON field mismatches, the error carries a **path** — `"user.home.postal_code"` — built by concatenating keys as the walker descends. This is what makes these errors debuggable.
+When a JSON field mismatches, the error carries a **path** (`"user.home.postal_code"`) built by concatenating keys as the walker descends. This is what makes these errors debuggable.
 
 ```cpp
 auto r = rjson::from_json<User>(
@@ -141,9 +141,9 @@ Hand-rolled parsers often return "parse failed" with no location. Reflection giv
 
 Both are supported C++26 patterns. We default to `std::expected` because:
 
-- **Deserialization is a common fallible operation**, not an exceptional one. Exceptions carry signal ("this should not have happened"); parsing user input can always fail.
-- **Zero-cost error propagation.** No stack unwinding, no RTTI hit. The return-value form is as fast as success.
-- **Composable.** `std::expected::and_then` / `transform` let you chain parses cleanly.
+- Deserialization is a common fallible operation, not an exceptional one. Exceptions carry signal ("this should not have happened"); parsing user input can always fail.
+- Zero-cost error propagation. No stack unwinding, no RTTI hit. The return-value form is as fast as success.
+- Composable. `std::expected::and_then` / `transform` let you chain parses cleanly.
 
 For teams that prefer exceptions, a thin wrapper adds one:
 
@@ -217,11 +217,11 @@ Worth testing: `test_round_trip` is a one-liner in test suites now.
 
 ## Performance notes
 
-- **No dynamic dispatch** at runtime. Each `from_value<T>` is monomorphised.
-- **One string allocation per path segment** during error construction. Happens only on error. On the happy path, no strings touched by the walker.
-- **Parse phase (AST) dominates cost**, not the reflective dispatch. Using a SIMD JSON parser (like simdjson) as the AST phase puts us within 10-15% of hand-written parsers for flat schemas.
+- No dynamic dispatch at runtime. Each `from_value<T>` is monomorphised.
+- One string allocation per path segment during error construction. Happens only on error. On the happy path, no strings touched by the walker.
+- Parse phase (AST) dominates cost, not the reflective dispatch. Using a SIMD JSON parser (like simdjson) as the AST phase puts us within 10-15% of hand-written parsers for flat schemas.
 
-## What's next
+## Where the series goes next
 
-- **[Post 11 — One codegen, many wire formats](/posts/one-codegen-many-formats/)** — take the same annotations and apply them across JSON, YAML, XML, TOML, MessagePack.
+- **[Post 11: One codegen, many wire formats](/posts/one-codegen-many-formats/)** applies the same annotations across JSON, YAML, XML, TOML, MessagePack.
 - After Arc 3, Arc 4 starts: CLI parsing, ORM, dependency injection, auto-mocks.

@@ -3,7 +3,7 @@
 ## Body
 Five things happened to C++26 reflection last month. Here they are, freshest first.
 
-GCC 16.1 shipped P2996 on 30 April -- five weeks after Croydon froze the standard. `apt install gcc-16` is days away on Ubuntu. Every example from the wro.cpp series compiles on it with one include rewrite.
+GCC 16.1 shipped P2996 on 30 April, five weeks after Croydon froze the standard. `apt install gcc-16` is days away on Ubuntu. Every example from the wro.cpp series compiles on it with one include rewrite.
 
 Glaze v7.2 became the first production-grade C++ library to swap hand-rolled metaprogramming for a P2996 backend. The 128-member cap is gone, private members work without friend declarations, and `reflect_enums` auto-serializes enums. If you ship JSON in C++ today, this upgrade pays for itself in a sprint.
 

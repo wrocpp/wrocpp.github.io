@@ -13,25 +13,25 @@ draft: false
 
 import PostLink from '../../components/PostLink.astro';
 
-Five weeks ago today -- 28 March 2026 -- WG21 voted C++26 to publication at the Croydon meeting outside London. The dust has settled enough to take stock of what actually shipped, what compiles today, and what it changes for anyone teaching or learning the language.
+Five weeks ago today (28 March 2026) WG21 voted C++26 to publication at the Croydon meeting outside London. The dust has settled enough to take stock of what actually shipped, what compiles today, and what it changes for anyone teaching or learning the language.
 
 ## What landed
 
-The headline cluster is reflection. P2996 (the core reflection facility) made it in, together with P3394 (annotations on reflectable entities), P3096 (function-parameter reflection), P3560 (the error-handling story for `std::meta`), and P1306 (expansion statements -- the `template for` loop that drives every non-trivial reflection example). That is the same five-paper bundle the wro.cpp reflection series teaches end-to-end. See <PostLink slug="why-cpp26-reflection-matters">post 1</PostLink> for the strategic case and <PostLink slug="first-reflection">post 2</PostLink> for the smallest possible hands-on.
+The headline cluster is reflection. P2996 (the core reflection facility) made it in, together with P3394 (annotations on reflectable entities), P3096 (function-parameter reflection), P3560 (the error-handling story for `std::meta`), and P1306 (expansion statements: the `template for` loop that drives every non-trivial reflection example). That is the same five-paper bundle the wro.cpp reflection series teaches end-to-end. See <PostLink slug="why-cpp26-reflection-matters">post 1</PostLink> for the strategic case and <PostLink slug="first-reflection">post 2</PostLink> for the smallest possible hands-on.
 
-P2900 contracts went in too, over Bjarne Stroustrup's well-publicised objection (DevClass has a clean writeup at https://www.devclass.com/development/2026/04/01/contracts-are-in-c26-despite-disquiet-over-their-value/5213555). P2300 senders/receivers -- the structured-concurrency executor model -- shipped after a decade of design iteration. The libstdc++ hardened profiles are in, giving you bounds-checked containers and iterator validation behind a single flag. Herb Sutter's Croydon trip report at https://herbsutter.com/2026/03/29/c26-is-done-trip-report-march-2026-iso-c-standards-meeting-london-croydon-uk/ has the full roll-call.
+P2900 contracts went in too, over Bjarne Stroustrup's well-publicised objection (DevClass has a clean writeup at https://www.devclass.com/development/2026/04/01/contracts-are-in-c26-despite-disquiet-over-their-value/5213555). P2300 senders/receivers (the structured-concurrency executor model) shipped after a decade of design iteration. The libstdc++ hardened profiles are in, giving you bounds-checked containers and iterator validation behind a single flag. Herb Sutter's Croydon trip report at https://herbsutter.com/2026/03/29/c26-is-done-trip-report-march-2026-iso-c-standards-meeting-london-croydon-uk/ has the full roll-call.
 
 ## The compiler matrix
 
-GCC 16.1 released on 30 April 2026 and ships `-freflection` -- the first stable mainline GCC with C++26 reflection turned on by default flag. See the isocpp.org announcement at https://isocpp.org/blog/2026/04/gcc-16.1.
+GCC 16.1 released on 30 April 2026 and ships `-freflection`, the first stable mainline GCC with C++26 reflection turned on by default flag. See the isocpp.org announcement at https://isocpp.org/blog/2026/04/gcc-16.1.
 
 The Bloomberg clang-p2996 fork is still the bleeding edge: `-freflection-latest` carries paper revisions that have not yet flowed to upstream Clang or GCC, and that's where the wro.cpp series sources are authored.
 
 MSVC has reflection on the public roadmap for the 17.13 wave; no shipping date yet. EDG 6.6 has experimental P2996 behind a feature flag, mostly relevant if you live inside CLion or one of the EDG-fronted IDEs.
 
-## What this means for the series
+## What GCC 16.1 changes for the series
 
-Posts 1-25 of the wro.cpp reflection series stay exactly as written. The implementation surface they target -- clang-p2996 with `-freflection-latest` -- is still the reference, and the Compiler Explorer embeds keep working unchanged.
+Posts 1-25 of the wro.cpp reflection series stay exactly as written. The implementation surface they target (clang-p2996 with `-freflection-latest`) is still the reference, and the Compiler Explorer embeds keep working unchanged.
 
 What did change is the GCC story. The audit run in PR #27 walked all 25 posts and auto-wired a second Compiler Explorer link (GCC 16.1) for every example that compiles cleanly under stable reflection. The full per-post matrix is in `docs/gcc-16-1-compatibility.md`. Roughly 80 percent of the examples have a green GCC build today; the rest depend on paper revisions that are still in-flight upstream and will close out as GCC catches up.
 

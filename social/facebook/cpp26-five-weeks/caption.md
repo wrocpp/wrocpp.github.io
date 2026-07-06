@@ -3,7 +3,7 @@
 ## Body
 C++26 was voted to publication at Croydon five weeks ago today. The dust has settled enough to take stock.
 
-What landed: reflection (the P2996 cluster), contracts, senders/receivers, hardened libstdc++ profiles. GCC 16.1 already ships `-freflection` -- five weeks from "standard is done" to "your distro builds it." Fastest C++ has ever moved from vote to running code.
+What landed: reflection (the P2996 cluster), contracts, senders/receivers, hardened libstdc++ profiles. GCC 16.1 already ships `-freflection`, five weeks from "standard is done" to "your distro builds it." Fastest C++ has ever moved from vote to running code.
 
 For the wro.cpp reflection series: posts 1-25 stay as-is, and roughly 80 percent of the examples now have a green GCC 16.1 build alongside clang-p2996.
 
