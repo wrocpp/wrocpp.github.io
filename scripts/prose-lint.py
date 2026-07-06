@@ -359,7 +359,7 @@ def print_legend():
     print(f"         see docs/STYLE.md; some tells (skeleton, earned adjectives) are human-review{RESET}")
 
 
-def run_all(root: Path):
+def run_all(root: Path, strict: bool = False):
     posts = sorted(root.glob("src/content/posts/*.mdx"))
     total_dash = 0
     colon_the = 0
@@ -382,7 +382,13 @@ def run_all(root: Path):
     ratio = (100 * colon_the / n) if n else 0
     print(f"  ': the ...' titles: {colon_the}/{n} ({ratio:.0f}%; target < 25%)")
     print(f"  posts with >=1 ERROR-level tell: {with_error}/{n}")
-    print(f"{DIM}(advisory sweep; exits 0. Gate individual posts via --slug in publish-post.){RESET}")
+    if strict:
+        if with_error:
+            print(f"{RED}gate: {with_error} post(s) carry an ERROR-level tell; run prose-lint.py --slug <slug> to see them.{RESET}")
+            return 1
+        print(f"{GREEN}gate: all {n} posts clean.{RESET}")
+        return 0
+    print(f"{DIM}(advisory sweep; exits 0. Add --strict to gate the build on ERROR-level tells.){RESET}")
     return 0
 
 
@@ -401,7 +407,7 @@ def main():
     did_something = False
 
     if args.all:
-        sys.exit(run_all(root))
+        sys.exit(run_all(root, args.strict))
 
     if args.caption:
         did_something = True

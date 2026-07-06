@@ -10,12 +10,13 @@
   "scripts": {
     "dev": "astro dev",
     "start": "astro dev",
-    "prebuild": "python3 scripts/check-llms-sync.py",
+    "prebuild": "python3 scripts/check-llms-sync.py && python3 scripts/prose-lint.py --all --strict",
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
     "check": "astro check",
-    "check:llms-sync": "python3 scripts/check-llms-sync.py"
+    "check:llms-sync": "python3 scripts/check-llms-sync.py",
+    "check:prose": "python3 scripts/prose-lint.py --all --strict"
   },
   "dependencies": {
     "@astrojs/mdx": "^7.0.0",
