@@ -149,10 +149,12 @@ The wro.cpp automation drafts prose. That is fine for our own channels (the webs
 Facebook), which is where the `advertise-post` / `push-to-buffer` pipeline posts.
 
 Communities that ban AI-generated content (r/cpp, r/programming, Hacker News in practice) are
-different. **Do not auto-cross-post a raw draft there.** Anything going to those venues gets a genuine
-edit or rewrite pass by a human who stands behind it as the author. The style work above exists partly
-to make that pass fast, not to skip it. Passing `prose-lint` is not the same as being human-authored,
-and it is not a licence to post AI drafts where they are not allowed.
+different. **We do not post there at all.** This is a hard rule, not a "rewrite it enough first" rule:
+those venues do not accept human-edited AI text either, so editing does not make a post eligible. The
+style guide above is for genuine writing quality on our own channels; it is **not** a tool to make AI
+content pass as human, and must never be used that way. Every post we publish is labeled with its AI
+disclosure (the `aiDisclosure` frontmatter field, the byline label, and the `/ai` page). If a reader
+chooses to share a post in one of those communities, that is their decision, not ours.
 
 ## What the linter can and cannot catch
 

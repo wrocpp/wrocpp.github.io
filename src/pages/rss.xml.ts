@@ -13,14 +13,16 @@ export async function GET(context: APIContext) {
   return rss({
     title: 'wro.cpp — Wrocław C++ community',
     description:
-      'Modern C++ for production: safety, performance, security, compliance, and the tooling that ships C++ in cars, trading systems, and hospitals. Flagship posts, news short-form, and community content from the Wroclaw C++ scene.',
+      'Modern C++ for production: safety, performance, security, compliance, and the tooling that ships C++ in cars, trading systems, and hospitals. Flagship posts, news short-form, and community content from the Wroclaw C++ scene. Most posts are AI-generated and human-reviewed; see https://wrocpp.github.io/ai.',
     site: context.site!,
+    xmlns: { ai: 'https://wrocpp.github.io/ns/ai-disclosure' },
     items: posts.sort(byDateDesc).map((p) => ({
       title: p.data.title,
       description: p.data.summary,
       pubDate: p.data.pubDate,
       link: `/posts/${p.id}/`,
       categories: p.data.tags,
+      customData: `<ai:declaration>${p.data.aiDisclosure}</ai:declaration>`,
     })),
   });
   // suppress unused import warning (kept for future use)

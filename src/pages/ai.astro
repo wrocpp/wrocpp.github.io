@@ -1,0 +1,61 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+<BaseLayout title="How we use AI — wro.cpp" description="wro.cpp is an openly AI-assisted publication. How we draft, verify, label, and where we do and do not publish.">
+  <div class="wrap">
+    <header class="page-head reveal">
+      <div class="page-head__eyebrow">// ai</div>
+      <h1 class="page-head__title">How we use AI</h1>
+      <p class="page-head__sub">
+        wro.cpp is an openly AI-assisted publication. This page says exactly how, so you never have to guess.
+      </p>
+    </header>
+
+    <article class="prose reveal reveal-1">
+      <p class="article-lede">Most posts here are <strong>drafted by an AI model</strong> (Claude, by Anthropic), directed and reviewed by a human. We say so on every post, and this page explains what that means in practice.</p>
+
+      <h2>What the label on each post means</h2>
+      <p>Every article carries one of three labels in its byline, linking back here:</p>
+      <ul>
+        <li><strong>AI-generated</strong> — the model wrote the prose. A human (currently <a href="https://github.com/filipsajdak">Filip Sajdak</a>) chose the topic, directed the structure, checked the facts, and reviewed the result. This is the default for the site.</li>
+        <li><strong>AI-assisted</strong> — a human wrote or substantially shaped the argument and prose; the model helped draft, refine, or research parts of it.</li>
+        <li><strong>Written by a human</strong> — no meaningful AI involvement in the text.</li>
+      </ul>
+      <p>The declaration is also emitted as a <code>ai-content-declaration</code> meta tag in each post's HTML, so tools and readers can read it without parsing the page.</p>
+
+      <h2>What we verify, every time</h2>
+      <p>AI-drafted does not mean unchecked. Before a post ships:</p>
+      <ul>
+        <li>Every code example is <strong>compiled and run</strong> on Compiler Explorer, and the post links to that exact session. If it does not build, it does not publish.</li>
+        <li>Claims, papers, and numbers are checked against primary sources. We drop anything we cannot confirm rather than guess.</li>
+        <li>A human reads the result and takes responsibility for it.</li>
+      </ul>
+
+      <h2>Where we publish, and where we do not</h2>
+      <p>We publish AI-assisted content on our own channels: this site, and our LinkedIn and Facebook pages, where it is labeled as above.</p>
+      <p>
+        We <strong>do not</strong> post it to communities that disallow AI-generated content, such as
+        <a href="https://www.reddit.com/r/cpp/" rel="external">r/cpp</a> and
+        <a href="https://www.reddit.com/r/programming/" rel="external">r/programming</a>. Their rules are
+        their call, and "human-edited AI" does not exempt a post from those rules. We are not going to try to
+        slip AI content past a venue that has asked us not to, and we are not going to pass it off as
+        hand-written. If a reader chooses to share a post somewhere, that is up to them.
+      </p>
+
+      <h2>Why we disclose</h2>
+      <p>
+        Two reasons. First, it is the honest thing: you should know how what you are reading was made.
+        Second, under the EU AI Act (Article 50), a publisher using a generative model is a <em>deployer</em>
+        with a transparency obligation, and clear disclosure is how we meet it. There is no mature technical
+        watermarking standard for text yet, so a visible, consistent label is the accepted practical answer.
+      </p>
+
+      <h2>Feedback</h2>
+      <p>
+        If you think a post is mislabeled, or you disagree with how we do this, tell us: open an issue or
+        discussion on the <a href="https://github.com/wrocpp/wrocpp.github.io">site repo</a>, or reach us on
+        <a href="https://wrocpp.slack.com">Slack</a>. We would rather get this right in the open.
+      </p>
+    </article>
+  </div>
+</BaseLayout>

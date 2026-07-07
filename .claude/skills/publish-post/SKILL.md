@@ -240,11 +240,11 @@ Print the PR URL + the cron job id + the discussion URL. Remind the user that:
 | build warns about missing TODO id | step 5 missed a GodboltEmbed | re-grep `id="TODO`, wire it |
 | series prev/next bar empty in dev | filter `isPublished` excluded the post | confirm draft flip applied; restart dev server |
 
-## Community cross-posting gate
+## Community cross-posting gate (HARD RULE)
 
-The website, LinkedIn, and Facebook are our own channels; the pipeline posts there automatically.
+The website, LinkedIn, and Facebook are our own channels; the pipeline posts there automatically, and every post is labeled with its AI disclosure (see the `/ai` page and the `aiDisclosure` frontmatter field).
 
-**Communities that ban AI-generated content (r/cpp, r/programming, and Hacker News in practice) are off-limits to automation.** Do not queue, schedule, or auto-cross-post a raw draft to them. Anything going to those venues needs a genuine edit or rewrite pass by a human who posts it under their own authorship. Passing `prose-lint` does not make a draft human-authored, and it is not a licence to post AI drafts where they are disallowed. See `docs/STYLE.md` community policy.
+**Never post wro.cpp's AI-generated or AI-assisted content to communities that disallow it, including r/cpp, r/programming, and (in practice) Hacker News.** This is not a "rewrite it enough and then post" rule: those venues do not accept human-edited AI text either, so editing does not make it postable there. Do not queue, schedule, auto-cross-post, or hand a caption to anyone to post there on our behalf. Passing `prose-lint` improves writing quality; it is NOT a tool to make AI content pass as human, and must never be used that way. If a reader chooses to share a post there themselves, that is their decision, not ours. See `docs/STYLE.md` community policy and the `/ai` page.
 
 ## Out of scope
 

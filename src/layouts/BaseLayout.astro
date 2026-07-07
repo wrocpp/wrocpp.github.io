@@ -9,11 +9,13 @@ interface Props {
   title: string;
   description?: string;
   canonicalPath?: string;
+  aiDisclosure?: 'ai-generated' | 'ai-assisted' | 'human';
 }
 const {
   title,
   description = 'wro.cpp — Wrocław C++ community: hands-on modern C++ posts, events, and the people who ship it.',
   canonicalPath,
+  aiDisclosure,
 } = Astro.props;
 const canonical = canonicalPath
   ? new URL(canonicalPath, Astro.site).toString()
@@ -34,6 +36,7 @@ const canonical = canonicalPath
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
     <meta name="theme-color" content="#EA541E" />
+    {aiDisclosure && <meta name="ai-content-declaration" content={aiDisclosure} />}
 
     <!-- Fonts: Quicksand (brand-mandated), Source Serif 4 (body), JetBrains Mono (code) -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -74,6 +77,7 @@ const canonical = canonicalPath
           <span class="site-footer__tagline">Modern C++ for production.</span>
         </div>
         <div style="display:flex;gap:1.25rem;flex-wrap:wrap;">
+          <a href="/ai">how we use AI</a>
           <a href="/rss.xml">rss</a>
           <a href="/llms.txt">llms.txt</a>
           <a href="https://github.com/wrocpp/wrocpp.github.io">github</a>
