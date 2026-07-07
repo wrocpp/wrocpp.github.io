@@ -6,7 +6,7 @@
 # Run AFTER `brand-gen build` (so index.html exists) and BEFORE
 # `brand-gen image` (so the screenshot picks up our changes).
 #
-# Two operations, both REPLACE not append (idempotent re-runs):
+# Three operations, all idempotent on re-run:
 #   1. assets/scudoai.css <- wrocpp.css (standalone wro.cpp stylesheet,
 #      independent from scudoai-social.css; styles .card / .card-insight /
 #      .card-quote / .card-stat / .card-announcement from scratch in the
@@ -15,6 +15,9 @@
 #      our magnet logo. brand-gen reads BRAND_KIT_ROOT/assets/logo-symbol.svg
 #      directly (generator/lib/logo.js:14), bypassing the vendored copy --
 #      so we have to patch the rendered HTML.
+#   3. An "AI-generated" disclosure badge (bottom-right; styled by .ai-badge
+#      in wrocpp.css), so the AI disclosure rides with the card image on
+#      social. See the /ai policy page.
 
 set -euo pipefail
 
@@ -61,5 +64,21 @@ if n == 0:
     sys.exit("error: did not find inlined logo svg in index.html")
 open(index_html, 'w').write(new_html)
 print(f"ok   swapped inlined logo svg ({n} replacement)")
+PY
+
+  # 3. Stamp the AI-disclosure badge into the card (bottom-right; styled by
+  #    .ai-badge in wrocpp.css). Idempotent: skip if already present.
+  python3 - "$INDEX_HTML" <<'PY'
+import sys
+p = sys.argv[1]
+html = open(p).read()
+if 'class="ai-badge"' in html:
+    print("ok   ai-badge already present (skipped)")
+elif '</section>' in html:
+    html = html.replace('</section>', '<div class="ai-badge">AI-generated</div></section>', 1)
+    open(p, 'w').write(html)
+    print("ok   stamped ai-badge")
+else:
+    sys.exit("error: no </section> anchor to attach ai-badge")
 PY
 fi

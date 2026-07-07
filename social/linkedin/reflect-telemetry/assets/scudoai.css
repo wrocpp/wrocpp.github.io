@@ -156,16 +156,17 @@ html, body {
 
 /* ---------------- QUOTE card ---------------- */
 .card-quote { justify-content: center; padding: 140px 110px; }
+.card-quote .quote-content { display: flex; flex-direction: column; align-items: flex-start; }
 .card-quote .quote-mark {
-  position: absolute;
-  top: 100px;
-  left: 100px;
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 220pt;
-  line-height: 1;
+  font-size: 200pt;
+  line-height: 0.8;
   color: var(--orange);
-  opacity: 0.18;
+  opacity: 0.20;
+  /* In-flow above the text (not floated in the corner) with a negative
+   * bottom margin so the mark nearly touches the first quote line. */
+  margin: 0 0 -0.62em;
 }
 .card-quote .quote-body {
   font-family: var(--font-display);
@@ -184,36 +185,60 @@ html, body {
   color: var(--ink-muted);
 }
 .card-quote .quote-attribution::before { content: '-- '; color: var(--orange); }
+/* author and role are adjacent spans with no separator in the markup;
+ * add one so they do not run together ("wro.cppC++26 ..."). */
+.card-quote .quote-attribution .role::before { content: ' / '; color: var(--ink-faint); }
 
 /* ---------------- STAT card ---------------- */
 .card-stat { justify-content: center; }
+/* Value and label sit side by side (label wraps to stacked lines whose
+ * combined height roughly matches the value); context + source span the
+ * full width underneath. */
+.card-stat .stat-content {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    "value label"
+    "context context"
+    "source source";
+  column-gap: 64px;
+  align-items: center;
+}
 .card-stat .stat-value {
+  grid-area: value;
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 220pt;
-  line-height: 1;
+  font-size: 240pt;
+  line-height: 0.82;
   letter-spacing: -0.04em;
   color: var(--orange);
   margin: 0;
 }
 .card-stat .stat-label {
+  grid-area: label;
   font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 44pt;
-  line-height: 1.15;
+  font-weight: 700;
+  font-size: 90pt;
+  line-height: 1.0;
+  letter-spacing: -0.02em;
   color: var(--ink);
-  margin: 30px 0 0;
+  /* min-content forces a per-word wrap, so "codegen steps" stacks into
+   * two lines next to the value instead of running on one long line. */
+  width: min-content;
+  margin: 0;
 }
 .card-stat .stat-context {
+  grid-area: context;
   font-family: var(--font-body);
   font-size: 26pt;
   line-height: 1.45;
   color: var(--ink-muted);
-  margin: 30px 0 0;
+  margin: 56px 0 0;
   max-width: 880px;
 }
 .card-stat .stat-source {
-  margin-top: 50px;
+  grid-area: source;
+  margin-top: 44px;
   font-family: var(--font-mono);
   font-size: 18pt;
   color: var(--ink-faint);
@@ -294,6 +319,24 @@ html, body {
 }
 .logo-watermark.top-right::after,
 .logo-watermark.bottom-right::after { order: -1; margin-right: 18px; }
+
+/* ---------------- AI DISCLOSURE BADGE ---------------- */
+/* A small, honest "AI-GENERATED" label so the disclosure rides with the
+ * card image on social. Bottom-right corner (logo is top-left, citation is
+ * center-bottom, so this corner is free). Injected into index.html by
+ * inject.sh. See the /ai policy page. */
+.ai-badge {
+  position: absolute;
+  bottom: 74px;   /* clears the 6px orange accent bar; sits in the bottom padding band */
+  right: 110px;   /* matches the card side padding / logo inset */
+  z-index: 10;
+  font-family: var(--font-mono);
+  font-size: 14pt;
+  font-weight: 500;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
 
 /* ---------------- Defensive overrides ---------------- */
 /* Anything brand-gen might have set inline using its tokens. */
