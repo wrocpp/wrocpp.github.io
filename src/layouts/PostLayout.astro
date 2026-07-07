@@ -8,9 +8,15 @@ interface Props {
   post: CollectionEntry<'posts'>;
 }
 const { post } = Astro.props;
-const { title, summary, pubDate, updatedDate, language, tags, series, series_order, audience, kind, draft, discussion } =
+const { title, summary, pubDate, updatedDate, language, tags, series, series_order, audience, kind, draft, discussion, author, aiDisclosure } =
   post.data;
 const date = pubDate.toISOString().slice(0, 10);
+
+// AI disclosure (see /ai). authorName maps the author id to a display name.
+const authorNames: Record<string, string> = { 'filip-sajdak': 'Filip Sajdak' };
+const authorName = authorNames[author] ?? author;
+const aiWord = aiDisclosure === 'ai-assisted' ? 'AI-assisted' : 'AI-generated';
+const aiVerb = aiDisclosure === 'ai-assisted' ? 'edited' : 'reviewed';
 
 // Series total is derived from the maximum `series_order` across ALL posts in
 // the collection (drafts included), not from `getCollection(..., isPublished)`
@@ -24,7 +30,7 @@ const seriesTotal = series
 const progressPct =
   seriesTotal && series_order ? Math.round((series_order / seriesTotal) * 100) : 0;
 ---
-<BaseLayout title={`${draft ? '[DRAFT] ' : ''}${title}`} description={summary} canonicalPath={`/posts/${post.id}/`}>
+<BaseLayout title={`${draft ? '[DRAFT] ' : ''}${title}`} description={summary} canonicalPath={`/posts/${post.id}/`} aiDisclosure={aiDisclosure}>
   {draft && (
     <div class="draft-banner">
       <strong>DRAFT</strong> — visible only in local dev. Flip <code>draft: false</code> in the frontmatter to publish.
@@ -76,6 +82,9 @@ const progressPct =
           {updatedDate && <span>· upd {updatedDate.toISOString().slice(0, 10)}</span>}
           <span>· {language === 'pl' ? 'polish' : 'english'}</span>
           <span>· audience: {audience}</span>
+          {aiDisclosure === 'human'
+            ? <span>· by {authorName}</span>
+            : <span>· <a href="/ai">{aiWord}</a>, {aiVerb} by {authorName}</span>}
           {discussion && <span>· <a href={discussion} rel="external">discuss</a></span>}
         </div>
         {tags.length > 0 && (

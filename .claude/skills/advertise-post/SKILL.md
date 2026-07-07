@@ -348,7 +348,7 @@ Print:
 - Both `image.png` paths.
 - Suggested post times (from caption.md).
 - A 1-line reminder: "Manual posting: copy caption + upload image to LinkedIn / Facebook page."
-- A community reminder: "These captions are for LinkedIn / Facebook automation only. Do NOT cross-post the raw draft to r/cpp, r/programming, or other communities that ban AI-generated content. Those get a human edit/rewrite pass first (see `docs/STYLE.md` community policy)."
+- A community reminder: "These captions are for LinkedIn / Facebook automation only. NEVER post this content to r/cpp, r/programming, or other communities that ban AI-generated content, and do not hand it to anyone to post there on our behalf. Human-editing it does not make it postable there. See `docs/STYLE.md` community policy and the `/ai` page."
 
 Do NOT post anywhere. The skill stops here.
 

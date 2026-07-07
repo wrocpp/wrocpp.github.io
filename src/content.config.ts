@@ -17,6 +17,11 @@ const posts = defineCollection({
     pubDate: z.date(),
     updatedDate: z.date().optional(),
     author: z.string().default('filip-sajdak'),
+    // AI disclosure (EU AI Act Art. 50 deployer transparency). Honest default
+    // for this publication: Claude drafts + verifies the code, a human directs
+    // the topic and reviews. See /ai. Override per-post where a post is
+    // substantially human-written ('ai-assisted') or fully human ('human').
+    aiDisclosure: z.enum(['ai-generated', 'ai-assisted', 'human']).default('ai-generated'),
     language: z.enum(['en', 'pl']).default('en'),
     kind: z.enum(['flagship', 'short', 'event-recap']).default('flagship'),
     series: z.string().optional(),

@@ -26,11 +26,14 @@ engineer explaining something they hit, not like a launch announcement. Let fact
 before publishing. ERROR blocks; WARN must be read and either fixed or justified. This runs inside the
 `publish-post` and `advertise-post` skills.
 
-## Community posting
+## Community posting & AI disclosure
 
-Our automation posts to the website, LinkedIn, and Facebook. **Never auto-cross-post a raw AI draft to
-communities that ban AI-generated content (r/cpp, r/programming).** Those get a human edit/rewrite pass
-first; passing `prose-lint` does not make a draft human-authored. See `docs/STYLE.md` community policy.
+Our automation posts to the website, LinkedIn, and Facebook. Every post is labeled with its AI
+disclosure (`aiDisclosure` frontmatter, the byline label, and the `/ai` page). **Never post our
+AI-generated/assisted content to communities that ban it (r/cpp, r/programming, HN), and do not hand
+it to anyone to post there.** This is a hard rule: human-editing it does not make it postable there.
+`prose-lint` is for writing quality only; it must never be used to make AI content pass as human. See
+`docs/STYLE.md` community policy and `/ai`.
 
 ## Other
 
