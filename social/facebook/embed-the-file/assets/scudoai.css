@@ -166,7 +166,7 @@ html, body {
   opacity: 0.20;
   /* In-flow above the text (not floated in the corner) with a negative
    * bottom margin so the mark nearly touches the first quote line. */
-  margin: 0 0 -0.42em;
+  margin: 0 0 -0.62em;
 }
 .card-quote .quote-body {
   font-family: var(--font-display);
@@ -185,6 +185,9 @@ html, body {
   color: var(--ink-muted);
 }
 .card-quote .quote-attribution::before { content: '-- '; color: var(--orange); }
+/* author and role are adjacent spans with no separator in the markup;
+ * add one so they do not run together ("wro.cppC++26 ..."). */
+.card-quote .quote-attribution .role::before { content: ' / '; color: var(--ink-faint); }
 
 /* ---------------- STAT card ---------------- */
 .card-stat { justify-content: center; }
@@ -316,6 +319,24 @@ html, body {
 }
 .logo-watermark.top-right::after,
 .logo-watermark.bottom-right::after { order: -1; margin-right: 18px; }
+
+/* ---------------- AI DISCLOSURE BADGE ---------------- */
+/* A small, honest "AI-GENERATED" label so the disclosure rides with the
+ * card image on social. Bottom-right corner (logo is top-left, citation is
+ * center-bottom, so this corner is free). Injected into index.html by
+ * inject.sh. See the /ai policy page. */
+.ai-badge {
+  position: absolute;
+  bottom: 74px;   /* clears the 6px orange accent bar; sits in the bottom padding band */
+  right: 110px;   /* matches the card side padding / logo inset */
+  z-index: 10;
+  font-family: var(--font-mono);
+  font-size: 14pt;
+  font-weight: 500;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
 
 /* ---------------- Defensive overrides ---------------- */
 /* Anything brand-gen might have set inline using its tokens. */

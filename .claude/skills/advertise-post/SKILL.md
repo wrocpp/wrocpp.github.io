@@ -253,9 +253,11 @@ What each step does:
    the brand-kit defaults.
 2. **`inject.sh`** REPLACES `assets/scudoai.css` with `wrocpp.css`
    (standalone wro.cpp stylesheet, NOT an append), blanks
-   `assets/layout.css`, and patches the inlined `<symbol id="scudo-logo">`
-   in `index.html` with the wro.cpp magnet SVG. All three operations
-   are idempotent.
+   `assets/layout.css`, patches the inlined `<symbol id="scudo-logo">`
+   in `index.html` with the wro.cpp magnet SVG, and stamps an
+   `<div class="ai-badge">AI-generated</div>` (bottom-right AI disclosure
+   label, styled by `.ai-badge` in `wrocpp.css`; see the `/ai` page). All
+   operations are idempotent.
 3. **`brand-gen image`** runs headless Chrome on the (now wro.cpp-skinned)
    `index.html` and writes a PNG.
 
@@ -279,11 +281,15 @@ After both platforms render, **verify the swap actually happened**:
 # is still the ScudoAI shield. STOP and re-run the sequence.
 grep -o 'viewBox="0 0 [0-9 ]*"' social/linkedin/<slug>/index.html | head -1
 
-# MUST report 300 lines (wrocpp.css standalone). If 0, the assets
+# MUST report ~340 lines (wrocpp.css standalone). If 0, the assets
 # directory was empty when Chrome rendered -> giant logo bug.
 # If ~1189, you appended instead of replacing -- delete the file and
 # re-run inject.sh.
 wc -l social/linkedin/<slug>/assets/scudoai.css
+
+# MUST find the AI-disclosure badge. If missing, inject.sh step 3 did
+# not run (or the </section> anchor was absent) -- re-run the sequence.
+grep -q 'class="ai-badge"' social/linkedin/<slug>/index.html && echo "ai-badge ok"
 ```
 
 PNG sanity checks (all bundled into one script):
