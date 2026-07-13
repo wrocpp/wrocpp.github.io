@@ -171,6 +171,24 @@ template: social/linkedin-post
 
 Use `theme=dark` for all wro.cpp social posts (matches the thesis-series default). LinkedIn and Facebook can carry the same content.md, or be subtly different (e.g. a tighter Facebook headline). Default to identical unless the user asked to differentiate.
 
+### 6a. Card headline: punchy but true (the two-tier rule)
+
+The card h1 is **not** the blog title. See `docs/STYLE.md` "Headlines and hooks." The blog `title`
+frontmatter stays sober and precise (verb + concrete claim); the card h1 carries the curiosity, the
+punchiest framing of the same fact that is still literally true. The gap between them is the click,
+and the post must pay off the card.
+
+Derive the card h1 like this:
+
+- Start from the single most surprising **true** fact in the post.
+- Sharpen with the hook toolkit: a specific number, ordinary code reframed as the trap, one
+  escalation beat. `C++26 ends a 40-year footgun`, not `New behavior for uninitialized reads`.
+- **Self-check before you render:** is the card headline literally true, and does the post prove it?
+  If a reader who clicks would feel tricked, dial it back to what the demo shows.
+
+Never inflate to fill the gap (tells 5 and 6 still apply), and this lever is for our own channels
+only (never r/cpp / r/programming / HN, see the community reminder in step 10).
+
 ### 7. Update config.yaml metadata
 
 Edit `social/<platform>/<slug>/config.yaml`:

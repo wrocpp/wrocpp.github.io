@@ -130,6 +130,51 @@ rewrites:
 - `Erroneous behavior: the end of a 40-year footgun` -> `C++26 makes an uninitialized read a defined bug`
 - `mp-units: the library that puts physics in the type system` -> `Units that the compiler checks`
 
+## Headlines and hooks
+
+Our best-performing post so far, the C++26 erroneous-behavior short, reached about 125x our usual
+impressions and 100x our usual clicks. A reader summed up why in the comments: "Looks like a
+clickbait, but it's actually true." That tension, curiosity on the surface and a real payoff
+underneath, is the effect to aim for. It is not achieved by overstating. It is achieved by finding
+the true claim that also happens to be surprising, and letting the card promise exactly what the
+post delivers.
+
+### Two tiers: card headline vs blog title
+
+Write two different headlines for the same post.
+
+- **The blog title** (frontmatter `title`) stays sober and precise: a verb and a concrete claim.
+  "C++26 makes an uninitialized read a defined bug." It is what the reader sees once they have
+  arrived, and it has to survive a careful read.
+- **The social card h1** carries the curiosity: the punchiest true framing of the same fact.
+  "C++26 ends a 40-year footgun." It is what makes someone stop scrolling.
+
+The gap between the two is the click. The rule that keeps it honest: the card headline must be
+literally true and fully paid off by the post. If a reader who clicks feels tricked, the card
+overreached, so rewrite it down to what the post actually proves.
+
+### The hook toolkit
+
+The techniques that made the footgun post land, reusable on any topic:
+
+- **A specific number, not a vague quantifier.** "40 years," not "long-standing." "Never calls
+  `new`," not "fewer allocations." A number is checkable, and checkable reads as true.
+- **Reframe familiar code as the danger.** `int x;` is one line every reader has written. Showing
+  that the ordinary thing is the trap is more arresting than any adjective.
+- **One escalation beat.** State the stakes once, higher than expected but still true: not "you get
+  a wrong value" but "the compiler may delete the branch." Earn it with the demo; do not inflate it.
+- **The same input twice.** The strongest proof is identical source (or identical data) producing
+  two outcomes, runnable live in the embed. It is the "actually true" half of the formula.
+- **Close on the mechanism, not the moral** (tell 2). End on the concrete fact the post established.
+
+### The guardrail
+
+This is a lever for our own channels only. It does not change the community rule below: we do not
+post to r/cpp, r/programming, or Hacker News regardless of how the headline reads. And it is not a
+licence to inflate. Significance-inflation (tell 6) and formulaic drama (tell 5) are still tells. A
+punchy card that the post cannot cash is worse than a plain one, because the reader feels the gap on
+arrival.
+
 ## Captions vs blog body
 
 | | Caption (LinkedIn / Facebook) | Blog body |
