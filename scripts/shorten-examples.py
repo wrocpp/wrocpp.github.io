@@ -180,20 +180,24 @@ def apply_rewrites(source: str, profile: dict) -> str:
     return out
 
 
-def slug_from_post(post_arg: str) -> tuple[str, str]:
+def slug_from_post(post_arg: str, series: str = "cpp26-reflection") -> tuple[str, str]:
     """Resolve `02-first-reflection` -> (NN-slug folder, mdx slug).
 
     The mdx slug is whatever the matching post's frontmatter `slug:` field
     says -- NOT just the folder name minus the NN- prefix. Post 1's folder
     is `01-why-it-matters` but its mdx slug is `why-cpp26-reflection-matters`,
     so a naive split would write the wrong YAML key.
+
+    `series` selects which series the NN maps into (default cpp26-reflection).
+    Pass e.g. --series pmr so `--post 41-pmr-zero-heap` resolves against the
+    pmr series instead. series_order is only unique within a series.
     """
     parts = post_arg.split("-", 1)
     if len(parts) != 2 or not parts[0].isdigit():
         sys.exit(f"error: --post expects NN-slug form, got {post_arg!r}")
     nn = int(parts[0])
 
-    # Find the mdx post whose series_order matches NN.
+    # Find the mdx post whose series_order matches NN within the given series.
     posts_dir = REPO_ROOT / "src" / "content" / "posts"
     for mdx in sorted(posts_dir.glob("*.mdx")):
         text = mdx.read_text()
@@ -204,9 +208,10 @@ def slug_from_post(post_arg: str) -> tuple[str, str]:
         if end < 0:
             continue
         fm = yaml.safe_load(text[3:end])
-        if fm and fm.get("series_order") == nn and fm.get("series") == "cpp26-reflection":
+        if fm and fm.get("series_order") == nn and fm.get("series") == series:
             return post_arg, fm["slug"]
-    sys.exit(f"error: no mdx post with series_order={nn} found in {posts_dir}")
+    sys.exit(f"error: no mdx post with series_order={nn} and series={series!r} "
+             f"found in {posts_dir}")
 
 
 def shorten(source: str, title: str, profile: dict, main_name: str,
@@ -294,6 +299,9 @@ def main() -> int:
     src_group.add_argument("--post", help="series post folder (e.g. 02-first-reflection)")
     src_group.add_argument("--news", help="dated news short folder under posts/00-news "
                                           "(e.g. 2026-06-28-hello-sender)")
+    p.add_argument("--series", default="cpp26-reflection",
+                   help="series the --post NN maps into (default cpp26-reflection; "
+                        "e.g. --series pmr). series_order is unique only within a series.")
     p.add_argument("--force", action="store_true", help="overwrite existing entries")
     p.add_argument("--dry-run", action="store_true", help="print what would change")
     p.add_argument("--no-run-verify", action="store_true",
@@ -321,7 +329,7 @@ def main() -> int:
         slug = m.group(1)
         examples_dir = CPP26_ROOT / "posts" / "00-news" / args.news / "examples"
     else:
-        nn_slug, slug = slug_from_post(args.post)
+        nn_slug, slug = slug_from_post(args.post, args.series)
         examples_dir = CPP26_ROOT / "posts" / nn_slug / "examples"
     if not examples_dir.is_dir():
         sys.exit(f"error: not a directory: {examples_dir}")
