@@ -1,0 +1,227 @@
+---
+title: "Deserialization and std::expected: completing the round-trip"
+slug: "json-deserialize"
+pubDate: 2026-07-31
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 10
+audience: working-cpp
+tags: [reflection, cpp26, json, deserialization, expected]
+summary: "Parse JSON into a typed C++ struct with precise per-field error reporting via std::expected. Reflection + template for + annotations — the same machinery, just running the other way."
+draft: false
+discussion: https://github.com/wrocpp/wrocpp.github.io/discussions/51
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+[Post 8](/posts/json-naive/) and [post 9](/posts/annotations/) built one side of the round-trip: struct → JSON. This post builds the other side: JSON → struct. Same reflection walk, different direction, plus proper error handling via `std::expected`.
+
+## The goal
+
+```cpp
+auto r = rjson::from_json<User>(
+    R"({"userName":"filip","id":42,"email":"filip@example.com","isAdmin":true})"
+);
+
+if (r) {
+    User& u = *r;  // valid struct
+} else {
+    std::println("{}", r.error());  // "expected string at .email, got number"
+}
+```
+
+Return type: `std::expected<T, parse_error>`. No exceptions; the caller decides whether to propagate.
+
+## Parse strategy
+
+Deserialization has two phases:
+
+1. **Lex + parse the JSON into a generic AST** (`rjson::value`). Handles escapes, nesting, types.
+2. **Traverse the AST guided by reflection**: for each target struct, walk its members and pull the matching key from the AST.
+
+Phase 1 is boring-but-necessary work (~200 lines). The interesting phase is 2, where reflection makes it trivial.
+
+## Phase 2: the reflective walker
+
+```cpp
+namespace rjson {
+
+struct parse_error {
+    std::string path;      // JSON pointer to the offending field
+    std::string reason;
+    friend auto operator<<(std::ostream& os, parse_error const& e)
+        -> std::ostream& { return os << "at " << e.path << ": " << e.reason; }
+};
+
+template <typename T>
+std::expected<T, parse_error> from_value(value const& v, std::string path = "");
+
+template <typename T>
+std::expected<T, parse_error> from_value_primitive(value const& v, std::string_view path) {
+    if constexpr (std::is_same_v<T, bool>) {
+        if (!v.is_bool()) return std::unexpected(parse_error{std::string{path}, "expected bool"});
+        return v.as_bool();
+    } else if constexpr (std::is_arithmetic_v<T>) {
+        if (!v.is_number()) return std::unexpected(parse_error{std::string{path}, "expected number"});
+        return static_cast<T>(v.as_number());
+    } else if constexpr (std::is_same_v<T, std::string>) {
+        if (!v.is_string()) return std::unexpected(parse_error{std::string{path}, "expected string"});
+        return v.as_string();
+    } else {
+        return from_value<T>(v, std::string{path});  // recurse into aggregates
+    }
+}
+
+template <typename T>
+std::expected<T, parse_error> from_value(value const& v, std::string path) {
+    if (!v.is_object()) {
+        return std::unexpected(parse_error{path, "expected object"});
+    }
+    T result{};   // default-constructed, fields filled by reflection walk
+
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    std::optional<parse_error> err;
+
+    template for (constexpr auto m
+                  : std::define_static_array(
+                      std::meta::nonstatic_data_members_of(^^T, ctx))) {
+        if constexpr (std::meta::annotation_of_type<skip>(m).has_value()) continue;
+
+        constexpr auto key = key_of<m>();              // annotation-aware, from post 9
+        auto const* slot = v.find(key);
+        if (!slot) {
+            if constexpr (!has_default_init<m>()) {
+                err = parse_error{path + "." + std::string{key}, "missing required field"};
+                return std::unexpected(*err);
+            }
+            continue;   // field has a default — leave as constructed
+        }
+
+        using M = [: std::meta::type_of(m) :];
+        auto parsed = from_value_primitive<M>(*slot, path + "." + std::string{key});
+        if (!parsed) return std::unexpected(parsed.error());
+        result.[: m :] = *parsed;
+    }
+    return result;
+}
+
+template <typename T>
+std::expected<T, parse_error> from_json(std::string_view src) {
+    auto v = parse_value(src);
+    if (!v) return std::unexpected(parse_error{"", "invalid JSON"});
+    return from_value<T>(*v);
+}
+
+}  // namespace rjson
+```
+
+## What reflection does for us
+
+1. **Member enumeration**. `template for` over members of `T`. No need to write `from_json<User>`, `from_json<Address>`, etc. One template works for all.
+2. **Type dispatch**. `using M = [: std::meta::type_of(m) :]` splices the member's type. `from_value_primitive<M>` then picks the right parsing branch via `if constexpr`.
+3. **Annotation-aware keys**. `key_of<m>()` (from [post 9](/posts/annotations/)) returns `"userName"` instead of `"user_name"` when `rename_all(camel_case)` is set.
+4. **Defaults**. `has_default_init<m>()` checks if the member declaration has a default initialiser (`int age = 18;`); if yes, a missing key is not an error.
+
+## Error paths that are actually useful
+
+When a JSON field mismatches, the error carries a **path** (`"user.home.postal_code"`) built by concatenating keys as the walker descends. This is what makes these errors debuggable.
+
+```cpp
+auto r = rjson::from_json<User>(
+    R"({"userName":"filip","id":"forty","email":"..."})"
+);
+// → error: at .id: expected number
+```
+
+Hand-rolled parsers often return "parse failed" with no location. Reflection gives us the path for free, because the walker already has it as context.
+
+## `std::expected` vs exceptions
+
+Both are supported C++26 patterns. We default to `std::expected` because:
+
+- Deserialization is a common fallible operation, not an exceptional one. Exceptions carry signal ("this should not have happened"); parsing user input can always fail.
+- Zero-cost error propagation. No stack unwinding, no RTTI hit. The return-value form is as fast as success.
+- Composable. `std::expected::and_then` / `transform` let you chain parses cleanly.
+
+For teams that prefer exceptions, a thin wrapper adds one:
+
+```cpp
+template <typename T>
+T from_json_or_throw(std::string_view src) {
+    auto r = from_json<T>(src);
+    if (!r) throw parse_exception{std::move(r.error())};
+    return std::move(*r);
+}
+```
+
+Same reflective core, different surface.
+
+## Default values
+
+```cpp
+struct User {
+    std::string name;
+    int age = 18;           // default — missing JSON field is OK
+    [[=rjson::default_("unknown")]] std::string bio;  // annotation-driven default
+};
+```
+
+Two sources of defaults: the member's default-initialiser (picked up via reflection's `has_default_member_initializer`), and explicit annotations (picked up via `annotation_of_type<default_>`). The walker tries the former, falls back to the latter, finally errors if neither exists.
+
+## Handling unknown fields
+
+By default, unknown JSON keys are ignored. A `deny_unknown_fields` container annotation (serde-compatible) flips the behaviour:
+
+```cpp
+struct [[=rjson::deny_unknown_fields{}]] ApiConfig {
+    std::string url;
+    int timeout_ms;
+};
+
+// Input with extra "retry_count": 3 → parse error, "unknown field .retry_count"
+```
+
+Implementation detail: after the member walk, iterate the JSON object's keys and assert each one was consumed.
+
+## Aliases
+
+serde's `#[serde(alias = "URL")]` accepts an alternate name during deserialization (and often during the migration from one spelling to another). We match that:
+
+```cpp
+struct alias { char const* value; bool operator==(alias const&) const = default; };
+consteval auto alias_(std::string_view s) { return alias{std::define_static_string(s)}; }
+
+struct Legacy {
+    [[=rjson::alias_("URL"), =rjson::alias_("Url")]] std::string url;
+};
+// Accepts {"url": ...} or {"URL": ...} or {"Url": ...}
+```
+
+Multiple annotations on the same declaration are fine. `annotations_of(m)` returns all of them.
+
+## Round-tripping properly
+
+Combined with [post 8](/posts/json-naive/) and [post 9](/posts/annotations/), we have a full round trip:
+
+```cpp
+static_assert(
+    rjson::from_json<User>(rjson::to_json(User{...})) == User{...}
+);
+```
+
+Worth testing: `test_round_trip` is a one-liner in test suites now.
+
+<GodboltEmbed id="qKK7v4vdE" title="JSON → struct with std::expected errors" />
+
+## Performance notes
+
+- No dynamic dispatch at runtime. Each `from_value<T>` is monomorphised.
+- One string allocation per path segment during error construction. Happens only on error. On the happy path, no strings touched by the walker.
+- Parse phase (AST) dominates cost, not the reflective dispatch. Using a SIMD JSON parser (like simdjson) as the AST phase puts us within 10-15% of hand-written parsers for flat schemas.
+
+## Where the series goes next
+
+- **[Post 11: One codegen, many wire formats](/posts/one-codegen-many-formats/)** applies the same annotations across JSON, YAML, XML, TOML, MessagePack.
+- After Arc 3, Arc 4 starts: CLI parsing, ORM, dependency injection, auto-mocks.

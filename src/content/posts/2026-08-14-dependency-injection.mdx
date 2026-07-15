@@ -1,0 +1,220 @@
+---
+title: "Autowired dependency injection: no container, just reflection"
+slug: "dependency-injection"
+pubDate: 2026-08-14
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 14
+audience: working-cpp
+tags: [reflection, cpp26, di, dependency-injection]
+summary: "Spring's and .NET's DI containers, reimplemented as a 60-line C++26 library. Reflect constructor parameters, resolve them from a type registry, compose."
+draft: false
+discussion: https://github.com/wrocpp/wrocpp.github.io/discussions/60
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+In Spring (Java) or .NET:
+
+```java
+@Service
+class Greeter {
+    Greeter(Clock clock, I18n i18n) { ... }
+}
+```
+
+The framework sees the `@Service` annotation, inspects the constructor, and wires the parameters automatically from a registry of services. No `new Greeter(new Clock(), new I18n())` boilerplate.
+
+C++ has had Boost.DI. It is beautifully engineered template metaprogramming that does the same, but trips into SFINAE cliff-faces when things go wrong. Reflection makes the same container fit in 60 lines.
+
+## Target API
+
+```cpp
+struct Clock   { auto now() const { return std::chrono::steady_clock::now(); } };
+struct I18n    { std::string greet() const { return "Hello"; } };
+struct Greeter {
+    Greeter(Clock const& c, I18n const& i) : clock{c}, i18n{i} {}
+    std::string greet() const {
+        return std::format("[{}] {}", clock.now().time_since_epoch().count(), i18n.greet());
+    }
+    Clock const& clock;
+    I18n const& i18n;
+};
+
+int main() {
+    di::container c;
+    c.add<Clock>();
+    c.add<I18n>();
+    c.add<Greeter>();
+
+    Greeter& g = c.get<Greeter>();
+    std::println("{}", g.greet());
+}
+```
+
+`c.add<Greeter>()` does not say "Greeter depends on Clock and I18n." The container figures that out by reflecting on `Greeter`'s constructor parameters.
+
+## The container
+
+```cpp
+namespace di {
+
+class container {
+    std::unordered_map<std::type_index, std::any> instances_;
+
+public:
+    template <typename T>
+    void add() {
+        instances_[typeid(T)] = std::any{};   // placeholder; resolved lazily
+    }
+
+    template <typename T>
+    T& get() {
+        auto it = instances_.find(typeid(T));
+        if (it == instances_.end()) throw std::runtime_error{"not registered"};
+        if (!it->second.has_value()) {
+            it->second = std::make_any<T>(construct<T>());
+        }
+        return std::any_cast<T&>(it->second);
+    }
+
+private:
+    template <typename T>
+    T construct() {
+        return construct_with_reflection<T>(*this);
+    }
+};
+
+}  // namespace di
+```
+
+Simple. Registration stores an empty slot; lookup lazily constructs. The interesting bit is `construct_with_reflection`.
+
+## Reflecting constructors
+
+[P3096](https://wg21.link/P3096) (function parameter reflection) lets us inspect a constructor's parameter list:
+
+```cpp
+template <typename T>
+T construct_with_reflection(container& c) {
+    // Find T's primary constructor
+    constexpr auto ctor = find_primary_ctor<T>();
+    // Reflect its parameters
+    constexpr auto params = std::define_static_array(
+        std::meta::parameters_of(ctor));
+
+    // Build a tuple of resolved arguments
+    auto args = std::tuple<>{};
+    auto build_args = [&]<std::size_t... I>(std::index_sequence<I...>) {
+        return std::make_tuple(c.get<[: std::meta::type_of(params[I]) :]>()...);
+    };
+    auto arg_tuple = build_args(std::make_index_sequence<params.size()>{});
+
+    // Invoke the constructor with resolved args
+    return std::apply([](auto&&... as) { return T{as...}; }, arg_tuple);
+}
+```
+
+Two reflection moves:
+
+1. **`parameters_of(ctor)`** returns `std::vector<info>`, one per parameter.
+2. **`[: type_of(params[I]) :]`** splices each parameter's type. `c.get<Clock const&>()` then recursively resolves (the registry ignores reference-qualifiers for lookup).
+
+The result: `Greeter{c.get<Clock const&>(), c.get<I18n const&>()}`, assembled at compile time.
+
+## Circular dependencies
+
+What if `A` needs `B` and `B` needs `A`? The naive container recurses until stack overflow. Detection is easy:
+
+```cpp
+thread_local std::unordered_set<std::type_index> resolving_;
+
+template <typename T>
+T& get() {
+    if (resolving_.contains(typeid(T)))
+        throw std::runtime_error{"circular dependency at " + typeid(T).name()};
+    resolving_.insert(typeid(T));
+    /* ... construct + cache ... */
+    resolving_.erase(typeid(T));
+    return /* ... */;
+}
+```
+
+Production containers do this with lifetime-aware graph analysis; our 60-line version just throws.
+
+## Scopes and lifetimes
+
+Three common lifetimes in DI frameworks:
+
+1. **Singleton**. One instance for the container's lifetime. Our default.
+2. **Transient**. A new instance per `get<T>()`, via `container::add_transient<T>()`.
+3. **Scoped**. Per "logical request" (web-framework terminology), which needs a scope stack.
+
+The singleton → transient switch is a one-line change in `get<T>`. Scoped is more involved. A scope is itself a container with an inheritance chain.
+
+## Interface-based resolution
+
+`c.get<Greeter>()` asks for a concrete type. Real DI often wants to bind `Clock` (an interface) to a specific implementation (`SteadyClock`):
+
+```cpp
+c.bind<Clock, SteadyClock>();
+// When something needs a Clock&, construct SteadyClock once.
+
+struct TestClock : Clock { /* ... */ };
+c.bind<Clock, TestClock>();   // swap for tests
+```
+
+Implementation: a second registry mapping interface → concrete type, consulted during `get<Clock&>` before falling back to direct lookup. Reflection checks the parameter type in `construct_with_reflection` and routes through the bind-map.
+
+## Auto-registration via annotations
+
+Instead of explicit `c.add<T>()`, annotate:
+
+```cpp
+struct [[=di::service{}]] Greeter { /* ... */ };
+struct [[=di::service{}]] Clock  { /* ... */ };
+
+// Somewhere at startup:
+di::scan_and_register<translation_unit_reflection>(container);
+```
+
+`scan_and_register` walks every type in a translation unit's reflection and registers those with `@di::service`. This is future-ish. It assumes [P2988](https://wg21.link/P2988) (namespace-level reflection) or similar, which is still in flight, but the architecture is ready.
+
+## Compile-time dependency graph
+
+A fun debug hook: ask the container for its dependency graph **at compile time**:
+
+```cpp
+consteval auto dep_graph(auto roots) {
+    std::vector<std::pair<std::string, std::vector<std::string>>> edges;
+    /* walk each root, recurse via parameters_of ctors, record (type, [deps]) */
+    return edges;
+}
+
+static_assert(dep_graph(std::make_tuple(^^Greeter)) ==
+              std::vector<...>{{"Greeter", {"Clock", "I18n"}}, ...});
+```
+
+The graph is knowable at compile time because every constructor's parameter types are reflectable. Tools can emit DOT diagrams, detect cycles, and check for unreachable services, all without running the program.
+
+## Spring vs. our version
+
+| | Spring | di:: (C++26) |
+|---|---|---|
+| Registration | `@Service`, `@Component` | `add<T>()` or `@di::service` |
+| Resolution | Reflection at runtime | Reflection at compile time |
+| Cost per `get()` | Hash-map + constructor reflection | Hash-map + fully-inlined constructor |
+| Cycle detection | Runtime | Runtime or compile-time |
+| Error at misconfiguration | `BeanCreationException` at startup | `static_assert` at compile time |
+| Lines of framework code | ~600k (Spring Core) | ~60 (demo), ~600 (production-adequate) |
+
+Spring has 20 years of production polish; our 60-line demo doesn't. But the architectural core (inspect constructors, resolve parameters from a registry) is exactly the same, and C++ gets it at compile time.
+
+<GodboltEmbed id="Wb6zPa1Ex" title="reflect_di — autowired constructors" />
+
+## Next: mocks and type synthesis
+
+- **[Post 15: Auto-generated mocks](/posts/auto-mocks/)**. Take an interface, get a test double back.
+- **[Post 16: Type synthesis with `define_aggregate`](/posts/define-aggregate/)**. `Pick`/`Omit`/`Partial` in C++.

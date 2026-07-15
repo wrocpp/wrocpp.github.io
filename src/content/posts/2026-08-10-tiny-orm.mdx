@@ -1,0 +1,226 @@
+---
+title: "A tiny ORM: struct to SQL via reflection"
+slug: "tiny-orm"
+pubDate: 2026-08-10
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 13
+audience: working-cpp
+tags: [reflection, cpp26, orm, sql, reflect_orm]
+summary: "Diesel / Entity Framework ergonomics in C++: annotate a struct, generate CREATE TABLE, SELECT, INSERT, UPDATE, and a row-to-struct binder. No codegen tool, no intrusive macros."
+draft: false
+discussion: https://github.com/wrocpp/wrocpp.github.io/discussions/55
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+The grand old way to get types out of a SQL database in C++ is ODB, a preprocessor that parses your headers, generates persistence glue, and integrates into the build system. It works, but it's a compiler alongside your compiler.
+
+With reflection, a tiny ORM becomes a one-header library:
+
+```cpp
+struct [[=orm::table("users")]] User {
+    [[=orm::pk{}, =orm::autoincrement{}]] std::int64_t id;
+    std::string user_name;
+    std::string email;
+    [[=orm::column("last_login_at")]] std::chrono::system_clock::time_point last_login;
+    bool is_admin;
+};
+
+// CREATE TABLE users (
+//   id INTEGER PRIMARY KEY AUTOINCREMENT,
+//   user_name TEXT NOT NULL,
+//   email TEXT NOT NULL,
+//   last_login_at TIMESTAMP NOT NULL,
+//   is_admin BOOLEAN NOT NULL
+// );
+
+std::string create = orm::create_table_sql<User>();
+std::string ins    = orm::insert_sql<User>();     // INSERT INTO users (...) VALUES (?,?,?,?,?)
+std::string sel    = orm::select_sql<User>();     // SELECT id, user_name, ... FROM users
+User u = orm::from_row<User>(db, stmt);           // bind row → struct
+orm::bind(stmt, u);                               // bind struct → SQL params
+```
+
+Diesel in Rust does exactly this via its `Queryable` derive; Entity Framework in C# does it via attributes + LINQ. Reflection lets C++ match.
+
+## Generating DDL
+
+```cpp
+template <typename T>
+consteval std::string create_table_sql() {
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    std::string out = "CREATE TABLE ";
+    out += table_name_of<T>();   // from @orm::table or T's identifier
+    out += " (\n";
+    bool first = true;
+    template for (constexpr auto m
+                  : std::define_static_array(
+                      std::meta::nonstatic_data_members_of(^^T, ctx))) {
+        if (!first) out += ",\n";
+        first = false;
+        out += "  ";
+        out += column_name_of<m>();
+        out += " ";
+        out += sql_type_of<[: std::meta::type_of(m) :]>();
+        if constexpr (std::meta::annotation_of_type<pk>(m).has_value())
+            out += " PRIMARY KEY";
+        if constexpr (std::meta::annotation_of_type<autoincrement>(m).has_value())
+            out += " AUTOINCREMENT";
+        if constexpr (!is_optional_type<[: std::meta::type_of(m) :]>)
+            out += " NOT NULL";
+    }
+    out += "\n);";
+    return std::define_static_string(out);
+}
+```
+
+`sql_type_of<T>` is a small `if constexpr` ladder:
+
+```cpp
+template <typename T>
+consteval std::string_view sql_type_of() {
+    if constexpr (std::is_same_v<T, std::int64_t>)                return "INTEGER";
+    else if constexpr (std::is_arithmetic_v<T>)                    return "NUMERIC";
+    else if constexpr (std::is_same_v<T, std::string>)             return "TEXT";
+    else if constexpr (std::is_same_v<T, bool>)                    return "BOOLEAN";
+    else if constexpr (is_timestamp<T>)                            return "TIMESTAMP";
+    else if constexpr (is_optional<T>)                             return sql_type_of<typename T::value_type>();
+    else static_assert(false, "unsupported SQL type");
+}
+```
+
+Because `create_table_sql<T>` is `consteval`, the resulting string is computed at compile time. Your `main` binary ships with the DDL baked into `.rodata`, not generated at startup.
+
+## Generating DML
+
+`INSERT`, `UPDATE`, `SELECT`, `DELETE` all follow the same pattern: walk columns, emit SQL.
+
+```cpp
+template <typename T>
+consteval std::string insert_sql() {
+    // INSERT INTO users (col1, col2, ...) VALUES (?, ?, ...)
+    std::string columns;
+    std::string placeholders;
+    bool first = true;
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    template for (constexpr auto m : members<T>()) {
+        // Skip autoincrement columns on insert (database assigns them)
+        if constexpr (std::meta::annotation_of_type<autoincrement>(m).has_value())
+            continue;
+        if (!first) { columns += ", "; placeholders += ", "; }
+        first = false;
+        columns      += column_name_of<m>();
+        placeholders += "?";
+    }
+    return std::format("INSERT INTO {} ({}) VALUES ({})",
+                       table_name_of<T>(), columns, placeholders);
+}
+```
+
+Autoincrement PKs skipped via `if constexpr (continue)`. The compiled function has no generated code and no runtime branch for them.
+
+## Binding to prepared statements
+
+```cpp
+template <typename T>
+void bind(sqlite3_stmt* stmt, T const& obj) {
+    int index = 1;
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    template for (constexpr auto m : members<T>()) {
+        if constexpr (std::meta::annotation_of_type<autoincrement>(m).has_value())
+            continue;
+        bind_column(stmt, index++, obj.[: m :]);
+    }
+}
+
+template <typename V>
+void bind_column(sqlite3_stmt* s, int i, V const& v) {
+    if constexpr (std::is_same_v<V, std::int64_t>)   sqlite3_bind_int64(s, i, v);
+    else if constexpr (std::is_same_v<V, std::string>) sqlite3_bind_text (s, i, v.data(), v.size(), SQLITE_STATIC);
+    else if constexpr (std::is_same_v<V, bool>)       sqlite3_bind_int  (s, i, v ? 1 : 0);
+    // ... more types
+}
+```
+
+The `if constexpr` ladder in `bind_column` prunes to one call per column in the compiled code. No reflection runtime overhead.
+
+## Reading rows
+
+```cpp
+template <typename T>
+T from_row(sqlite3_stmt* stmt) {
+    T obj{};
+    int index = 0;
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    template for (constexpr auto m : members<T>()) {
+        using M = [: std::meta::type_of(m) :];
+        obj.[: m :] = read_column<M>(stmt, index++);
+    }
+    return obj;
+}
+```
+
+One walk, one index, typed reads. Any struct your application uses becomes queryable with no per-type setup.
+
+## Annotations we add
+
+```cpp
+namespace orm {
+
+struct table { char const* name; };
+consteval auto table_(std::string_view n) { return table{std::define_static_string(n)}; }
+
+struct column { char const* name; };
+consteval auto column_(std::string_view n) { return column{std::define_static_string(n)}; }
+
+struct pk {};
+struct autoincrement {};
+struct unique {};
+struct index_ {};
+struct foreign_key { char const* table; char const* column; };
+struct check { char const* sql; };   // raw SQL clause
+
+}  // namespace orm
+```
+
+~8 core annotations get you a real schema. Each is a tiny value type; the library queries them with the same pattern as `reflect_json`.
+
+## Typed queries (borrowing from Diesel)
+
+Beyond DDL/DML, the "magic" move is **typed `WHERE` clauses**:
+
+```cpp
+auto q = orm::select<User>()
+            .where(User::email == "filip@example.com")
+            .and_(User::is_admin == true);
+// SELECT * FROM users WHERE email = ? AND is_admin = ?
+// Params: ("filip@example.com", true)
+```
+
+`User::email` is accessed via reflection. The library generates a per-field column handle that participates in expression templates producing both SQL and parameter bindings. The expression template is evaluated at compile time; the resulting prepared statement + param pack is constructed once and reused.
+
+Full implementation is heavy (~500 lines). It's essentially a tiny compiler for SQL subset expressions. But it fits cleanly because each member becomes a typed handle with static metadata from reflection.
+
+## What about migrations?
+
+A fun extension: given *two versions* of a struct (via reflection on each), generate `ALTER TABLE` statements. Diesel's migrations handle this via a CLI; reflection lets us do it at compile time, comparing `members<UserV1>()` with `members<UserV2>()` and emitting diffs.
+
+## Not a replacement for ODB (yet)
+
+Missing from the naive version:
+
+- **Relationships.** Foreign keys and joins beyond declarative annotations. ODB handles `boost::shared_ptr<Address>` fields as referenced rows. Doable, but complex.
+- **Session / transaction management.** A real ORM wraps `sqlite3_stmt*` in a session that batches, caches, and rolls back on error. This is orthogonal to reflection, so you bolt it on separately.
+- **Query-language expressiveness.** SQL has CTEs, window functions, GROUP BY aggregates. Translating those from C++ expressions is a significant DSL effort.
+
+But the *common case* (CRUD on flat tables) is comfortably in reach, and the library fits in one header.
+
+<GodboltEmbed id="jWoYKK9Wo" title="reflect_orm — struct → SQL" />
+
+## Next reflection recipes in the series
+
+- **[Post 14: Autowired dependency injection](/posts/dependency-injection/)** reflects constructor parameters.
+- **[Post 15: Auto-generated mocks](/posts/auto-mocks/)** turns an interface into a test double.

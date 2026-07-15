@@ -4,7 +4,7 @@ template: social/linkedin-post
 
 ::::post{type=insight theme=dark logo=top-left}
 
-:::insight{citation="wro.cpp -- 2026-06-11"}
+:::insight{citation="wro.cpp -- 2026-08-24"}
 # Replacing Qt MOC with reflection
 Q_OBJECT and the MOC compiler exist because C++ could not see your class. C++26 reflection sees it. 100 lines of header replace the meta-object preprocessor for properties, signals, and slots.
 :::

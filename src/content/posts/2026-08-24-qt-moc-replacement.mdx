@@ -1,0 +1,176 @@
+---
+title: "Replacing Qt's MOC with reflection"
+slug: "qt-moc-replacement"
+pubDate: 2026-08-24
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 17
+audience: working-cpp
+tags: [reflection, cpp26, qt, moc, properties]
+summary: "Qt's Meta-Object Compiler parses Q_OBJECT/Q_PROPERTY declarations and emits glue code. With C++26 reflection, Q_PROPERTY-equivalent becomes a library pattern — no external compiler, no generated files."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+Qt's [Meta-Object Compiler (MOC)](https://doc.qt.io/qt-6/moc.html) is one of the oldest codegen tools in the C++ ecosystem. It parses headers looking for `Q_OBJECT`, `Q_PROPERTY`, `Q_INVOKABLE`, `signals:`, `slots:`, and emits glue code (.moc files) that adds runtime introspection, property binding, signal/slot dispatch, and QML integration.
+
+It works. It also means Qt projects ship a second compiler, every IDE needs MOC awareness, and your headers have a parallel syntax that isn't quite C++.
+
+With C++26 reflection, the core of what MOC provides (property introspection for bindings and QML) becomes a library pattern. You write regular C++; reflection gives the framework everything it needs.
+
+## The MOC surface we care about
+
+Three things MOC produces, which we'll replace:
+
+1. **Property metadata**: for each `Q_PROPERTY(Type name READ getter WRITE setter NOTIFY changed)`, a runtime registry entry with the name, type, getter, setter, and notify signal.
+2. **Property binding**: when QML says `userNameLabel.text: user.name`, QML subscribes to `user`'s `nameChanged` signal and re-reads `name` on fire.
+3. **Signal/slot dispatch**: metadata about which methods are signals, which are slots, their parameter types.
+
+We'll focus on (1) and (2). They're the most common pain points.
+
+## Target syntax
+
+```cpp
+class User : public rqt::Object {
+public:
+    [[=rqt::property{}]] std::string name;
+    [[=rqt::property{}]] int age = 0;
+    [[=rqt::property{}, =rqt::read_only{}]] std::string id;
+};
+```
+
+Three annotations, no macros. The framework's `Object` base class uses reflection to populate a runtime property registry.
+
+## Reflection walks the properties
+
+```cpp
+namespace rqt {
+
+class Object {
+public:
+    struct property_meta {
+        std::string_view name;
+        std::string_view type;
+        std::function<std::any(Object const*)>              getter;
+        std::function<void(Object*, std::any const&)>       setter;
+        std::function<rqt::signal&(Object*)>                notify;
+    };
+
+    virtual std::span<property_meta const> properties() const = 0;
+};
+
+template <typename T>
+consteval auto build_properties() {
+    std::vector<property_meta> out;
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    template for (constexpr auto m
+                  : std::define_static_array(
+                      std::meta::nonstatic_data_members_of(^^T, ctx))) {
+        if constexpr (!std::meta::annotation_of_type<property>(m).has_value()) continue;
+        using M = [: std::meta::type_of(m) :];
+        out.push_back({
+            .name   = std::meta::identifier_of(m),
+            .type   = std::meta::display_string_of(std::meta::type_of(m)),
+            .getter = [](Object const* o) -> std::any {
+                return std::any{static_cast<T const*>(o)->[: m :]};
+            },
+            .setter = [](Object* o, std::any const& v) {
+                if constexpr (!std::meta::annotation_of_type<read_only>(m).has_value()) {
+                    static_cast<T*>(o)->[: m :] = std::any_cast<M>(v);
+                    static_cast<T*>(o)->notify_changed(std::meta::identifier_of(m));
+                }
+            },
+            .notify = [](Object* o) -> rqt::signal& {
+                return static_cast<T*>(o)->signal_for(std::meta::identifier_of(m));
+            },
+        });
+    }
+    return out;
+}
+
+}  // namespace rqt
+```
+
+The lambdas capture `m` (the member reflection) via the enclosing `template for`. Each iteration's lambdas see a different `m`, so each `property_meta` is specialised for its field.
+
+Subclasses opt in via CRTP or a registration macro:
+
+```cpp
+class User : public rqt::Object {
+    static constexpr auto props_ = rqt::build_properties<User>();
+    std::span<rqt::property_meta const> properties() const override { return props_; }
+public:
+    [[=rqt::property{}]] std::string name;
+    // ...
+};
+```
+
+## Data binding without MOC
+
+QML-like bindings (when any dependency of `label.text` changes, the label re-reads it) can be built on top:
+
+```cpp
+struct Binding {
+    template <typename Getter>
+    Binding(Getter g) : compute_{std::move(g)} { recompute(); }
+
+    void recompute() { value_ = compute_(); notify_changed(); }
+
+    rqt::signal on_changed;
+private:
+    std::function<std::any()>  compute_;
+    std::any                   value_;
+    void notify_changed() { on_changed.emit(); }
+};
+
+// Usage:
+Binding greeting{ [&]{ return "Hello, " + user.name; } };
+user.on_changed_name.connect([&]{ greeting.recompute(); });
+```
+
+With [transparent compile-time dependency tracking](https://en.cppreference.com/w/cpp/experimental/observer) we could make this automatic. The getter lambda's body is reflectable (via `[:^^Getter:]`), so the framework can walk it, find every property access, and wire up the subscriptions. That's the direction KDAB and similar "replace Qt's MOC" projects have been exploring.
+
+## What we *don't* replace
+
+- QML integration: QML needs a stable C-callable ABI for its engine. MOC produces this. Reflection-based generation could produce the same ABI, but that's a bigger engineering project than a blog post.
+- `Q_INVOKABLE` + reflection-from-script-engine: also ABI concerns. Same direction.
+- Signals/slots in their full generality: a reflection-built signal/slot system is feasible (`boost::signals2` already does much of it without MOC) but requires careful design around thread-affinity (Qt's killer feature).
+
+So: the reflection-based approach replaces the *declarative* part of MOC: properties, metadata. The *runtime* parts (QML engine, scripting bridge) still want compiled stubs, which reflection can produce via a codegen step that's now a *library*, not an external tool.
+
+## Comparison
+
+| | Qt MOC | rqt (reflection) |
+|---|---|---|
+| Spec syntax | `Q_PROPERTY(int age READ age WRITE setAge NOTIFY ageChanged)` | `[[=rqt::property{}]] int age` |
+| Generated file | `moc_user.cpp` (separate file, in build graph) | None (lives in templates) |
+| External compiler | Yes (`moc`) | No |
+| IDE support | Requires MOC integration | Standard C++ |
+| Debug-step navigates into framework code | No (MOC output is opaque) | Yes (library templates) |
+| Signal/slot dispatch | Runtime table populated by MOC | Runtime table populated by reflection |
+| Per-class cost at class-define time | One MOC pass | One template instantiation |
+
+The daily ergonomic difference: your headers are regular C++. Your IDE navigates them. Your debugger steps through the binding mechanism. A new hire doesn't need to learn a Qt-specific parser quirk.
+
+## A concrete migration sketch
+
+For an existing Qt codebase:
+
+1. **Parallel run**: keep MOC for QML/invokables; add `rqt::Object` for new property-heavy classes.
+2. **Annotation-augment**: for Qt classes with heavy `Q_PROPERTY` lists, add `[[=rqt::property{}]]` annotations alongside existing `Q_PROPERTY` macros; dual-run the registries; verify identical behaviour.
+3. **Cut MOC for migrated classes**: once behaviour matches, drop the `Q_OBJECT` + `Q_PROPERTY` declarations.
+
+Net result over time: MOC stays for QML boundary classes; everything else is plain C++ with reflection.
+
+## A note on scope
+
+The full MOC replacement would take months of engineering. This post is an architectural sketch showing the *primitive* (reflection walks properties) rather than a drop-in library. `rqt::Object` isn't a library you can use today. It's the direction you'd take if starting a Qt-adjacent framework in 2026.
+
+<GodboltEmbed id="vqn9Y4Ex5" title="rqt::Object — property registry via reflection" />
+
+## The capstone: reflection across seven languages
+
+- **[Post 18: Reflection across languages](/posts/cross-language-comparison/)**. Every canonical task, side-by-side in seven languages.
