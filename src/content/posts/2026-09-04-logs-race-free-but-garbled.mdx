@@ -1,0 +1,44 @@
+---
+title: "Your std::cout logging has no data race and still tears"
+slug: "logs-race-free-but-garbled"
+pubDate: 2026-09-04
+author: filip-sajdak
+language: en
+kind: flagship
+series: concurrent-io
+series_order: 1
+audience: working-cpp
+tags: [concurrency, iostreams, logging, threads, cpp20, series]
+summary: "Qt's message-handler contract says the handler must be reentrant: called from many threads at once. Point it at std::cout and the output tears, even though the C++ standard guarantees no data race. 'No data race' and 'no interleaving' are different promises, and this series closes the gap. Episode 1 of the concurrent I/O series."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+Qt's `qInstallMessageHandler` lets you replace the logging sink with your own function. The documentation attaches one sentence of fine print: the handler "needs to be reentrant. That is, it might be called from different threads, in parallel." So the moment your program has more than one thread, your log callback runs concurrently, and every write to a shared sink races the others.
+
+Reach for the obvious sink, `std::cout`, and the first surprise is that it does not crash or corrupt anything. The second surprise is what it prints.
+
+<GodboltEmbed id="8crjbjjTq" gccOnly title="Three threads log to std::cout: race-free, still garbled" gcc_subtitle="x86-64 GCC 16.1 · -std=c++20 -O2 -pthread · runs live" />
+
+Three threads, six lines each, and the output is shredded. Look at the first line: thread A opened a record, thread B cut in before A finished, and the two prefixes and numbers are spliced into one another. No characters were lost and nothing was undefined. The result is still unreadable.
+
+## Two guarantees that are not the same guarantee
+
+The standard is precise about this, and precise about how far it goes. Two clauses carry the weight.
+
+`[iostreams.threadsafety]` sets the baseline: concurrent access to a stream by multiple threads "may result in a data race unless otherwise specified." A data race is undefined behavior, the kind that can miscompile the program around it.
+
+`[iostream.objects.overview]` is the "otherwise specified" exception for the standard stream objects: concurrent use of a synchronized `cout` or `cerr` and the C streams "shall not result in a data race." That holds while `sync_with_stdio(true)` is in effect, which is the default. Call `sync_with_stdio(false)` and you hand the guarantee back.
+
+So `std::cout << a << b` from two threads is well defined. What the standard never promises is that the two threads' characters stay apart. It removes the *data race* (the undefined behavior) and leaves the *race condition* (the interleaving). Each `<<` is a separate, individually synchronized operation, and between one `<<` and the next, another thread's `<<` can land. The demo is what that looks like.
+
+## The distinction runs through the whole series
+
+"Thread-safe" gets used for both properties, which is exactly why this catches people out. `std::cout` is thread-safe in the sense that matters for correctness (no undefined behavior) and not thread-safe in the sense you actually wanted (no garbling). Closing that gap is what the standard has worked on across three releases: `std::osyncstream` in C++20, `std::print` in C++23, the `static std::mutex` you might have reached for first, and the feature-test macro that lets one source file pick the best tool each compiler offers.
+
+The first fix is a single line of C++20.
+
+---
+
+**Sources**: `[iostreams.threadsafety]` and `[iostream.objects.overview]` in the [C++ working draft](https://eel.is/c++draft/iostream.objects) · [Qt: qInstallMessageHandler](https://doc.qt.io/qt-6/qtlogging.html) · Bert Hubert, ["iostreams' unexpected multithreaded behaviour"](https://berthub.eu/articles/posts/iostreams-unexpected/).
