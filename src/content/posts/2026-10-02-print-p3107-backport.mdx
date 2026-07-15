@@ -1,0 +1,37 @@
+---
+title: "C++26 rewrote std::print's internals and backported the fix"
+slug: "print-p3107-backport"
+pubDate: 2026-10-02
+author: filip-sajdak
+language: en
+kind: flagship
+series: concurrent-io
+series_order: 5
+audience: working-cpp
+tags: [concurrency, print, format, cpp26, series]
+summary: "std::print's per-call atomicity extends to your own types via std::formatter. How it stays both safe and efficient is a C++26 story: P3107 adds locking-aware entry points and a formatter opt-in to avoid deadlock, and ships as a backport into C++23. Episode 5 of the concurrent I/O series."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+The <PostLink slug="print-atomic-per-call">last post</PostLink> showed that a single `std::print` call never interleaves. That property extends to your own types: give a type a `std::formatter` and printing it from many threads still yields whole lines.
+
+<GodboltEmbed id="9eeY5aerW" gccOnly title="A user-defined formatter, printed concurrently, stays whole" gcc_subtitle="x86-64 GCC 16.1 · -std=c++23 -O2 -pthread · runs live" />
+
+The `LogRecord` here has a user-written formatter, and three threads print it concurrently with clean output. Nothing in the code synchronizes anything. So how does `std::print` guarantee that, and do it without a hidden allocation on every call?
+
+## The C++23 spec painted itself into a corner
+
+As standardized in C++23, `std::print` was specified to format its arguments into a temporary `std::string` and then write that whole string to the stream in one call. The temporary was deliberate: it made the non-interleaving obvious. It also made the fast, printf-style implementation, formatting directly into the stream's buffer while holding the stream's lock, technically nonconforming, and it forced an allocation on every call.
+
+## P3107 fixes it, and ships the fix backwards
+
+P3107, adopted for C++26, adds locking-aware entry points, `vprint_unicode_locking` and `vprint_nonunicode_locking`, specified to write directly to the stream while holding its lock. The plain `print` functions now delegate to them. That recovers the efficiency without losing the guarantee.
+
+There is one trap it has to dodge. If a user-defined formatter itself calls `print` on the same stream, writing while the lock is held would deadlock. So P3107 asks formatters to opt in to the locking optimization through `enable_nonlocking_formatter_optimization`. The standard formatters opt in automatically, and a formatter that does not opt in makes `print` fall back to the safe path. Because this is a correction to behavior C++23 already promised, the committee classified it as a defect fix and recommended backporting it into C++23 implementations. It is a rare case of a C++26 change landing in your C++23 compiler.
+
+---
+
+**Sources**: [P3107: Permit an efficient implementation of std::print](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3107r5.html) · [Victor Zverovich: std::print in C++23](https://vitaut.net/posts/2023/print-in-cpp23/).

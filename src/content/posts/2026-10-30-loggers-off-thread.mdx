@@ -1,0 +1,36 @@
+---
+title: "The fastest loggers do not format on the calling thread"
+slug: "loggers-off-thread"
+pubDate: 2026-10-30
+author: filip-sajdak
+language: en
+kind: flagship
+series: concurrent-io
+series_order: 9
+audience: working-cpp
+tags: [concurrency, logging, performance, threads, series]
+summary: "Every fix in this series synchronizes on the calling thread. The fastest loggers do not: callers enqueue a raw record and a background thread formats and writes it. A mini producer-consumer logger, the spdlog/Quill/NanoLog numbers (around 250 ns versus 7 to 11 ns), and the crash-survivability trade-off. Episode 9 of the concurrent I/O series."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+Everything in this series so far synchronizes on the calling thread. `osyncstream` buffers and emits there; the mutex serializes there; `std::print` locks the stream there. For most programs that is completely fine. For a program that logs on a latency-critical path, the formatting and the I/O sitting on the caller's thread is the whole problem.
+
+The production answer is to get both off the hot path. The caller does the least possible work, handing a raw record to a queue, and a separate thread formats and writes.
+
+<GodboltEmbed id="KfsKjdTfW" gccOnly title="A producer/consumer logger: callers enqueue, one thread formats and writes" gcc_subtitle="x86-64 GCC 16.1 · -std=c++20 -O2 -pthread · runs live" />
+
+The mini logger here has application threads push a `Record`, just a thread name and a number, onto a queue and return. One background thread pops records, formats them, and writes them. Every log line is whole for free, because only one thread ever touches the output, and the callers never pay for formatting or I/O.
+
+## What the fast loggers actually do
+
+Real low-latency loggers are this idea, sharpened. spdlog in async mode uses a thread pool behind a blocking queue, though it still formats on the calling thread. Quill goes further with per-thread lock-free queues and formatting deferred entirely to the backend, so the caller only copies raw arguments. NanoLog extracts the static parts of each format string at compile time and logs only the dynamic values into a ring buffer, leaving the actual formatting to an offline post-processor. The measured hot-path costs tell the story: spdlog around 250 nanoseconds per call, Quill and NanoLog in the 7-to-11 nanosecond range. Moving formatting off the thread is worth a factor of twenty or more.
+
+## The trade you are making
+
+Off-thread logging has consequences. Records buffered in a queue have not been written yet, so a crash can lose them, the opposite of the flush-everything survivability from the <span>endl</span> post. Ordering across threads becomes the backend's job, usually solved with a timestamp taken at enqueue time. And a full queue forces a choice: block the producer, which bounds latency again, or drop records. The standard library gives you correct concurrent output with `osyncstream`, `std::print`, and a mutex. When correct is not fast enough, you move the work off the thread and manage what that costs.
+
+---
+
+**Sources**: [Quill vs spdlog for low-latency logging](https://dev.to/odygrd/quill-vs-spdlog-which-c-logger-is-better-for-low-latency-applications-408) · [NanoLog (PlatformLab)](https://github.com/PlatformLab/NanoLog) · [spdlog](https://spdlog.org/).
