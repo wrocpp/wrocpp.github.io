@@ -4,7 +4,7 @@ template: social/linkedin-post
 
 ::::post{type=insight theme=dark logo=top-left}
 
-:::insight{citation="wro.cpp -- 2026-07-31"}
+:::insight{citation="wro.cpp -- 2026-09-07"}
 # Parse errors that name the exact field
 JSON into a typed struct with std::expected, no exceptions. The reflective walker carries the path, so an error reads "at .id: expected number" for free.
 :::

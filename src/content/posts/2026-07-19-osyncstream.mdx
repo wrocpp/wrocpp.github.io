@@ -1,0 +1,41 @@
+---
+title: "std::osyncstream makes concurrent output atomic"
+slug: "osyncstream"
+pubDate: 2026-07-19
+author: filip-sajdak
+language: en
+kind: flagship
+series: concurrent-io
+series_order: 2
+audience: working-cpp
+tags: [concurrency, iostreams, syncstream, threads, cpp20, series]
+summary: "std::cout garbled its own output across threads. C++20's std::osyncstream fixes it: each thread buffers a line privately and emits it to the stream atomically on destruction. One wrapper, whole lines, with one sharp edge: the guarantee holds only if every writer uses it. Episode 2 of the concurrent I/O series."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+The <PostLink slug="logs-race-free-but-garbled">previous post</PostLink> left `std::cout` shredding its own output: three threads, and the log lines spliced into one another. C++20 fixes it with a single wrapper.
+
+`std::osyncstream` wraps a stream and gives each thread a private buffer. You write into it exactly like `std::cout`, and nothing reaches the real stream until the `osyncstream` is destroyed. Then the whole accumulated block transfers in one shot. Point every thread at its own `osyncstream(std::cout)` and the lines come out whole.
+
+<GodboltEmbed id="afTb91hrY" gccOnly title="Same three threads through osyncstream: whole lines" gcc_subtitle="x86-64 GCC 16.1 · -std=c++20 -O2 -pthread · runs live" />
+
+Same three threads, same six lines each, every record intact. The only change from the garbled version is the wrapper around `std::cout`.
+
+## How the atomic emit works
+
+Under the `osyncstream` is a `std::basic_syncbuf`, a `streambuf` holding a private, growable buffer. Every `<<` appends to that buffer and touches the destination not at all. When the `syncbuf` is destroyed, or when you call `emit()`, it transfers its contents to the wrapped buffer as one contiguous sequence, taking a per-destination lock for the length of the transfer. Two threads can be mid-line at the same moment; their lines only meet at the destination, one whole block after another.
+
+That is why the natural idiom is a temporary: `std::osyncstream(std::cout) << ... << '\n';` builds the line, and the semicolon destroys the temporary, which emits. One statement, one atomic line.
+
+## The guarantee is conditional
+
+There is a sharp edge. The standard's promise is that output "will not be interleaved ... as long as every write to that final destination buffer is made through (possibly different) instances of `std::basic_osyncstream`." Every write. Leave one thread writing a raw `std::cout << x` next to the synced ones and it can still land in the middle of a synced block. `osyncstream` does not lock `std::cout` against the world; it coordinates with other syncstreams on the same buffer. The fix works when the whole program agrees to use it.
+
+That whole-program condition is the one thing a `static std::mutex` does not need.
+
+---
+
+**Sources**: [cppreference: std::basic_osyncstream](https://en.cppreference.com/w/cpp/io/basic_osyncstream) · P0053 (synchronized buffered ostream) · [Modernes C++: synchronized output streams](https://www.modernescpp.com/index.php/synchronized-outputstreams/).

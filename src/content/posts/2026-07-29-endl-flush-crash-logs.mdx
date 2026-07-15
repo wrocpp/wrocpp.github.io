@@ -1,0 +1,38 @@
+---
+title: "std::endl is a hidden flush, and clang-tidy flags it"
+slug: "endl-flush-crash-logs"
+pubDate: 2026-07-29
+author: filip-sajdak
+language: en
+kind: flagship
+series: concurrent-io
+series_order: 7
+audience: working-cpp
+tags: [iostreams, performance, logging, buffering, series]
+summary: "std::endl is not a fancy newline; it is a newline plus a flush, and the flush is what costs you. A flush-counting streambuf proves that a newline flushes zero times and std::endl flushes every time. When to want the flush (crash-survivable logs), when not, and why clang-tidy flags it. Episode 7 of the concurrent I/O series."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+`std::endl` looks like a fancy newline. It is a newline and a flush, and the flush is the part that costs you. On a logging path that writes many lines, reflexive `std::endl` turns every line into a forced trip to the operating system.
+
+The claim is easy to check. Wrap a `streambuf` that counts how many times it is flushed, then write the same lines two ways.
+
+<GodboltEmbed id="1esezfhax" gccOnly title="A flush-counting streambuf: newline flushes 0, endl flushes 5" gcc_subtitle="x86-64 GCC 16.1 · -std=c++20 -O2 · runs live" />
+
+Five lines ending in a newline cause zero flushes; the characters sit in the buffer. Five lines ending in `std::endl` cause five. `std::endl` is `<< '\n' << std::flush`, and `std::flush` hands the buffer to the operating system every time.
+
+## When you do want the flush
+
+The flush is not always waste. It is what makes output survive a crash. `std::cout` is buffered, so a program that crashes with unwritten lines in its buffer loses them. `std::cerr` has `unitbuf` set and flushes after every operation, which is exactly why error output tends to survive when normal output does not. `std::clog` writes to the same destination as `cerr` but is buffered, for logging you can afford to lose. So the rule is about intent: use a plain newline on the hot path, and flush deliberately at a checkpoint or on the error path where losing the last lines would hurt.
+
+One caveat on "survive a crash": `flush` guarantees the bytes reach the operating system, not the disk. Flush protects you from a crashing process; surviving a power cut is `fsync`'s job, and durable storage needs it or its platform equivalent.
+
+## clang-tidy will tell you
+
+This is common enough that clang-tidy ships a check for it, `performance-avoid-endl`, which flags `std::endl` and offers a plain newline as the fix. It is a good default to turn on. The exceptions, a deliberate flush, are rare enough to mark explicitly, which also documents the intent for the next reader.
+
+---
+
+**Sources**: [clang-tidy: performance-avoid-endl](https://clang.llvm.org/extra/clang-tidy/checks/performance/avoid-endl.html).

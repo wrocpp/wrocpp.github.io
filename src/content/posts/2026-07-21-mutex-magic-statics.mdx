@@ -1,0 +1,45 @@
+---
+title: "static std::mutex is safe to construct, thanks to magic statics"
+slug: "mutex-magic-statics"
+pubDate: 2026-07-21
+author: filip-sajdak
+language: en
+kind: flagship
+series: concurrent-io
+series_order: 3
+audience: working-cpp
+tags: [concurrency, threads, mutex, cpp11, series]
+summary: "Before osyncstream, the fix for a shared log sink was a static std::mutex. But is the static mutex itself safe to initialize under threads? Yes, thanks to C++11 magic statics: a function-local static is constructed exactly once even under a stampede. With the mutex-versus-osyncstream trade-off. Episode 3 of the concurrent I/O series."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+Before C++20 there was no <PostLink slug="osyncstream">osyncstream</PostLink>, and the fix for a shared sink was the one you already reach for: a mutex. Guard every write with it and the threads take turns.
+
+```cpp
+void log_line(...) {
+    static std::mutex mtx;
+    const std::lock_guard lock(mtx);
+    std::cout << ...;
+}
+```
+
+The `static` local is the interesting part. It is initialized the first time control passes through the declaration, which under threads raises a question: what if two threads reach it at once? Do they both construct the mutex, or worse, use it half-built?
+
+<GodboltEmbed id="ebjTWGdsh" gccOnly title="A function-local static, constructed exactly once under a stampede" gcc_subtitle="x86-64 GCC 16.1 · -std=c++20 -O2 -pthread · runs live" />
+
+Neither. The counter in the demo, incremented in a function-local static's constructor, reads exactly one after three threads stampede the function. That is the C++11 guarantee for function-local statics, the feature people call "magic statics": if control enters the declaration while another thread is initializing the variable, the second thread waits for the first to finish. Exactly one initialization, and everyone who arrives during it blocks until it is done.
+
+## What it cost to get here
+
+This was undefined before C++11, and the workaround was double-checked locking, famously easy to get subtly wrong. GCC and Clang implemented the guarantee early; MSVC only shipped it in Visual Studio 2015, behind `/Zc:threadSafeInit`. After the first call the steady-state cost is a single relaxed load of a guard flag, a couple of nanoseconds, so the lazy `static` singleton is finally both correct and cheap.
+
+## Mutex or osyncstream?
+
+They solve the same problem differently. The mutex serializes the whole write: while one thread holds it, the others wait, and nothing formats concurrently. `osyncstream` lets threads format in parallel into private buffers and serializes only the final emit. The mutex is simpler and needs no `<syncstream>`; the syncstream keeps more work off the critical section. For a log handler that formats a line and writes it, either is correct. The mutex has one advantage the syncstream lacks: it does not need the whole program to cooperate.
+
+---
+
+**Sources**: `[dcl.init]` (function-local static init) in the [C++ working draft](https://eel.is/c++draft/stmt.dcl) · [C++ Stories: thread safety of function-local statics](https://www.cppstories.com/2025/thread_safety_function_statics/) · [MSVC /Zc:threadSafeInit](https://learn.microsoft.com/en-us/cpp/build/reference/zc-threadsafeinit-thread-safe-local-static-initialization).

@@ -1,0 +1,35 @@
+---
+title: "Move-assigning pmr containers across arenas deep-copies"
+slug: "pmr-refuses-to-move"
+pubDate: 2026-08-12
+author: filip-sajdak
+language: en
+kind: flagship
+series: pmr
+series_order: 5
+audience: working-cpp
+tags: [pmr, allocators, memory, semantics, cpp17, series]
+summary: "Move assignment should be an O(1) pointer steal. For pmr containers with different resources it cannot steal the buffer, so it allocates in the destination and copies every element, turning a move into an O(n) copy the type system cannot warn about. Episode 5 of the pmr series."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+Move assignment is supposed to be the cheap one. `dst = std::move(src)` steals the source's buffer, leaves it empty, and touches no elements. For two `pmr` containers with different resources, that steal is impossible, and the standard quietly does the expensive thing instead.
+
+<GodboltEmbed id="Mzsnbx1s6" gccOnly title="A move that allocates: 100 elements copied across arenas" gcc_subtitle="x86-64 GCC 16.1 · -std=c++17 -O2 · runs live" />
+
+`src` holds a hundred ints in one arena; `dst` uses another. After `dst = std::move(src)`, `dst` has the hundred elements, and its resource performed one allocation to hold them. A genuine move allocates nothing. This one copied every element into fresh storage.
+
+## Why the pointer cannot move
+
+`src`'s buffer belongs to `src`'s arena. If `dst` stole the pointer, `dst` would later deallocate that memory into its own resource, which never owned it. That is corruption. So when `propagate_on_container_move_assignment` is false and the two allocators are not equal, move assignment has no choice: it allocates in the destination's resource and moves the elements across one at a time. The O(1) operation degrades to O(n), silently, on a runtime property (which arena each container happens to hold) that the type system cannot see.
+
+This is the same stickiness as <PostLink slug="pmr-not-a-value-type">the copy that dropped its allocator</PostLink>, seen from the move side. The allocator identifies an arena, the arena cannot be transferred, so neither can the buffer. Within a single resource, move is still O(1) and everything behaves; across resources it turns into a copy you did not write.
+
+Reach for `std::pmr` where the arenas are stable and shared, and be deliberate about moving containers between them. The move still compiles. It just does not do what the word promises.
+
+---
+
+**Sources**: Arthur O'Dwyer, ["A not-so-quick introduction to the C++ allocator model"](https://quuxplusone.github.io/blog/2023/06/02/not-so-quick-pmr/) · [cppreference: polymorphic_allocator](https://en.cppreference.com/cpp/memory/polymorphic_allocator).
