@@ -1,0 +1,42 @@
+---
+title: "The unit bug that crashed into Mars"
+slug: "unit-bug-mars-orbiter"
+pubDate: 2026-08-20
+author: filip-sajdak
+language: en
+kind: flagship
+series: mp-units
+series_order: 1
+audience: working-cpp
+tags: [mp-units, units, safety, cpp23, series]
+summary: "In 1999 the Mars Climate Orbiter was lost because one team's software spoke pound-force seconds and another's expected newton seconds. mp-units, a C++ quantities library, makes that whole bug class uncompilable. First post of a series that follows the library to its C++29 standardization bid."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+On September 23, 1999, NASA lost a $327 million spacecraft to a unit conversion. The Mars Climate Orbiter's ground software, written by Lockheed Martin, reported thruster impulse in pound-force seconds. The trajectory software at JPL read those numbers as newton seconds. Every small correction burn was silently wrong by a factor of 4.45, for months, until the orbiter hit the Martian atmosphere 170 km too low and broke apart.
+
+Nothing threw and nothing asserted. The numbers were just numbers.
+
+## Making the bug a type error
+
+That is the class of bug **mp-units** exists to kill. It is a modern C++ library (C++20 and later) in which a value's unit is part of its *type*, so a pound-force second and a newton second cannot silently mix: they either convert exactly and explicitly, or the code does not compile.
+
+<GodboltEmbed id="Ea8oTo8Ye" gccOnly title="The Mars Climate Orbiter bug, made uncompilable" gcc_subtitle="x86-64 GCC 16.1 · -std=c++23 -O2 · mp-units trunk · runs live" />
+
+Two things to notice in that demo. The conversion `small_forces.in(N * s)` produces `444.822 N s` from `100 s lbf`, the exact factor-4.45 relationship that killed the mission, now handled by the type system instead of by a human remembering to multiply. The commented-out last line assigns a bare `100.0` to a newton-second quantity, and it is a compile error. There is no path from "raw number" to "quantity" without saying what the number means.
+
+None of this costs anything at runtime. The dimensional analysis happens entirely at compile time; what remains in the binary is the same arithmetic you would have written by hand, minus the opportunity to get it wrong.
+
+## What the rest of the series covers
+
+mp-units goes deeper than attaching a unit to a `double`. It models the International System of Quantities (ISO 80000) faithfully enough to catch bugs that dimensional analysis alone cannot see, and I will show those in the next post.
+
+It is also on the standard track. The library is the reference implementation behind P3045, "Quantities and units library," a candidate for C++29, so reading mp-units today previews what may land in `std` itself. Its lead author is Mateusz Pusz, a C++ architect from Gdańsk and an ISO C++ committee voting member since 2017.
+
+Over the coming weeks I will walk through the library's big ideas, one runnable demo at a time: quantity kinds, the affine space, one-line custom units, unit-safe formatting, and the road to C++29.
+
+---
+
+**Sources**: [mp-units on GitHub](https://github.com/mpusz/mp-units) · [documentation](https://mpusz.github.io/mp-units/) · NASA, [Mars Climate Orbiter Mishap Investigation Board Phase I Report](https://llis.nasa.gov/llis_lib/pdf/1009464main1_0641-mr.pdf) (1999).

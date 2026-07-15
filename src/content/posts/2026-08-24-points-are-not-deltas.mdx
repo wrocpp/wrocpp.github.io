@@ -1,0 +1,37 @@
+---
+title: "Points are not deltas"
+slug: "points-are-not-deltas"
+pubDate: 2026-08-24
+author: filip-sajdak
+language: en
+kind: flagship
+series: mp-units
+series_order: 3
+audience: working-cpp
+tags: [mp-units, units, affine-space, cpp23, series]
+summary: "The temperature is 21 degrees and the temperature rose by 21 degrees are different quantities, and adding two of the first is meaningless. mp-units models this with the affine space: quantity_point for absolute readings, quantity for changes, and the nonsense operations do not compile. Episode 3 of the mp-units series."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+The unit checker from the last episode is happy to add two temperature *readings*: 21 °C + 17 °C, same unit and same quantity kind, gives 38 °C. Nothing in the world is 38 °C because of it. The sum of this morning's temperature and this afternoon's is not a physical quantity at all, and no amount of dimensional analysis will flag it.
+
+Mathematics has had a name for this distinction for a century: the **affine space**. A *point* is a position against an origin, such as a temperature reading, a timestamp, or an altitude. A *delta* is the difference between two points: a temperature change, a duration, a climb. Deltas form a vector space, so you can add them freely. Points are not deltas, and the operations reflect that. Subtracting two points gives a delta, and adding a delta to a point gives a new point; those are the only combinations the algebra permits.
+
+`std::chrono` users already know this split as `time_point` vs `duration`. mp-units generalizes it to *every* quantity.
+
+## quantity_point vs quantity
+
+<GodboltEmbed id="hsjbssx8b" gccOnly title="Point + delta compiles; point + point does not" gcc_subtitle="x86-64 GCC 16.1 · -std=c++23 -O2 · mp-units trunk · runs live" />
+
+The API names map straight onto the physics: `point<deg_C>(17.0)` is a reading, `delta<deg_C>(4.5)` is a change. Adding the change to the reading yields a new reading, subtracting two readings yields a change, and `afternoon.quantity_from(si::ice_point)` answers the only question an absolute reading can honestly answer: *how far from a stated origin?* The two commented lines, adding two readings and assigning a point to a delta, do not compile.
+
+Temperatures make the sharpest example because their everyday unit hides an origin: 0 °C *is* a point, the ice point. The same modeling covers timestamps against durations, positions against displacements, and altitudes against climbs. Anywhere the code passes "a metre" around, ask whether it means a metre *from where* or a metre *of difference*. mp-units lets the signature say which, and the compiler holds the line.
+
+This is the third post in the run of well-typed numbers that are still wrong, after <PostLink slug="unit-bug-mars-orbiter">wrong units</PostLink> and <PostLink slug="quantity-kinds">wrong kinds</PostLink>.
+
+---
+
+**Sources**: [mp-units documentation: the affine space](https://mpusz.github.io/mp-units/latest/users_guide/framework_basics/the_affine_space/).
