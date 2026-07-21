@@ -1,0 +1,49 @@
+---
+title: "std::inplace_vector is a vector that never touches the heap"
+slug: "inplace-vector"
+pubDate: 2026-07-31
+author: filip-sajdak
+language: en
+tags: [news, cpp26, stdlib, containers, performance, embedded]
+kind: short
+audience: working-cpp
+summary: "C++26 adds std::inplace_vector<T, N>, a sequence container with a fixed compile-time capacity whose storage lives inside the object. It gives you a vector's dynamic size and push_back with zero heap allocation, which is exactly what embedded, real-time, and hot-path code has been hand-rolling for decades. GCC 16.1 ships it now."
+draft: false
+relatedPosts: [pmr-zero-heap, function-ref]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+There has always been a gap between `std::array` and `std::vector`. `std::array<T, N>` is fixed-size: N elements, always, no `push_back`. `std::vector<T>` is dynamic but pays for it with a heap allocation you cannot always afford, in an interrupt handler, a real-time audio callback, or a kernel of a hot loop. For decades the answer was a hand-rolled "static vector": a raw buffer plus a count. Every serious codebase has one. Boost has one. The EASTL has one.
+
+C++26 puts it in the standard library as **`std::inplace_vector<T, N>`** (P0843). It is a contiguous sequence container with a *dynamic* size up to a *compile-time* capacity `N`, and its storage lives inline, inside the object itself. No allocator, no heap, ever.
+
+<GodboltEmbed id="v6Mq9rvsW" gccOnly title="inplace_vector: dynamic size, compile-time capacity, inline storage" gcc_subtitle="x86-64 GCC 16.1 · -std=c++26 · runs live" />
+
+The demo fills an `inplace_vector<int, 4>` to capacity and prints it:
+
+```
+size=4 capacity=4 elements=[10, 20, 30, 40]
+try_push_back(50) -> rejected (at capacity)
+```
+
+`capacity()` is fixed at 4 by the type. `size()` grows as you `push_back`, just like a vector. And the whole thing sits wherever you put it: on the stack here, but equally as a class member or a `static`, with no allocation at any point.
+
+## The full case is a choice, not a crash
+
+Because capacity is bounded, `inplace_vector` has to answer a question `vector` never faces: what happens when you push past `N`? It gives you both answers.
+
+- **`push_back`** past capacity throws `std::bad_alloc`. It keeps the familiar interface, so generic code that expects vector-like semantics still works.
+- **`try_push_back`** past capacity does not throw. It reports the failure instead, so the full case is an ordinary branch. That is what the demo uses, and it is the version you want on a path where exceptions are banned or too expensive.
+
+There is also `unchecked_push_back` for when you have already proven there is room and want no check at all.
+
+## Why it matters beyond embedded
+
+The obvious audience is embedded and real-time, where heap allocation is often simply forbidden. But the type earns its place in ordinary code too. A small, known-bounded collection, the parsed fields of a record, the corners of a bounding box, a fixed roster of worker handles, is both faster and clearer as an `inplace_vector<T, N>` than as a `vector<T>` you immediately `reserve`. You state the bound in the type, and the compiler holds you to it, with no allocation to pay for or fail.
+
+It sits naturally alongside the other allocation-avoidance tools: where [`pmr`](/posts/pmr-zero-heap/) lets a `vector` draw from a stack buffer, `inplace_vector` removes the allocator from the picture entirely. GCC 16.1's libstdc++ ships it today.
+
+---
+
+**Sources**: [P0843R14 "inplace_vector"](https://wg21.link/p0843) · [cppreference: std::inplace_vector](https://en.cppreference.com/w/cpp/container/inplace_vector).

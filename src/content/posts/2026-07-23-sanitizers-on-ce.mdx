@@ -1,0 +1,52 @@
+---
+title: "The sanitizers run live on Compiler Explorer"
+slug: "sanitizers-on-ce"
+pubDate: 2026-07-23
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, tooling, sanitizers, debugging, correctness, cpp]
+summary: "AddressSanitizer, UndefinedBehaviorSanitizer, and ThreadSanitizer all run in Compiler Explorer's execution pane. Add one -fsanitize flag, turn on execution, and the runtime report prints in the browser: the faulting line, the allocation site, the shadow-byte map, both racing stacks. There is no cheaper way to show a colleague exactly why a bug is a bug."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+The sanitizers are the highest-return, lowest-effort correctness tools in C++: you add a compiler flag and the runtime catches memory errors, undefined behavior, and data races the moment they happen, with a precise report. The part that is under-appreciated is that **you do not need a local toolchain to see them work.** Compiler Explorer's execution pane runs the instrumented binary on its servers and prints the sanitizer's report straight into the browser. That makes a live sanitizer report something you can link.
+
+Three flags, three classic bugs, all running below.
+
+## AddressSanitizer: one past the end
+
+`-fsanitize=address` catches the out-of-bounds read and hands you the whole story: the faulting line, the allocation site, and the shadow-byte map showing exactly where the valid region ended.
+
+<GodboltEmbed id="MKPanP6Eh" gccOnly title="ASan catches a heap-buffer-overflow and points at the line" gcc_subtitle="x86-64 GCC 16.1 · -fsanitize=address · runs live" />
+
+The program prints its in-bounds line, then reads `a[4]` one past a four-element array. ASan stops it with `heap-buffer-overflow`, names `main`, and marks the byte. (The demo sets `exitcode=0` through the `__asan_default_options` hook only so the executor accepts the run; in your own build ASan aborts, which is what you want.)
+
+## UndefinedBehaviorSanitizer: signed overflow
+
+`-fsanitize=undefined` is the one to reach for first because it is nearly free and catches the UB people forget is UB. Signed integer overflow is undefined; UBSan does not trap on it, it prints a precise diagnostic and keeps going:
+
+<GodboltEmbed id="d6vWsfhzY" gccOnly title="UBSan names the signed-overflow line and the exact values" gcc_subtitle="x86-64 GCC 16.1 · -fsanitize=undefined · runs live" />
+
+`runtime error: signed integer overflow: 2147483647 + 1 cannot be represented in type 'int'`. File, line, and the two operands. Because UBSan reports and continues by default, the process still exits cleanly, which is why it is safe to leave on in a test build.
+
+## ThreadSanitizer: a data race
+
+`-fsanitize=thread` instruments memory accesses and synchronization to find races that only show up one run in a thousand. Two threads increment a shared `int` with no lock:
+
+<GodboltEmbed id="aj54hTbEs" gccOnly title="TSan flags the unsynchronized increment with both stacks" gcc_subtitle="x86-64 GCC 16.1 · -fsanitize=thread -pthread · runs live" />
+
+The counter can even come out right on a given run. A data race is a property of the *code*, not of whether one execution happened to lose a write, so TSan reports it either way, with both conflicting stacks. You fix the bug once instead of waiting for it to resurface in production.
+
+## Use them together
+
+The three are complementary and cheap. ASan and UBSan compose in one build (`-fsanitize=address,undefined`); TSan runs separately because it instruments differently. The habit worth forming is to run your tests under them in CI, not to reach for them only once something has already gone wrong. And when you need to explain a bug to someone, a Compiler Explorer link with the report already on screen beats any amount of prose.
+
+MemorySanitizer (uninitialized reads) is the one that does not run cleanly on a bare Compiler Explorer session, because it needs an instrumented standard library to avoid false positives; that one stays local.
+
+---
+
+**Sources**: Clang docs for [AddressSanitizer](https://clang.llvm.org/docs/AddressSanitizer.html), [UBSan](https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html), and [ThreadSanitizer](https://clang.llvm.org/docs/ThreadSanitizer.html). Both GCC and Clang implement all three.

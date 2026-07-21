@@ -1,0 +1,41 @@
+---
+title: "Google Benchmark runs live on Compiler Explorer"
+slug: "google-benchmark-on-ce"
+pubDate: 2026-07-27
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, benchmarking, performance, tooling, cpp]
+summary: "You do not need a local build to run a real microbenchmark. Add the benchmark library on Compiler Explorer, turn on execution, and Google Benchmark prints its timing table in the output pane. The demo is also the first lesson every microbenchmark teaches: without benchmark::DoNotOptimize the compiler deletes the loop you are trying to measure and reports a time near zero."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+Google Benchmark is a Compiler Explorer library. Add `benchmark` from the libraries panel, turn on the execution pane, and `BENCHMARK_MAIN()` runs on CE's servers and prints the timing table back to you. No local checkout, no CMake, no linking to work out. That alone is worth knowing, because the friction of setting up a benchmark harness is usually what stops people from measuring at all.
+
+The demo doubles as the first thing a benchmark will teach you the hard way. **`benchmark::DoNotOptimize`** is what keeps the optimizer from deleting the code you are measuring.
+
+<GodboltEmbed id="nsYTME1K3" gccOnly title="DoNotOptimize: the difference between a real timing and a deleted loop" gcc_subtitle="x86-64 GCC 16.1 · -std=c++20 -O2 · benchmark lib · runs live" />
+
+Both loops call `std::sqrt(2.0)`. The only difference is what happens to the result:
+
+```
+BM_Unfenced      0.000 ns        0.000 ns   1000000000000
+BM_Fenced        0.326 ns        0.189 ns   3631323115
+```
+
+`BM_Unfenced` throws its result away, so the optimizer correctly reasons that the whole loop body is dead and removes it. Benchmark then measures an empty loop and reports `0.000 ns` over a trillion "iterations", a number that looks precise and means nothing. `BM_Fenced` passes the result through `DoNotOptimize`, which forces the compiler to actually compute and keep it, and now you get an honest sub-nanosecond timing.
+
+## What DoNotOptimize actually does
+
+`DoNotOptimize(x)` is not a function call in the normal sense. It expands to an inline-assembly barrier that tells the compiler this value is observed and may not be discarded, without emitting a single instruction of its own. Its sibling `benchmark::ClobberMemory()` does the same for stores, marking all of memory as read so a write you are timing cannot be optimized away either.
+
+The rule that falls out of this is simple: **every microbenchmark must consume its result.** A benchmark that computes a value and drops it is measuring nothing, and the giveaway is exactly what you see above, a suspiciously round time over an astronomically large iteration count.
+
+One caveat the output makes honest: Compiler Explorer's benchmark library is a debug build ("Library was built as DEBUG. Timings may be affected"), and CE's shared executors are noisy. Treat the live numbers as a teaching aid, not a measurement of record. The lesson about `DoNotOptimize` holds identically on a release build on your own hardware.
+
+---
+
+**Sources**: [Google Benchmark](https://github.com/google/benchmark) and its [user guide](https://google.github.io/benchmark/user_guide.html) (see `DoNotOptimize` and `ClobberMemory`).

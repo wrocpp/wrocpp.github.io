@@ -1,0 +1,43 @@
+---
+title: "std::function_ref borrows a callable instead of owning it"
+slug: "function-ref"
+pubDate: 2026-08-04
+author: filip-sajdak
+language: en
+tags: [news, cpp26, stdlib, functional, performance]
+kind: short
+audience: working-cpp
+summary: "C++26 adds std::function_ref, the non-owning counterpart to std::function. It is the right parameter type for a callback you will invoke but not store: it copies nothing, allocates nothing, and binds equally to a capturing lambda or a plain function. It is to std::function what string_view is to string."
+draft: false
+relatedPosts: [inplace-vector]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+For years the default way to take a callback in C++ was `std::function`, and for years it was the wrong default. `std::function` *owns* its callable. Passing a lambda to a `std::function` parameter copies it, and if the closure is too big for the small-object buffer, that copy allocates. When all you do is call the thing and return, you paid for ownership you never used.
+
+C++26 adds the type that most callback parameters actually wanted: **`std::function_ref`** (P0792). It is a non-owning reference to a callable. It stores a pointer to your callable and a pointer to how to invoke it, nothing more. No copy, no allocation, no ownership. It is to `std::function` exactly what `string_view` is to `string`.
+
+<GodboltEmbed id="e63Eo39o4" gccOnly title="One function_ref parameter binds a lambda and a function pointer alike" gcc_subtitle="x86-64 GCC 16.1 · -std=c++26 · runs live" />
+
+The `transform_sum` function takes a single `std::function_ref<int(int)>`. The demo hands it two very different callables: a lambda that captures a local `bias`, and an ordinary function pointer. Both bind to the same parameter type and run, with nothing copied and nothing allocated:
+
+```
+capturing lambda -> 50
+function pointer -> 30
+```
+
+## When to reach for it
+
+The distinction is about lifetime, and it is easy to state:
+
+- **`std::function_ref`** when you will call the callable during the current call and not keep it. Predicates, visitors, comparators, "for each" callbacks, dependency-injected hooks invoked inline. This is the common case.
+- **`std::function`** when you must *store* the callable and outlive the caller's stack frame: an event handler kept in a member, a task pushed onto a queue, a continuation saved for later.
+
+The trap is the same one `string_view` has. A `function_ref` does not extend the lifetime of what it points at, so binding one to a temporary and storing it dangles. The type is built for parameters, and used as a parameter it is exactly right: pass any callable, pay for none of it.
+
+C++23 already shipped `std::move_only_function` for the owning-but-not-copyable case; `function_ref` completes the set by covering the borrowing case. Between the three, "just use `std::function`" is finally the wrong answer more often than the right one.
+
+---
+
+**Sources**: [P0792R14 "function_ref: a type-erased callable reference"](https://wg21.link/p0792) · [cppreference: std::function_ref](https://en.cppreference.com/w/cpp/utility/functional/function_ref).

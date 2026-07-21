@@ -1,0 +1,12 @@
+template: social/linkedin-post
+
+size:
+  width: 1200
+  height: 1200
+  dpr: 2
+
+project:
+  name: "meetingcpp-2026-pusz"
+  author: "wro.cpp -- Wroclaw C++ community"
+  email: "office@wro.cpp"
+  date: "2026-08-12"
