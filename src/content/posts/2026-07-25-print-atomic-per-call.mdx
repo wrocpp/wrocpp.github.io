@@ -1,0 +1,37 @@
+---
+title: "std::print does not tear the way std::cout does"
+slug: "print-atomic-per-call"
+pubDate: 2026-07-25
+author: filip-sajdak
+language: en
+kind: flagship
+series: concurrent-io
+series_order: 4
+audience: working-cpp
+tags: [concurrency, print, iostreams, cpp23, series]
+summary: "The fixes so far needed cooperation or a lock. C++23's std::print gives per-call atomicity for free: a single print call never interleaves with another, the way printf never did and std::cout always could. But the guarantee is per-call, so a line split across two calls can still tear. Episode 4 of the concurrent I/O series."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+The fixes so far took work. <PostLink slug="osyncstream">std::osyncstream</PostLink> needs every writer to cooperate; the `static std::mutex` needs you to hold a lock around each write. C++23's `std::print` gives you the common case for free.
+
+A single `std::print` or `std::println` call does not interleave with other calls, the way `printf` never did and `std::cout <<` always could. No syncstream, no mutex, nothing to remember: one call, one whole line.
+
+<GodboltEmbed id="4e1vsWfEv" gccOnly title="println per line stays whole; a line split across two calls tears" gcc_subtitle="x86-64 GCC 16.1 · -std=c++23 -O2 -pthread · runs live" />
+
+The top half is three threads calling `std::println` once per line, and every line is intact. That is the guarantee. The bottom half shows its edge: when one logical line is built from two calls, `std::print` for the prefix and `std::println` for the rest, each call is atomic but nothing binds them together, so another thread's line lands in the gap. The prefixes and suffixes splice exactly like the raw `std::cout` version from the <PostLink slug="logs-race-free-but-garbled">first post</PostLink>.
+
+## How C++23 pulled it off
+
+`std::print` formats its arguments into a temporary string and writes that whole string to the stream in a single operation, while the underlying C stream locks itself for the length of that write. One call therefore reaches the terminal as one uninterrupted sequence. It is the same mechanism `printf` has always had, brought to type-safe formatting.
+
+The lesson for a logger is simple: build each log line in a single `std::print` call. Pass the whole line as one format string with all its arguments and you get non-interleaved output with nothing else to set up. Split a line across calls and you are back to needing a syncstream or a lock to group them.
+
+That per-call guarantee has a deeper story underneath, and C++26 is still refining it.
+
+---
+
+**Sources**: P2093 (formatted output) · [Victor Zverovich: std::print in C++23](https://vitaut.net/posts/2023/print-in-cpp23/).

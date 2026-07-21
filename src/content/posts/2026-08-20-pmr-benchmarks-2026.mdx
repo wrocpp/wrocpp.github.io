@@ -1,0 +1,38 @@
+---
+title: "Does custom allocation still pay off in 2026?"
+slug: "pmr-benchmarks-2026"
+pubDate: 2026-08-20
+author: filip-sajdak
+language: en
+kind: flagship
+series: pmr
+series_order: 3
+audience: working-cpp
+tags: [pmr, allocators, memory, performance, benchmarks, series]
+summary: "Custom allocation used to buy 44 percent. A 2026 re-run of the classic study finds modern allocators like mimalloc have closed most of that gap, so a pmr arena now earns its place for predictable latency and fragmentation resilience rather than raw throughput. With a live allocation-count demo. Episode 3 of the pmr series."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+"Just use a pool allocator" is common advice for hot code. It was better advice in 2005 than it is today, and the honest version of the pitch has changed.
+
+Start with what is not in question. I ran the same workload twice: build a 64-element vector, twenty thousand times over, once on the default allocator and once on a `monotonic_buffer_resource` reset between rounds.
+
+<GodboltEmbed id="sza11Pv9T" gccOnly title="Same workload, two allocators: 140,000 allocations vs 0" gcc_subtitle="x86-64 GCC 16.1 · -std=c++17 -O2 · runs live" />
+
+The allocation counts are exact and reproducible: 140,000 calls into the global allocator on the default path, zero on the arena. The wall-clock times printed next to them are not, because Compiler Explorer runs on shared hardware, so treat them as a hint rather than a measurement.
+
+## What the controlled studies find
+
+The useful question is how much removing 140,000 allocations buys on real hardware. Recent work is more sober than the folklore.
+
+A 2026 re-run of Berger's classic custom-allocation study, on modern hardware against `mimalloc`, found per-class custom allocators bought about 2.3 percent, and region allocators up to about 15 percent, down from the 44 percent the original 2002 paper reported. Modern general-purpose allocators have absorbed most of the old advantage.
+
+The catch is fragmentation. In the same study, once the heap was fragmented the general allocator degraded by up to 2x, while the region allocator was unaffected. This is why trading systems and game engines still reach for arenas: not for a headline throughput multiplier, but for the tail. An arena's cost does not depend on how chewed-up the global heap is, and its worst case is close to its average case.
+
+So the 2026 answer is narrower than the 2005 one. A pmr arena still earns its place where you need predictable latency, no fragmentation, and a hard bound on allocation cost. If all you want is raw average throughput on a clean heap, `mimalloc` or `jemalloc` may already be within a few percent, and they cost nothing to adopt.
+
+---
+
+**Sources**: ["Reconsidering 'Reconsidering Custom Memory Allocation'" (arXiv, 2026)](https://arxiv.org/html/2605.17119) · Bloomberg, ["Unleashing the Power of Allocator-Aware Software" (P2126)](http://bloomberg.github.io/bde/white_papers/unleashing-aa-software.html).
