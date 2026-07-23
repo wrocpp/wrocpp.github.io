@@ -1,0 +1,38 @@
+---
+title: "Four range views headed for the standard library"
+slug: "ranges-views-wave"
+pubDate: 2026-08-12
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, wg21, ranges, stdlib, proposal, cpp]
+summary: "The 2026-07 mailing adds a concentrated wave of range adaptors: views::unique for adjacent duplicates, views::take_last and views::drop_last for tail slicing, and views::cycle for endless repetition. None ship yet, so the demo is what you write today to get the same results, which is exactly the boilerplate each proposal collapses into one named view."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+`std::ranges` shipped in C++20 with an obvious-in-hindsight set of views and a long tail of gaps that everyone fills the same way. The 2026-07 mailing closes four of those gaps at once, all from Hewill Kang:
+
+- **`views::unique`** (P4291): drop adjacent duplicate elements, the range-adaptor form of `std::unique`.
+- **`views::take_last(n)` and `views::drop_last(n)`** (P4294): the last `n` elements, or everything but the last `n`. The symmetric partners to `take` and `drop`.
+- **`views::cycle`** (P3806): repeat a range endlessly, so `[1, 2, 3]` becomes `1, 2, 3, 1, 2, 3, ...`.
+
+None of these exist in a shipping compiler yet, so the demo shows what you write **today** to get each result with the adaptors that already exist. That is the case for the proposals in one screen: each line is a small pile of composition that a single named view would replace.
+
+<GodboltEmbed id="bfPKsTKs4" gccOnly title="The workarounds today for views::unique, take_last, and cycle" gcc_subtitle="x86-64 GCC 16.1 · -std=c++26 · runs live" />
+
+```
+unique     : [1, 2, 3, 4]
+take_last 3: [3, 3, 4]
+cycle x10  : [1, 1, 2, 3, 3, 3, 4, 1, 1, 2]
+```
+
+`unique` today means `chunk_by` on equality then take the first of each group. `take_last(3)` means `drop(size - 3)`, which forces you to know the size and reason about the underflow when the range is shorter than three. `cycle` means `repeat` the whole range and `join` it, then bound the result with `take` so it terminates. Each works, and each is the kind of thing you write once, get slightly wrong, and paste around.
+
+The proposed views are strictly more readable and, for `take_last` and `cycle`, safer: `views::take_last(3)` cannot underflow the way `drop(size - 3)` can, and `views::cycle` states the intent that `repeat`-plus-`join` only implies. These are R0s and will move before they land, but they are small, uncontroversial, and exactly the kind of gap-filling that tends to make it through. Until then, the block above is the idiom.
+
+---
+
+**Sources**: [P4291 "views::unique"](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4291r0.html) · [P4294 "views::take_last and views::drop_last"](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4294r0.html) · [P3806 "views::cycle"](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3806r1.html), all Hewill Kang, 2026-07 mailing.

@@ -1,0 +1,46 @@
+---
+title: "The hardened standard library turns an out-of-bounds read into a stop"
+slug: "hardened-stdlib-turn-it-on"
+pubDate: 2026-08-16
+author: filip-sajdak
+language: en
+tags: [news, safety, stdlib, hardening, correctness, cpp26]
+kind: short
+audience: working-cpp
+summary: "One macro turns the undefined behavior of an out-of-bounds vector::operator[] into a defined, immediate stop. libstdc++ has -D_GLIBCXX_ASSERTIONS and libc++ has _LIBCPP_HARDENING_MODE; both add bounds checks to operator[], span, and string_view with negligible overhead. Google has reported this class of hardening cut its production segfault rate by about a third. It is one flag."
+draft: false
+relatedPosts: [sanitizers-on-ce]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+`vector::operator[]` with an out-of-bounds index is undefined behavior. In practice that means it reads whatever is next in memory and hands it back as a valid `int`, and your program keeps running with a wrong answer until, much later and somewhere else, it crashes. `at()` throws, but nobody writes `at()` in a hot loop, so the checked path goes unused exactly where it would help.
+
+The **hardened standard library** changes the default. Build with one macro and `operator[]` gains a bounds check that, on failure, stops the program immediately instead of reading garbage. For libstdc++ the flag is `-D_GLIBCXX_ASSERTIONS`; for libc++ it is `-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST`. The checks cover `operator[]`, `span`, `string_view`, iterator ranges, and more.
+
+<GodboltEmbed id="9a3KKcjcf" gccOnly title="Hardened operator[] stops the out-of-bounds access instead of reading garbage" gcc_subtitle="x86-64 GCC 16.1 · -D_GLIBCXX_ASSERTIONS · runs live" />
+
+The demo reads `v[1]` (in bounds, fine) and then `v[5]` on a three-element vector. With hardening on, the second access does not return a garbage `int`; libstdc++ fails its assertion (`__n < this->size()`) and stops:
+
+```
+v[1] = 20 (in bounds)
+hardened stdlib stopped the out-of-bounds access
+```
+
+The stop is a call to `std::abort`. The demo installs a signal handler purely so it can exit cleanly for Compiler Explorer; in your own process the failed check simply terminates the program where the fault is. A defined crash at the bad index beats an undefined read that corrupts state and surfaces as a mystery a thousand lines later.
+
+## The overhead is not the reason to skip it
+
+The instinct is to assume bounds checking is too slow for production. Measured, it usually is not. A predictable branch that the CPU's branch predictor learns immediately costs close to nothing on the paths that matter, and the compiler eliminates many checks outright when it can prove the index is in range. Google has reported that deploying this class of hardening cut its production segfault rate by roughly a third while leaving performance essentially unchanged, which is why hardening it on by default has become the mainstream advice rather than a paranoid option.
+
+## How to turn it on
+
+- **libstdc++** (GCC, Clang with libstdc++): `-D_GLIBCXX_ASSERTIONS`. A lighter build-time-only set is on by default at `-O0` in recent releases; the macro turns the runtime checks on everywhere.
+- **libc++** (Clang): `-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST` for the production-grade level, with `EXTENSIVE` and `DEBUG` levels above it for testing.
+- **MSVC STL**: checked iterators and `_ITERATOR_DEBUG_LEVEL` play a similar role.
+
+Set it in your release build, not just your debug build. The bugs it catches are the ones that reach production.
+
+---
+
+**Sources**: [libstdc++ hardening / `_GLIBCXX_ASSERTIONS`](https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_macros.html) · [libc++ hardening modes](https://libcxx.llvm.org/Hardening.html). The production-impact figure was reported by Google and cited in the [March 2026 WG21 trip report](https://herbsutter.com/2026/03/29/c26-is-done-trip-report-march-2026-iso-c-standards-meeting-london-croydon-uk/).

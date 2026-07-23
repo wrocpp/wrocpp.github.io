@@ -1,0 +1,47 @@
+---
+title: "Ship the C++20 feature and its fallback in one file"
+slug: "feature-test-fallback"
+pubDate: 2026-08-06
+author: filip-sajdak
+language: en
+kind: flagship
+series: concurrent-io
+series_order: 6
+audience: working-cpp
+tags: [concurrency, feature-test-macros, portability, cpp20, series]
+summary: "The code review that started this series ended with a portability question: use std::osyncstream where it exists, fall back to a mutex where it does not. The feature-test macro __cpp_lib_syncbuf and <version> are the tool for exactly that. One file, the best available tool on each compiler. Episode 6 of the concurrent I/O series."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+The code review that started this series ended with a portability question. `std::osyncstream` is C++20, but not every compiler in a shipping codebase has it yet. The reviewer's answer was to detect the feature and fall back:
+
+```cpp
+#include <version>
+#if defined(__cpp_lib_syncbuf)
+  #include <syncstream>
+#else
+  #include <mutex>
+#endif
+```
+
+That is the feature-test-macro system, and it is the right tool for exactly this.
+
+<GodboltEmbed id="scsPP1h8a" gccOnly title="One source, osyncstream where available, mutex fallback otherwise" gcc_subtitle="x86-64 GCC 16.1 · -std=c++20 -O2 -pthread · runs live" />
+
+On GCC 16.1 the demo prints `__cpp_lib_syncbuf = 201803` and takes the syncstream path. On a compiler without `<syncstream>` the same source compiles the mutex branch instead. One file, the best available tool on each.
+
+## Why not just check the language version
+
+You could gate on `__cplusplus >= 202002L`, but that asks the wrong question. A compiler can be in C++20 mode and still lack a particular library feature, because language and library support land at different times and in different releases. `__cpp_lib_syncbuf` answers the precise question: is *this* library facility present? Each standard library feature has its own macro, defined to a date-stamped value (`201803L` here, the month the paper was adopted), so you can compare against that value when you need a specific revision.
+
+`<version>` is the header that makes this ergonomic. Included on its own it defines every library feature-test macro without dragging in the features themselves, so you can ask "do I have `<syncstream>`?" before you decide to include it. The whole system is standardized in SD-6, the committee's feature-test-macro document.
+
+## The pattern generalizes
+
+The same shape covers the rest of this series. Gate `std::print` on `__cpp_lib_print`, gate a coroutine path on `__cpp_impl_coroutine`, and so on. Write the modern path and the fallback, and let the macro choose. The result compiles everywhere and uses the good tool wherever the good tool exists.
+
+---
+
+**Sources**: [SD-6: SG10 feature-test recommendations](https://isocpp.org/std/standing-documents/sd-6-sg10-feature-test-recommendations) · [cppreference: feature test macros](https://en.cppreference.com/w/cpp/utility/feature_test).

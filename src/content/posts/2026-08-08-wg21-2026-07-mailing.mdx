@@ -1,0 +1,31 @@
+---
+title: "The July 2026 C++ mailing, in five papers"
+slug: "wg21-2026-07-mailing"
+pubDate: 2026-08-08
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, wg21, standardization, safety, mailing]
+summary: "The first WG21 mailing after the June Brno meeting is out, and it is dominated by the memory-safety profiles fight: competing framework papers, a runtime-checkable UB profile, Stroustrup's initialization profile, and a sharp dissent about what profiles should even be. Plus one wildcard, an effect system for C++. Five papers worth knowing before the August pre-Buzios deadline."
+draft: false
+relatedPosts: [bitmask-enums, ranges-views-wave]
+---
+
+The 2026-07 mailing is the first big batch since Brno and the last before the pre-Buzios deadline on 14 August. Two of its papers, [bitmask enums](/posts/bitmask-enums/) and a [wave of new range views](/posts/ranges-views-wave/), get their own posts here. The other five are worth reading together, because four of them are the same argument: what, exactly, is a safety profile?
+
+**P4314-P4316 "On Activating a Profile" / "A Profile Template" / "A Skeleton Document for Profiles"** (Peter Bindels). Three companion papers trying to pin down the mechanics the profiles proposal has so far left vague: how you turn a profile on, what a profile specification must contain, and a reusable skeleton so each new profile is written the same way. This is the plumbing that has to exist before "just add a profile" is a real answer.
+
+**P4317 "std::core_ub: A Profile for Runtime-Checkable Core-Language Undefined Behavior"** (Vinnie Falco). Proposes a profile that inserts runtime checks for core-language UB that can actually be caught at runtime, turning silent undefined behavior into a defined trap. It is the concrete, implementable end of the safety debate, close in spirit to the hardened standard library but aimed at the language rather than the library.
+
+**P4222R2 "An initialization profile"** (Bjarne Stroustrup). The third revision of Stroustrup's profile to guarantee that objects are used only after initialization, one of the highest-value and most tractable slices of memory safety. That it is on R2 and still moving is a sign the profiles direction is being taken seriously rather than waved at.
+
+**P4318 "Transient Benefit, Perpetual Cost: Implicit Core-Language Assertions"** (Vinnie Falco). The dissent, and the one to read closely. It argues that baking implicit runtime assertions into the core language buys a short-term safety win at a permanent cost in performance and complexity, and that the committee should be wary of the reflex to make everything checked. Having the same author write both P4317 and this is the point: it is a careful argument about where checking belongs, not a slogan.
+
+**P4312 "Effect Sets: A Composable, Generalized noexcept for C++"** (Michael Galuszka). The wildcard. It generalizes `noexcept` into composable effect annotations, so a function can declare and propagate a set of effects (throwing being just one) that the compiler tracks and checks. An effect system is a large idea to graft onto C++, and this is an early sketch rather than a plan, but it is the most interesting swing in the mailing.
+
+The through-line: C++26 is done, so the committee's attention has turned to the next cycle, and in this mailing that means safety. The interesting fight is no longer "should C++ get safety profiles" but "what is a profile, who checks what, and when does a runtime check cost more than it saves." Falco arguing both sides of it is the most useful thing to read here.
+
+---
+
+**Source**: the [WG21 2026-07 mailing](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/) (papers P4312, P4314 through P4318, P4222R2).

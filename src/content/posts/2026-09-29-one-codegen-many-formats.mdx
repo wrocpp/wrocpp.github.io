@@ -1,0 +1,248 @@
+---
+title: "One codegen, many wire formats"
+slug: "one-codegen-many-formats"
+pubDate: 2026-09-29
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 11
+audience: working-cpp
+tags: [reflection, cpp26, yaml, xml, toml, msgpack, format-policy]
+summary: "JSON, YAML, XML, TOML, MessagePack — all from the same annotated struct. Factor format-specific syntax into a policy object, share the reflection walk, ship N formats for the cost of one."
+draft: false
+discussion: https://github.com/wrocpp/wrocpp.github.io/discussions/52
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+Through posts 8-10 we grew `reflect_json`: a serializer driven by reflection + annotations. The reflection walk was specific to JSON. It knew about braces, quotes, and commas. That's not fundamental. The reflection walk (visit each non-skipped member, apply the annotation-derived key, emit the value) is the *structural* part. "What braces look like" is a *lexical* decision that can be swapped.
+
+If we factor out the syntax and leave the walk in place, the same library serializes to JSON, YAML, XML, TOML, MessagePack, or anything else you can describe as key-value over structural recursion.
+
+Same `User` struct, three outputs:
+
+```
+--- JSON ---
+{"userName":"filip","id":42,"email":"filip@example.com","isAdmin":true,
+ "homeAddress":{"city":"Warsaw","postal_code":12345}}
+
+--- YAML ---
+userName: filip
+id: 42
+email: filip@example.com
+isAdmin: true
+homeAddress: 
+  city: Warsaw
+  postal_code: 12345
+
+--- XML ---
+<userName>filip</userName><id>42</id><email>filip@example.com</email>
+<isAdmin>true</isAdmin>
+<homeAddress><city>Warsaw</city><postal_code>12345</postal_code></homeAddress>
+```
+
+## The factoring
+
+Identify what changes between formats. For JSON / YAML / XML / TOML / MessagePack, it's a small list:
+
+- How an object opens and closes (`{}` vs. indentation vs. `<tag>` vs. nothing vs. length-prefix byte).
+- How fields are separated (`,` vs. newline vs. nothing vs. vtable byte).
+- How a key is rendered (`"k":` vs. `k: ` vs. `<k>` vs. `k = ` vs. varint-len).
+- How a leaf value is rendered (quoted-escaped vs. bare vs. tagged vs. typed-binary).
+- Whether there's a post-field hook (XML needs to close `</k>`).
+
+Seven methods. Collect them into a struct (a **format policy**) and pass it as the first template parameter to the serializer.
+
+## Three format policies
+
+```cpp
+struct json_format {
+    void begin_object(std::string& o)    { o += '{'; }
+    void end_object(std::string& o)      { o += '}'; }
+    void field_separator(std::string& o) { o += ','; }
+    void end_field(std::string&)         {}
+    void emit_key(std::string& o, std::string_view k) {
+        o += '"'; o += k; o += "\":";
+    }
+    void emit_string(std::string& o, std::string_view v) { o += '"'; o += v; o += '"'; }
+    void emit_bool  (std::string& o, bool v)             { o += v ? "true" : "false"; }
+    template <typename N> void emit_number(std::string& o, N v) { o += std::to_string(v); }
+};
+
+struct yaml_format {
+    int depth = 0;
+    void begin_object(std::string& o) {
+        if (depth > 0) o += '\n';
+        ++depth;
+    }
+    void end_object(std::string&)        { --depth; }
+    void field_separator(std::string& o) { o += '\n'; }
+    void end_field(std::string&)         {}
+    void emit_key(std::string& o, std::string_view k) {
+        for (int i = 0; i < depth - 1; ++i) o += "  ";
+        o += k; o += ": ";
+    }
+    void emit_string(std::string& o, std::string_view v) { o += v; }
+    void emit_bool  (std::string& o, bool v)             { o += v ? "true" : "false"; }
+    template <typename N> void emit_number(std::string& o, N v) { o += std::to_string(v); }
+};
+
+struct xml_format {
+    std::vector<std::string_view> tags;
+    void begin_object(std::string&)      {}
+    void end_object(std::string&)        {}
+    void field_separator(std::string&)   {}
+    void end_field(std::string& o) {
+        o += "</"; o += tags.back(); o += '>';
+        tags.pop_back();
+    }
+    void emit_key(std::string& o, std::string_view k) {
+        tags.push_back(k);
+        o += '<'; o += k; o += '>';
+    }
+    void emit_string(std::string& o, std::string_view v) { o += v; }
+    void emit_bool  (std::string& o, bool v)             { o += v ? "true" : "false"; }
+    template <typename N> void emit_number(std::string& o, N v) { o += std::to_string(v); }
+};
+```
+
+Each is stateful where needed (YAML has `depth`, XML has a tag stack) and stateless where not (JSON). The contract is simple; compliance is easy.
+
+## The format-agnostic core
+
+```cpp
+template <typename F, typename T>
+void serialize_to(F& fmt, std::string& out, T const& obj);
+
+template <typename F, typename V>
+void emit_value(F& fmt, std::string& out, V const& v) {
+    if constexpr (std::is_same_v<V, bool>)                       fmt.emit_bool(out, v);
+    else if constexpr (std::is_arithmetic_v<V>)                  fmt.emit_number(out, v);
+    else if constexpr (std::is_convertible_v<V, std::string_view>) fmt.emit_string(out, v);
+    else                                                          serialize_to(fmt, out, v);
+}
+
+template <typename F, typename T>
+void serialize_to(F& fmt, std::string& out, T const& obj) {
+    fmt.begin_object(out);
+    bool first = true;
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    template for (constexpr auto m
+                  : std::define_static_array(
+                      std::meta::nonstatic_data_members_of(^^T, ctx))) {
+        if constexpr (!std::meta::annotation_of_type<skip>(m).has_value()) {
+            if (!first) fmt.field_separator(out);
+            first = false;
+            fmt.emit_key(out, key_of<m>());
+            emit_value(fmt, out, obj.[: m :]);
+            fmt.end_field(out);
+        }
+    }
+    fmt.end_object(out);
+}
+```
+
+The same `template for` from post 8, the same `key_of<m>()` from post 9. The format is the new axis.
+
+## TOML in 20 lines
+
+Adding a new format is one small struct:
+
+```cpp
+struct toml_format {
+    std::string section_path;
+    void begin_object(std::string& o) {
+        if (!section_path.empty()) {
+            o += "["; o += section_path; o += "]\n";
+        }
+    }
+    void end_object(std::string&) {}
+    void field_separator(std::string& o) { o += '\n'; }
+    void end_field(std::string&) {}
+    void emit_key(std::string& o, std::string_view k) { o += k; o += " = "; }
+    void emit_string(std::string& o, std::string_view v) { o += '"'; o += v; o += '"'; }
+    void emit_bool  (std::string& o, bool v)             { o += v ? "true" : "false"; }
+    template <typename N> void emit_number(std::string& o, N v) { o += std::to_string(v); }
+};
+```
+
+Nested tables need a small addition (tracking section path across recursive calls), but the shape doesn't change.
+
+## MessagePack (binary output)
+
+Binary formats drop in too:
+
+```cpp
+struct msgpack_format {
+    void begin_object(std::vector<std::uint8_t>& o, std::size_t n) {
+        o.push_back(0x80 | static_cast<std::uint8_t>(n));  // fixmap tag
+    }
+    void emit_key(std::vector<std::uint8_t>& o, std::string_view k) {
+        o.push_back(0xa0 | static_cast<std::uint8_t>(k.size()));  // fixstr tag
+        o.insert(o.end(), k.begin(), k.end());
+    }
+    /* ... emit_bool/number/string writing MsgPack bytes ... */
+};
+```
+
+Two extensions to the engine to make binary work:
+
+1. Output buffer is a template parameter: `std::string` for text formats, `std::vector<uint8_t>` for binary.
+2. `begin_object` receives the field count: MessagePack's map header prefixes with size. A `consteval` helper counts surviving (non-skipped) members before the walk.
+
+Same reflection walk. Different buffer type. Same ~100-line engine.
+
+## Per format, what changes
+
+| Format | State carried | Unique pattern | Output type |
+|---|---|---|---|
+| JSON | none | braces + commas + quoted keys | `std::string` |
+| YAML | `int depth` | newline + per-depth indent | `std::string` |
+| XML | `vector<string_view>` tag stack | open-tag / close-tag pairing | `std::string` |
+| TOML | section path | flat keys + `[section]` headers | `std::string` |
+| MessagePack | field count | length-prefixed bytes | `std::vector<uint8_t>` |
+| Protobuf wire format | field numbers via annotation | tag/length/value | `std::vector<uint8_t>` |
+
+The columns that change are narrow. Reflection walk is stable across all of them.
+
+## What you ship
+
+`reflect_serial/` as a single header-only library:
+- The engine (~80 lines).
+- Five format policies (~20 lines each).
+- The annotation vocabulary (~50 lines, shared across formats).
+- A dozen helpers (case conversion, string escapes, etc).
+
+Total: ~300 lines. Handles five formats. Compare to the equivalent in C++ today: nlohmann/json + yaml-cpp + pugixml + toml11 + msgpack-c. Five separate libraries, each tens of thousands of lines, with disjoint annotation conventions.
+
+## Cross-language angle
+
+| Language | One model, many formats |
+|---|---|
+| **Rust serde** | Separate crates (`serde_json`, `serde_yaml`, `serde_toml`, `rmp_serde`). Each implements the `Serializer` trait. `#[derive(Serialize)]` dispatches per linked serializer. |
+| **Jackson (Java)** | `ObjectMapper`, `YAMLMapper`, `XmlMapper`, `CBORMapper`. Same annotated classes; swap the mapper. Runtime polymorphism. |
+| **.NET** | JSON only in `System.Text.Json`. YAML/XML via separate libraries with their own attribute dialects. No unified model. |
+| **Go** | `encoding/json`, `encoding/xml`, `gopkg.in/yaml.v3`. Each reads struct tags. Tags must be duplicated per format. |
+| **Python** | Pydantic for JSON+dicts, third-party for YAML/TOML. |
+| **C++26** | One policy struct per format. Shared reflection walk. Annotations apply across formats. |
+
+C++ lands at serde's and Jackson's architectural outcome (polymorphic over a serializer) with the whole dispatch resolved at compile time. Output is the codegen of a hand-written serializer, per format.
+
+## Try it
+
+```cpp
+User u{"filip", 42, "filip@example.com", "hash", true, {"Warsaw", 12345}};
+std::println("{}", rserial::to_json(u));
+std::println("{}", rserial::to_yaml(u));
+std::println("{}", rserial::to_xml(u));
+```
+
+<GodboltEmbed id="vPrq7n3on" title="One struct → JSON, YAML, XML" />
+
+## Arc 4: CLI parsing, ORM, and dependency injection
+
+Arc 3 ends. Arc 4 starts: CLI parsing (the clap-derive port), a tiny ORM, autowired dependency injection, auto-mocks.
+
+- [Post 12 — Clap for C++](/posts/clap-for-cpp/): struct → typed command-line parser.
+- [Post 13 — A tiny ORM](/posts/tiny-orm/): struct → SQL.

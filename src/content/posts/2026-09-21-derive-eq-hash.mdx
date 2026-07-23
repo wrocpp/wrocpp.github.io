@@ -1,0 +1,201 @@
+---
+title: "Deriving equality, hashing, and ordering from structure"
+slug: "derive-eq-hash"
+pubDate: 2026-09-21
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 7
+audience: working-cpp
+tags: [reflection, cpp26, equality, hash, ordering]
+summary: "C++20 gave us `= default` for operator== and <=>. Reflection lets us do the same for hashing, plus go beyond default: include/exclude fields, custom combinators, and floating-point tolerances. All declarative."
+draft: false
+discussion: https://github.com/wrocpp/wrocpp.github.io/discussions/46
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+C++20 introduced defaulted comparison:
+
+```cpp
+struct Point { int x; int y;  bool operator==(Point const&) const = default; };
+```
+
+That's two-thirds of what you need. The missing third is **hashing**. `std::hash<Point>` still requires a manual specialisation. And when you need non-default behaviour (skip a field, compare a `double` within epsilon, normalise a string before hashing), `= default` doesn't help.
+
+Reflection fills the gap. One header (`reflect_eq`) handles defaulted hashing for any aggregate, plus opt-in annotations for per-field customisation.
+
+## The core: structural hash
+
+```cpp
+#include <experimental/meta>
+#include <cstddef>
+#include <functional>
+
+namespace req {
+
+template <typename T>
+constexpr std::size_t hash_combine(std::size_t seed, T const& v) {
+    seed ^= std::hash<T>{}(v) + 0x9e3779b97f4a7c15ULL +
+            (seed << 12) + (seed >> 4);
+    return seed;
+}
+
+template <typename T>
+struct aggregate_hash {
+    constexpr std::size_t operator()(T const& obj) const {
+        std::size_t h = 0;
+        constexpr auto ctx = std::meta::access_context::unchecked();
+        template for (constexpr auto m
+                      : std::define_static_array(
+                          std::meta::nonstatic_data_members_of(^^T, ctx))) {
+            h = hash_combine(h, obj.[: m :]);
+        }
+        return h;
+    }
+};
+
+}  // namespace req
+```
+
+Plug into `std::hash`:
+
+```cpp
+template <typename T>
+    requires std::is_aggregate_v<T>
+struct std::hash<T> : req::aggregate_hash<T> {};
+```
+
+That single partial specialisation makes every aggregate hashable. `std::unordered_map<Point, int>` just works.
+
+## Ordering, too
+
+`<=>` handles ordering. For aggregates you can `= default` it, and reflection lets us do the same without writing it on every struct:
+
+```cpp
+template <typename T>
+    requires std::is_aggregate_v<T>
+constexpr auto operator<=>(T const& a, T const& b) {
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    template for (constexpr auto m
+                  : std::define_static_array(
+                      std::meta::nonstatic_data_members_of(^^T, ctx))) {
+        if (auto cmp = a.[: m :] <=> b.[: m :]; cmp != 0) return cmp;
+    }
+    return std::strong_ordering::equal;
+}
+```
+
+Lexicographic comparison in member declaration order. Same behaviour as `= default`, but you get it for every aggregate at once via a single operator template.
+
+Warning: this global `operator<=>` will conflict with `= default` on any struct that also defaults comparison. In practice you'd put it in a namespace or guard with a concept that excludes types whose `<=>` is already defined. For the blog-post demo, the global form is fine.
+
+## Opt-in annotations
+
+Sometimes the defaults are wrong. Three common cases:
+
+### Skip a field
+
+The `password_hash` field on a `User` shouldn't participate in equality. Annotate:
+
+```cpp
+struct skip_eq {};
+
+struct User {
+    std::string name;
+    int age;
+    [[=req::skip_eq{}]] std::string password_hash;
+    [[=req::skip_eq{}]] std::chrono::system_clock::time_point last_seen;
+};
+```
+
+The hash walker tests `annotation_of_type<skip_eq>(m)` with `if constexpr` and skips annotated fields:
+
+```cpp
+template for (constexpr auto m : members) {
+    if constexpr (!std::meta::annotation_of_type<skip_eq>(m).has_value()) {
+        h = hash_combine(h, obj.[: m :]);
+    }
+}
+```
+
+Fields tagged `skip_eq` contribute nothing to the hash. Two `User`s with the same `{name, age}` but different `password_hash` hash equally.
+
+### Float comparison with epsilon
+
+```cpp
+struct approx {
+    double epsilon;
+    constexpr bool operator==(approx const&) const = default;
+};
+
+struct Rectangle {
+    [[=req::approx{1e-9}]] double width;
+    [[=req::approx{1e-9}]] double height;
+};
+```
+
+During `<=>`, if a field has `approx`, emit `std::abs(a - b) < eps` instead of exact equality.
+
+### Custom key derivation
+
+```cpp
+struct hash_as {
+    /* a consteval function reflection that transforms the field before hashing */
+    std::meta::info transform;
+};
+
+struct EmailAddress {
+    [[=req::hash_as{^^to_lower}]] std::string address;
+};
+
+// Now two EmailAddress differing only in case hash to the same bucket.
+```
+
+Implementation detail: inside the `template for`, `if constexpr (has<hash_as>(m))` → splice the annotation's `transform` as a function call: `hash_combine(h, [:a.transform:](obj.[:m:]))`. (That splice in call position is one of the more acrobatic but surprisingly clean things P2996 lets you do.)
+
+## Comparison with hand-written
+
+Hand-written `std::hash<Point>`:
+
+```cpp
+template <> struct std::hash<Point> {
+    std::size_t operator()(Point const& p) const noexcept {
+        std::size_t h = std::hash<int>{}(p.x);
+        h ^= std::hash<int>{}(p.y) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        return h;
+    }
+};
+```
+
+Reflection version: zero bytes of per-type code. Opt out when you need custom logic; default is correct.
+
+## Runtime cost
+
+Each struct hash becomes an unrolled sequence of `hash_combine` calls. For a struct with N fields, that's N hash-of-field calls plus N seed updates. Identical to what you'd hand-write. No reflection cost at runtime; the `template for` is unrolled before codegen.
+
+<GodboltEmbed id="43WMPKPMq" title="Derived hash + ordering from structure" />
+
+## When not to use this
+
+- **Huge structs.** The unroll is linear in field count. At ~100 fields the compile time cost grows. Use runtime iteration for wide structs.
+- **Types with invariants.** If only some combinations of field values are valid, structural comparison may produce surprising results. Two "equal" objects can be in different logical states. Hand-written comparators encode intent.
+
+## The `reflect_print` → `reflect_eq` → `reflect_json` family
+
+By [post 7], we've built three utilities from the same walker pattern:
+
+- `reflect_print` (posts 5, 6): enum names + `std::formatter` for aggregates.
+- `reflect_eq` (post 7): hashing, equality, ordering.
+- `reflect_json` (post 8+): serialization.
+
+Every one of them is "walk members, do X." The walker is ~10 lines of reflection. The X is the library.
+
+## Arc 3: serialization as a first-class library
+
+Arc 3 starts: serialization as a first-class library.
+
+- **[Post 8: A 40-line JSON serializer](/posts/json-naive/)**. The naive version, complete and testable.
+- **[Post 9: Annotations](/posts/annotations/)**. Per-field renames, skips, case conversion.
+- **[Post 10: Deserialization + `std::expected`](/posts/json-deserialize/)**. The inverse.
