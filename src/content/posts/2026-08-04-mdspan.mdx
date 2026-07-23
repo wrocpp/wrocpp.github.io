@@ -1,0 +1,37 @@
+---
+title: "std::mdspan views one flat buffer as a matrix"
+slug: "mdspan"
+pubDate: 2026-08-04
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, cpp23, mdspan, stdlib, arrays, performance]
+summary: "std::mdspan is C++23's non-owning multidimensional view. It separates storage (a flat buffer you already have) from shape (extents) from indexing (a layout), so one std::vector becomes a 3x4 matrix with real m[r, c] indexing and no copy. GCC 16.1 ships it, and Mark Hoemmen's C++Now 2026 keynote is on where it and standard parallelism go next."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+C++ programs have always stored matrices, images, and grids in a flat one-dimensional buffer and done the index arithmetic by hand: `data[r * cols + c]`. It works, it is fast, and it is a steady source of off-by-one and row-versus-column-major bugs. **`std::mdspan`** (C++23, P0009) is the standard fix: a non-owning view that wraps the flat buffer you already have and gives it a shape.
+
+The design is three separable pieces. **Storage** is your contiguous array, owned by whatever already owns it. **Extents** are the shape, any mix of compile-time and runtime dimensions. A **layout** maps multidimensional indices to offsets (row-major by default, column-major and strided are built in). `mdspan` owns none of the data and adds no allocation; it is `span` with more than one dimension.
+
+<GodboltEmbed id="x5de56TeP" gccOnly title="One std::vector, viewed as a 3x4 matrix with m[r, c] indexing" gcc_subtitle="x86-64 GCC 16.1 · -std=c++23 · runs live" />
+
+The demo takes a `std::vector<int>` of twelve elements and views it as three rows of four. The indexing uses C++23's real multidimensional subscript, `m[r, c]`, not a workaround:
+
+```
+shape: 3 x 4
+  0  1  2  3
+  4  5  6  7
+  8  9 10 11
+```
+
+No copy happened, and the vector still owns its storage. Change the extents to view the same buffer as 4x3, or hand the `mdspan` to a function that neither knows nor cares how the memory was allocated.
+
+That last point is why it matters beyond convenience. `mdspan` is the lingua franca the numerical parts of the standard library are being built around: it is how you hand a slice of a tensor to a BLAS-style routine without committing to a container. Mark Hoemmen, one of its authors, gave the "Multidimensional Parallel Standard C++" keynote at C++Now 2026 (videos now public) on exactly that direction, `mdspan` plus the parallel algorithms as the standard's answer for array-heavy and GPU-adjacent code. GCC 16.1's libstdc++ ships `mdspan` today, so the everyday half of that story runs in the browser above.
+
+---
+
+**Sources**: [cppreference: std::mdspan](https://en.cppreference.com/w/cpp/container/mdspan) · [P0009 "mdspan"](https://wg21.link/p0009) · Mark Hoemmen, "Multidimensional Parallel Standard C++" (C++Now 2026).
