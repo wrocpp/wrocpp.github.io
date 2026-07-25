@@ -1,0 +1,78 @@
+---
+title: "You can see the dependency chain without running anything"
+slug: "verification-asm-llvm-mca"
+pubDate: 2026-08-22
+author: filip-sajdak
+language: en
+kind: flagship
+audience: working-cpp
+series: verification
+series_order: 4
+tags: [performance, assembly, llvm-mca, optimization, verification, cpp, series]
+summary: "Before reaching for a profiler, read what the compiler already produced. Two loops that add the same floats compile to eight adds into one register versus four independent accumulators, and llvm-mca will predict the throughput difference from that assembly without executing a single instruction. Episode 4 of the verification series."
+draft: false
+relatedPosts: [google-benchmark-on-ce, final-devirtualization]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+[Google Benchmark](/posts/google-benchmark-on-ce/) tells you that one version is faster than another. It does not tell you why, and it cannot tell you what the ceiling is. Two things answer that, and neither requires running the program: read the assembly the compiler already generated, then let a machine model score it.
+
+The demo is two functions that add the same `n` floats. One uses a single accumulator; the other keeps four and combines them at the end.
+
+<GodboltEmbed id="z93KEYn44" gccOnly title="Assembly plus llvm-mca: one dependency chain against four" gcc_subtitle="x86-64 GCC 16.1 · -O3 -march=x86-64-v3 · asm + llvm-mca panes" />
+
+## What the assembly says
+
+Look at the inner loop of `sum_serial`. GCC unrolled it eight times, which looks like an optimization:
+
+```asm
+.L4:
+  vaddss xmm0, xmm0, DWORD PTR [rax]
+  vaddss xmm0, xmm0, DWORD PTR [rax-28]
+  vaddss xmm0, xmm0, DWORD PTR [rax-24]
+  vaddss xmm0, xmm0, DWORD PTR [rax-20]
+  ...
+```
+
+Every one of those eight adds writes `xmm0`, and every one reads the `xmm0` the previous add produced. Unrolling changed the loop overhead and nothing else: the adds still form a single serial chain, so the loop runs at the *latency* of one `vaddss` per element, roughly four cycles each on a modern core, no matter how many add units the machine has idle.
+
+Now `sum_unrolled`:
+
+```asm
+.L13:
+  vaddss xmm0, xmm0, DWORD PTR [rax]
+  vaddss xmm2, xmm2, DWORD PTR [rax+8]
+  vaddss xmm3, xmm3, DWORD PTR [rax-124]
+  vaddss xmm1, xmm1, DWORD PTR [rax-116]
+  ...
+```
+
+Four registers, `xmm0` through `xmm3`, four independent chains interleaved. Nothing waits for anything else, so the loop becomes bound by how many adds the CPU can *issue* rather than how long one takes. That is the entire difference, and it is visible without a profiler, without a benchmark, and without a single instruction being executed.
+
+The reason you had to write it by hand is in the source: floating-point addition is not associative, so the compiler may not regroup your adds without `-ffast-math`. It will happily unroll, because unrolling preserves the order. It will not break the chain, because that would change the result.
+
+## What llvm-mca adds
+
+The third pane is [llvm-mca](https://llvm.org/docs/CommandGuide/llvm-mca.html), LLVM's machine-code analyzer. It takes assembly, simulates it against a model of a specific CPU's pipeline, and reports what it would cost:
+
+```
+Iterations:        100
+Total Cycles:      7398
+Dispatch Width:    4
+uOps Per Cycle:    3.22
+IPC:               2.34
+Block RThroughput: 60.0
+```
+
+It also prints, per instruction, the micro-op count, latency, and reciprocal throughput, plus which execution ports each one can use. When a loop is slower than you expect, that table usually shows why: everything is competing for one port, or the critical path is longer than the instruction count suggests.
+
+Two honest caveats. It analyses whatever assembly is in the pane, so for a focused comparison you want `LLVM-MCA-BEGIN` and `LLVM-MCA-END` markers around the region of interest rather than a whole translation unit. And it is a *model*: it knows the pipeline but not your cache behaviour, branch mispredictions, or memory pressure. It answers "what does this code cost the front end and the execution units", which is often the question, but never assume it replaces a measurement.
+
+## Where this sits
+
+This is the cheapest rung on the performance ladder and the one most often skipped. Read the assembly first: it is free, it is exact about what the compiler actually did, and it frequently answers the question outright, as it does here. Use llvm-mca when you need a number rather than an intuition. Use a benchmark when you need to know whether a change helped. Use a profiler, the subject of the last episode, when you do not yet know where to look.
+
+---
+
+**Sources**: [llvm-mca documentation](https://llvm.org/docs/CommandGuide/llvm-mca.html) · [Agner Fog's instruction tables](https://www.agner.org/optimize/) for the underlying latency and throughput data.
