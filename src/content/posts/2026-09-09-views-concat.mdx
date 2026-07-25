@@ -1,0 +1,48 @@
+---
+title: "views::concat iterates several containers as one range"
+slug: "views-concat"
+pubDate: 2026-09-09
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, cpp26, ranges, stdlib, views]
+summary: "C++26 adds std::views::concat, a view that presents several ranges as a single sequence without copying any of them. The containers can be different types holding the same elements, the result composes with every other adaptor, and GCC 16.1 ships it today."
+draft: false
+relatedPosts: [ranges-views-wave, flat-map]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+Iterating several containers as if they were one is an ordinary need with no good answer before C++26. You either copied everything into a scratch `vector`, which allocates and duplicates the data, or you wrote the loop three times, or you built a nest of iterators by hand. None of it composed with the rest of `<ranges>`.
+
+**`std::views::concat`** (P2542) is the missing adaptor. It presents any number of ranges as a single sequence, borrowing rather than copying:
+
+<GodboltEmbed id="d5Tvbq9ff" gccOnly title="One view over a vector, an array, and another vector" gcc_subtitle="x86-64 GCC 16.1 · -std=c++26 · runs live" />
+
+The demo concatenates a `std::vector<int>`, a `std::array<int, 2>`, and another `vector`, then pipes the result through `transform`:
+
+```
+concat  : [1, 2, 3, 4, 5, 6]
+size    : 6
+doubled : [2, 4, 6, 8, 10, 12]
+```
+
+The three containers keep their own storage and their own types. Nothing was copied to produce the joined view, and the result is a range like any other, so it feeds straight into `transform`, `filter`, or a range-based `for`.
+
+## How it differs from join
+
+The two are easy to confuse and do different jobs:
+
+- **`views::join`** flattens a range *of ranges*: one container whose elements are themselves containers, all of the same type.
+- **`views::concat`** takes several ranges *as separate arguments*, and they may be different types as long as their elements share a common reference type.
+
+That last part is what makes `concat` useful for real code. A `vector` and an `array` and a `span` are unrelated types; `join` cannot help you, because you cannot put them in one container without erasing something. `concat` takes them as they are.
+
+The view is as capable as its weakest input: random access and sizing survive if every input supports them, which is why `std::ranges::size` works in the demo. Feed it an input range and the result degrades accordingly, in the usual `<ranges>` way.
+
+The typical use is exactly what it looks like: iterate a default set followed by user overrides, walk several buckets in order, or run one algorithm across a header and a body without merging them into a temporary first. It arrives alongside a [wider batch of new views](/posts/ranges-views-wave/) still working through the committee, but this one is standardised and shipping.
+
+---
+
+**Sources**: [P2542 "views::concat"](https://wg21.link/p2542) · [cppreference: std::ranges::concat_view](https://en.cppreference.com/w/cpp/ranges/concat_view).
