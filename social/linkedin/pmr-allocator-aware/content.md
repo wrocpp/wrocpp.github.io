@@ -4,7 +4,7 @@ template: social/linkedin-post
 
 ::::post{type=insight theme=dark logo=top-left}
 
-:::insight{citation="wro.cpp -- 2026-09-05"}
+:::insight{citation="wro.cpp -- 2026-09-23"}
 # Every constructor needs a secret twin
 To put a pmr member in your own type and honor the arena, every constructor grows an allocator argument. That is uses-allocator construction.
 :::
