@@ -1,0 +1,48 @@
+---
+title: "Converting between std::function and copyable_function nests them"
+slug: "function-wrapper-explosion"
+pubDate: 2026-08-10
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, cpp26, performance, stdlib, functional]
+summary: "std::function and std::copyable_function are both type-erased callable wrappers and neither recognises the other. Converting between them does not unwrap and rewrap the lambda inside; it wraps the whole previous wrapper. Round-trip in a loop and every call walks a chain of indirections. In this run, 200 round trips made the same calls several hundred times slower."
+draft: false
+relatedPosts: [function-ref, verification-profilers]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+C++ now has a small family of type-erased callable wrappers. `std::function` (C++11) copies. `std::move_only_function` (C++23) does not. `std::copyable_function` (C++23) is the fixed-up copyable one, with the const-correctness `std::function` got wrong. [`std::function_ref`](/posts/function-ref/) (C++26) borrows instead of owning.
+
+Having four is defensible. The trap is what happens at the boundary between two of them, and it is not obvious from any of their documentation.
+
+**None of these wrappers recognises any of the others.** When you convert a `std::function` into a `std::copyable_function`, the target type does not look inside to find the original lambda and re-erase it. It sees an arbitrary callable object that happens to be a `std::function`, and it stores a copy of that whole wrapper. Convert back and you wrap the wrapper. Do it in a loop and you have built a linked list, with one layer of indirection per conversion, all of it invisible in the type, which stays `std::function<int(int)>` throughout.
+
+<GodboltEmbed id="14YYba39v" gccOnly title="200 round trips, and the same calls take hundreds of times longer" gcc_subtitle="x86-64 GCC 16.1 · -std=c++26 -O2 · runs live" />
+
+The demo times ten thousand calls through a fresh `std::function`, then does 200 round trips through `std::copyable_function` and times the identical calls again:
+
+```
+10k calls before : 19 us
+10k calls after  : 8889 us
+slowdown         : 467x
+```
+
+Timings vary between runs on shared infrastructure, so treat the exact multiplier as one representative run rather than a benchmark. The shape is the point: the cost grows with the number of conversions, and it is unbounded. Nothing warns, nothing in the type changes, and the checksums match, so the code stays correct while getting arbitrarily slower.
+
+## Where this actually happens
+
+Nobody writes a 200-iteration conversion loop. The realistic version is architectural: a callback that crosses several layers, where each layer has its own opinion about which wrapper to use. The handler is stored as `std::function` in one subsystem, passed to another that standardised on `copyable_function`, registered back into a third. Three conversions per registration is nothing. Three conversions per registration inside a loop that re-registers on every frame, or per request, is a leak of indirection that grows for as long as the process runs.
+
+Two rules avoid it entirely:
+
+- **Pick one owning wrapper per codebase** and put it in the interfaces that cross module boundaries. Which one matters less than the consistency.
+- **Take callbacks by [`std::function_ref`](/posts/function-ref/)** when you only invoke and do not store. There is nothing to convert, nothing to own, and no wrapper to nest.
+
+If you suspect you already have this, it is easy to confirm: time the invocation, not the setup. A callable that gets slower over the life of the process, with no change in what it does, is this bug.
+
+---
+
+**Sources**: Arthur O'Dwyer, ["Interconverting `std::function` with `copyable_function`"](https://quuxplusone.github.io/blog/2026/07/26/function-explosion/) · [cppreference: std::copyable_function](https://en.cppreference.com/w/cpp/utility/functional/copyable_function).

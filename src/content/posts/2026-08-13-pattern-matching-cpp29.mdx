@@ -1,0 +1,59 @@
+---
+title: "Pattern matching did not make C++26"
+slug: "pattern-matching-cpp29"
+pubDate: 2026-08-13
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, cpp26, cpp29, pattern-matching, wg21]
+summary: "Enough people assumed pattern matching shipped in C++26 that it is worth stating plainly: it did not. P2688 missed the feature freeze and is now aimed at C++29, no shipping compiler implements it, and until then std::visit with an overload set remains the idiom. Here is what the proposal would actually give you."
+draft: false
+relatedPosts: [ranges-views-wave, wg21-2026-07-mailing]
+---
+
+C++26 is a large release. Reflection, contracts, `std::execution`, `std::simd`, hardened library modes: enough landed that it is easy to assume anything long-discussed made it in. Pattern matching is the one people most often get wrong.
+
+**It did not ship in C++26.** P2688 missed the feature freeze, and the work now targets **C++29**.
+
+There is no compiler you can try it on either. No shipping GCC or Clang exposes a flag for it, and it is not hiding behind an experimental switch, so unlike reflection (which you can run on GCC 16.1 today) there is nothing to link to. That is the honest state of it, and worth saying because "coming in C++26" has been repeated in enough conference talks and blog comments to become received wisdom.
+
+## What the proposal would give you
+
+The syntax has changed across revisions, so treat this as the shape rather than the final spelling. The idea is an expression that inspects a value's structure and binds parts of it in one construct:
+
+```cpp
+// Illustrative, not currently valid in any compiler.
+auto area = shape match {
+    Circle    { r }       => 3.14159 * r * r;
+    Rectangle { w, h }    => w * h;
+    _                     => 0.0;
+};
+```
+
+Three things make that better than a chain of `if constexpr` or a visitor:
+
+- **It is an expression**, so it produces a value rather than assigning into one declared earlier.
+- **Destructuring is built in**: the alternative you matched and the members you need come out together, without a second step.
+- **Exhaustiveness can be checked**, so adding a new alternative to a variant makes the compiler point at the matches that no longer cover everything, which is the single biggest practical win.
+
+## What to write today
+
+`std::visit` with an overload set remains the idiom, and C++23's deducing-this made building that overload set less awkward:
+
+```cpp
+template <class... Ts> struct overload : Ts... { using Ts::operator()...; };
+
+double area = std::visit(overload{
+    [](const Circle& c)    { return 3.14159 * c.r * c.r; },
+    [](const Rectangle& r) { return r.w * r.h; },
+}, shape);
+```
+
+That is more ceremony and it gives you the exhaustiveness check, since `std::visit` fails to compile when a handler is missing. What it does not give you is destructuring, or the ability to match on values and structure at once.
+
+Pattern matching is a genuinely large feature and the committee has taken its time for defensible reasons. C++29 is the target, the Búzios meeting in November opens the next working cycle, and none of that helps you this quarter. Write the visitor.
+
+---
+
+**Sources**: [P2688 "Pattern Matching: `match` Expression"](https://wg21.link/p2688) · the [C++26 feature list](https://en.cppreference.com/w/cpp/26) for what did land.

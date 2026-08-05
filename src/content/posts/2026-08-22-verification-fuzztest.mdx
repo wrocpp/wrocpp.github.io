@@ -1,0 +1,97 @@
+---
+title: "The same assertion, as a unit test and as a fuzzer"
+slug: "verification-fuzztest"
+pubDate: 2026-08-22
+author: filip-sajdak
+language: en
+kind: flagship
+audience: working-cpp
+series: verification
+series_order: 2
+tags: [testing, fuzzing, fuzztest, property-based, verification, cpp, series]
+summary: "Google FuzzTest lets one assertion serve as both a bounded property test that runs with your normal suite and a coverage-guided fuzzer you invoke on demand. Written against a deliberately buggy encoder, it found the counterexample without being asked to fuzz at all, and printed a regression test to paste back."
+draft: false
+relatedPosts: [verification-unit-tests-live, sanitizers-on-ce]
+---
+
+The unit test from [episode 1](/posts/verification-unit-tests-live/) has a hard limit: it only ever checks the cases you thought to write down. Fuzzing checks the ones you did not, and for most teams it stays a specialist activity, a separate target, a separate build, a separate job nobody owns.
+
+**Google FuzzTest** collapses that distinction. You write a *property*, a statement that should hold for every input, and the same code serves as two tools: a bounded randomized test that runs as part of the ordinary suite, and a coverage-guided fuzzer when you pass `--fuzz`.
+
+Here is the whole idea. An ordinary test, and the same assertion generalized:
+
+```cpp
+// An ordinary unit test. It passes, and proves nothing about the general case.
+TEST(RleTest, RoundTripsASimpleString) {
+    EXPECT_EQ(Decode(Encode("aabbb")), "aabbb");
+}
+
+// The same assertion as a property, over every string rather than one.
+void RoundTripsAnyString(const std::string& s) {
+    EXPECT_EQ(Decode(Encode(s)), s);
+}
+FUZZ_TEST(RleTest, RoundTripsAnyString);
+```
+
+The encoder under test is a run-length encoder with a planted bug: it writes the run length as a single character, so any run of ten or more identical bytes does not survive the round trip. It is exactly the kind of bug that passes review, because the example everyone tries has short runs.
+
+## It found the bug without being asked to fuzz
+
+This is the part worth dwelling on. Running the binary normally, no `--fuzz` flag, no fuzzing job, just the test suite:
+
+```
+[  FAILED  ] RleTest.RoundTripsAnyString (1006 ms)
+[==========] 2 tests from 1 test suite ran. (1007 ms total)
+[  PASSED  ] 1 test.
+[  FAILED  ] 1 test, listed below:
+[  FAILED  ] RleTest.RoundTripsAnyString
+
+ 1 FAILED TEST
+```
+
+One second of bounded random inputs, as part of the normal run, and the hand-written test passed while the property failed. You do not need to adopt fuzzing as a practice to get value here. You need to write the assertion as a property instead of an example, and the bug surfaces in CI like any other failure.
+
+Then FuzzTest prints a **regression test draft**, ready to paste back into the suite so the case is pinned forever:
+
+```cpp
+TEST(RleTest, RoundTripsAnyStringRegression) {
+  RoundTripsAnyString(
+    "\360\360\360\360\360\360\360\360\360\360\360\360..."   // one byte, repeated
+  );
+}
+```
+
+That counterexample is from the `--fuzz` run, and it is the clean statement of the bug: a single byte repeated far more than nine times. Fuzzing mode is where you send it when you want depth, a coverage-guided search that keeps mutating toward new code paths and runs until you stop it. Same assertion, more compute.
+
+## Domains, and how it relates to libFuzzer
+
+By default FuzzTest generates values from the parameter types. When you need more structure, you say so:
+
+```cpp
+FUZZ_TEST(MyTest, ParsesAnyPort).WithDomains(fuzztest::InRange(0, 65535));
+```
+
+Domains compose (`VectorOf`, `StructOf`, `Map`, `FlatMap`, `ElementOf`), so you can describe a valid-ish input space rather than pure noise, which is what makes property testing productive on real APIs.
+
+On lineage: libFuzzer has been in maintenance mode since late 2022, and its authors moved on to **Centipede**, the scalable out-of-process engine that now lives in the FuzzTest repository. FuzzTest is the recommended way to write new fuzz targets, and Centipede is what runs them at scale. Existing `LLVMFuzzerTestOneInput` targets keep working.
+
+The reason to care beyond your own codebase: OSS-Fuzz has found more than 13,000 vulnerabilities across roughly a thousand projects, and when Google added LLM-generated fuzz targets it turned up bugs the existing hand-written targets could not reach, including **CVE-2024-9143**, an out-of-bounds bug in OpenSSL that had survived twenty years and enormous amounts of fuzzing. The limit was never the compute. It was that nobody had written a target that reached that code.
+
+## Running it
+
+FuzzTest does not run on Compiler Explorer: it needs a multi-file build and a coverage-instrumented binary. The output above is from a real run in an Ubuntu 24.04 container with clang. The [demo source and its `CMakeLists.txt`](https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/61-verification-fuzztest/examples) are in the examples repo:
+
+```
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DFUZZTEST_FUZZING_MODE=on
+cmake --build build -j
+./build/fuzztest_demo                                     # unit mode
+./build/fuzztest_demo --fuzz=RleTest.RoundTripsAnyString  # fuzzing mode
+```
+
+If you want the same idea without adopting a new dependency, **rapidcheck** is the classic QuickCheck-style property library for C++ and integrates with GoogleTest, Catch2, and Boost.Test; its shrinking, which reduces a failing case to a minimal one, is its best feature.
+
+Next in the series: the checker for a promise the type system cannot express.
+
+---
+
+**Sources**: [Google FuzzTest](https://github.com/google/fuzztest) and its [Centipede engine](https://github.com/google/fuzztest/tree/main/centipede) · [OSS-Fuzz](https://github.com/google/oss-fuzz) · Google's write-up of [LLM-generated fuzz targets finding CVE-2024-9143](https://security.googleblog.com/2024/11/leveling-up-fuzzing-finding-more.html) · [rapidcheck](https://github.com/emil-e/rapidcheck).

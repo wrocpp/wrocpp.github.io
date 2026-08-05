@@ -1,0 +1,39 @@
+---
+title: "Chrome fixed 1,072 security bugs in two releases and 97% of its code is span-clean"
+slug: "chrome-spanification"
+pubDate: 2026-08-07
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, security, safety, span, chrome, cpp]
+summary: "Chrome 149 and 150 fixed more security bugs than the previous 23 milestones combined, and 97% of first-party Chrome code now compiles cleanly under strict unsafe-buffer warnings. The strategy is worth reading closely: harden C++ aggressively, migrate selectively, and admit openly that runtime mitigations are approaching diminishing returns."
+draft: false
+relatedPosts: [hardened-stdlib-turn-it-on, sanitizers-on-ce]
+---
+
+Google published a Chrome security update at the end of July with numbers large enough to be worth reporting on their own, and a strategy statement more candid than these posts usually are.
+
+The headline figure: **Chrome 149 and 150 together fixed 1,072 security bugs**, which is more than the previous **23 milestones combined**. A jump that size is not a sudden collapse in code quality; it is a change in how many bugs are being *found*, driven partly by AI-assisted discovery and partly by a vulnerability reward programme that by March 2026 had already taken in more reports than all of 2025.
+
+## Spanification, and the number that matters to C++ programmers
+
+For anyone writing C++, the number to take away is this: **97% of first-party Chrome code now compiles cleanly with strict unsafe-buffer warnings**.
+
+That is the outcome of a multi-year campaign Chromium calls *spanification*: replacing raw pointer-plus-length pairs with `std::span` (and Chromium's `base::span`), so that the length travels with the pointer and bounds can be checked. Clang's `-Wunsafe-buffer-usage` is what enforces it, flagging pointer arithmetic that the compiler cannot prove safe.
+
+[The hardened standard library](/posts/hardened-stdlib-turn-it-on/) rests on the same observation, applied here across a codebase of Chrome's size: a `span` knows how long it is, whereas two arguments that are supposed to agree do not. Getting to 97% took organisational persistence rather than any technical breakthrough, which is why most teams could copy it.
+
+Alongside it: **MiracleObject**, an expansion of Chrome's use-after-free mitigation aimed at neutralising up to 90% of UAF vulnerabilities on the GPU main thread, checked arithmetic on allocation sizes, and heap partitioning that separates pointer-containing objects from plain data.
+
+## The admission at the end
+
+The strategic sentence is the interesting one. Google writes that **runtime mitigations "will hit diminishing marginal returns within the next few years"**, because "runtime checks are inherently more expensive than compile-time guarantees."
+
+That is a fair summary of where C++ safety currently sits. Bounds checks, pointer poisoning and heap partitioning all cost something at runtime, and each new one buys less than the last. The response is not to abandon C++ (Chrome carries more than 2,300 third-party dependencies, roughly 1,700 of them shipped) but to pair the hardening with a centralised Rust SDK for the highest-risk surfaces: parsers, codecs, anything that eats untrusted bytes.
+
+Harden aggressively, migrate selectively, and say plainly which parts of the strategy have a ceiling. Whatever you make of the Rust half, the C++ half of that plan is available to every project today, and `-Wunsafe-buffer-usage` on a new module is a much smaller commitment than 97% of Chrome.
+
+---
+
+**Source**: Google, ["Chrome: stronger with every update"](https://blog.google/security/chrome-stronger-with-every-update/) (30 July 2026). Background: [Chromium's spanification effort](https://chromium.googlesource.com/chromium/src/+/main/docs/unsafe_buffers.md) and Clang's [`-Wunsafe-buffer-usage`](https://clang.llvm.org/docs/SafeBuffers.html).
