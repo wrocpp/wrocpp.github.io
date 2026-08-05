@@ -1,0 +1,49 @@
+---
+title: "std::indirect makes PImpl copyable without writing a copy constructor"
+slug: "std-indirect-pimpl"
+pubDate: 2026-08-09
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, cpp26, stdlib, pimpl, value-semantics]
+summary: "PImpl with unique_ptr costs you the special members: hand-written copy operations, a destructor defined where Impl is complete, and const that stops at the pointer. C++26's std::indirect is an indirect value instead of an owning pointer, so it copies deeply and propagates const, and all five special members can be defaulted. GCC 16.1 ships it."
+draft: false
+relatedPosts: [optional-ref, function-ref]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+The PImpl idiom hides a class's implementation behind a pointer so that changing the implementation does not force every translation unit that includes the header to recompile. The standard modern spelling uses `std::unique_ptr<Impl>`, and it works, at the cost of three irritations that have nothing to do with the idea:
+
+- **`unique_ptr` is move-only**, so a copyable class needs a hand-written copy constructor and copy assignment that allocate a new `Impl` and copy it.
+- **The destructor must be defined** in the translation unit where `Impl` is complete, so you declare `~Widget();` in the header and `Widget::~Widget() = default;` in the source, forever.
+- **`const` does not propagate.** In a `const` member function the pointer is const, not the pointee, so a `const` method can happily mutate the implementation and the compiler will not object.
+
+C++26 adds the type that removes all three: **`std::indirect<T>`** (P3019). It is not a smart pointer. It is an *indirect value*: the object it refers to is part of the value, so copying copies deeply, `const` propagates through, and it is never null except in the moved-from state.
+
+<GodboltEmbed id="o1robhz5h" gccOnly title="A copyable, const-correct PImpl with nothing hand-written" gcc_subtitle="x86-64 GCC 16.1 · -std=c++26 · runs live" />
+
+The demo copies a `Widget`, mutates the copy, and shows the original untouched:
+
+```
+a=7 b=99
+copyable and movable with nothing hand-written: true
+```
+
+There is no user-declared copy constructor, no copy assignment, no out-of-line destructor. All five special members are implicit, and `get() const` cannot modify the implementation because the constness reaches through.
+
+## The pair, and where the memory lives
+
+`std::indirect` comes with **`std::polymorphic<T>`** (also in GCC 16.1's libstdc++, `__cpp_lib_polymorphic`). The split is about what you need:
+
+- **`indirect<T>`** copies as `T`. Use it when the implementation type is known and fixed, which is the PImpl case.
+- **`polymorphic<T>`** copies the *dynamic* type through a base pointer, so a `polymorphic<Shape>` holding a `Circle` copies a `Circle`. That is the long-standing "value semantics for a class hierarchy" problem, solved without a hand-written `clone()` on every derived class.
+
+Both allocate, and both are allocator-aware, so a `std::pmr` arena works underneath them if allocation on the hot path is a concern. Neither gives you a small-object optimisation: `indirect` is an indirection by design, and if you wanted the object inline you did not want PImpl.
+
+The compile-time firewall behaves exactly as before: `Impl` stays incomplete in the header and callers still do not recompile when it changes. What goes away is the paperwork that used to come with it.
+
+---
+
+**Sources**: [P3019 "indirect and polymorphic"](https://wg21.link/p3019) · [cppreference: std::indirect](https://en.cppreference.com/w/cpp/memory/indirect) · Marius Bancila, ["The PImpl idiom and the C++26 std::indirect type"](https://mariusbancila.ro/blog/2026/07/23/the-pimpl-idiom-and-the-cpp26-stdindirect-type/).

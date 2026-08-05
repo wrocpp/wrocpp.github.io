@@ -1,0 +1,56 @@
+---
+title: "A real GoogleTest suite runs in your browser"
+slug: "verification-unit-tests-live"
+pubDate: 2026-08-21
+author: filip-sajdak
+language: en
+kind: flagship
+audience: working-cpp
+series: verification
+series_order: 1
+tags: [testing, googletest, tooling, verification, cpp, series]
+summary: "GoogleTest is a Compiler Explorer library, so a real test binary builds and runs in the browser and prints the familiar RUN/OK report. That makes a shareable link the cheapest possible way to settle an argument about behavior. Episode 1 of the verification series, on assembling a C++ setup that catches bugs before your users do."
+draft: false
+relatedPosts: [sanitizers-on-ce, google-benchmark-on-ce]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+We have already shown two pieces of a C++ verification setup running live in the browser: [the sanitizers](/posts/sanitizers-on-ce/) catching a heap overflow and a data race, and [Google Benchmark](/posts/google-benchmark-on-ce/) exposing a benchmark that measured an empty loop. This series assembles the rest of the setup, one layer at a time, from the cheapest and most universal outward.
+
+The bottom layer is the one everybody already has: unit tests.
+
+<GodboltEmbed id="er6vvz4bh" gccOnly title="A GoogleTest binary building and running on Compiler Explorer" gcc_subtitle="x86-64 GCC 16.1 · -std=c++17 -pthread · googletest · runs live" />
+
+That is a complete test binary. Add `googletest` from the libraries panel, turn on the execution pane, and Compiler Explorer builds and runs it on its servers:
+
+```
+[==========] Running 2 tests from 1 test suite.
+[ RUN      ] AddTest.HandlesPositive
+[       OK ] AddTest.HandlesPositive (0 ms)
+[ RUN      ] AddTest.HandlesNegative
+[       OK ] AddTest.HandlesNegative (0 ms)
+```
+
+## Why a link matters more than it sounds
+
+A test that only runs on your machine is an assertion about your machine. The interesting property of the demo above is not that `add` works, it is that the whole thing is a **URL**. When a colleague claims a function behaves a certain way, or a Stack Overflow answer disagrees with your intuition about overload resolution, you can settle it with a link that anyone can fork and modify. There is no toolchain to install and no repo to clone before the conversation can proceed.
+
+That also makes it a good teaching surface. `EXPECT_EQ` versus `ASSERT_EQ` (continue versus abort the current test), typed and parameterised tests, death tests: all of it runs in the same pane.
+
+## Choosing a framework, briefly
+
+The choice matters less than people argue about. All the mainstream options run on Compiler Explorer and all of them will serve you well:
+
+- **GoogleTest** is the default in most large codebases and the one FuzzTest builds on, which matters for the next episode. Version 1.17 requires C++17 or later; 1.16 was the last release supporting C++14.
+- **Catch2** v3 is no longer header-only (it is a compiled library now), and its `GENERATE` expressions give you a light form of property testing.
+- **doctest** is the fastest to compile and stays header-only, which makes it pleasant for small projects and for putting tests in the same file as the code.
+- **snitch** is the interesting newer entrant: C++20, no exceptions and no heap allocation required, Catch2-compatible macros. Worth knowing about if you work on embedded targets where the others do not fit.
+
+Pick one, and spend the energy you saved on the layers above it. A test suite tells you that the cases you thought of still work. It says nothing about the cases you did not think of, nothing about undefined behavior on the paths it does execute, and nothing about how fast any of it is.
+
+The rest of this series is about those gaps. Next: the same assertion you just wrote, turned into a fuzzer.
+
+---
+
+**Sources**: [GoogleTest](https://github.com/google/googletest) ([v1.17.0 release notes](https://github.com/google/googletest/releases/tag/v1.17.0)) · [Catch2](https://github.com/catchorg/Catch2) · [doctest](https://github.com/doctest/doctest) · [snitch](https://github.com/snitch-org/snitch).

@@ -1,0 +1,39 @@
+---
+title: "Carbon is still pre-0.1, with 1.0 somewhere after 2028"
+slug: "carbon-reality-check"
+pubDate: 2026-08-14
+author: filip-sajdak
+language: en
+kind: short
+audience: mixed
+tags: [news, carbon, successor-languages, community, cpp]
+summary: "Carbon gets discussed as though it were an option you could evaluate. It is not one yet: the project has not reached 0.1, its own roadmap puts that at late 2026 at the earliest and 1.0 sometime after 2028, and it says so plainly. Reading the roadmap is a better use of ten minutes than another Carbon-versus-Rust argument."
+draft: false
+relatedPosts: [chrome-spanification, cpp-safety-state-of-the-union-may-2026]
+---
+
+Carbon comes up whenever C++ succession is discussed, usually framed as a choice a team might make. It is worth restating what the project itself says about its maturity, because the project is considerably more careful about this than the discussion around it.
+
+**Carbon has not reached 0.1.** The roadmap puts 0.1 at **late 2026 at the earliest**, with 1.0 sometime **after 2028**. The repository still describes it as an experiment that may not succeed. There is no stable language specification, no ABI commitment, and no promise that today's syntax survives.
+
+That is not a criticism. It is a project being honest about its stage, and the honesty is the most useful thing about it.
+
+## What it is actually for
+
+Carbon's premise is narrower than "a better C++", and the narrowness is the interesting part. It targets the case where you have millions of lines of C++ that cannot be rewritten and cannot be frozen either. Rust's C++ interop, though [improving](/posts/chrome-spanification/), still runs through a C-shaped boundary: templates, overloads, inheritance and exceptions do not cross cleanly, so incremental adoption inside a large C++ codebase is expensive.
+
+Carbon's answer is to accept C++'s object model and give up source compatibility instead. It aims for bidirectional interop where C++ templates and classes are usable from Carbon without wrappers, in exchange for a new syntax and a migration tool. Whether that trade works at scale is precisely what the experiment is testing.
+
+## How to hold it
+
+Three practical positions:
+
+- **It is not an option for a decision you are making now.** Pre-0.1 with a 2028-plus 1.0 is not a thing you build a product on this year.
+- **The interop work is worth watching regardless.** Even if Carbon never ships, the question it is attacking (how does a huge C++ codebase adopt anything new incrementally) is the one every successor faces, and answers there will inform the alternatives.
+- **The realistic near-term answers remain C++ hardening and selective Rust**, which is exactly the strategy Chrome [published last month](/posts/chrome-spanification/): harden the C++ you have, migrate the highest-risk parsers, and be honest about the ceiling.
+
+The most valuable thing about Carbon in 2026 is not the language. It is that a serious team is writing down what a C++ successor would actually have to solve, in public, while saying clearly that they have not solved it yet.
+
+---
+
+**Sources**: the [Carbon roadmap](https://docs.carbon-lang.dev/docs/project/roadmap.html) and the [carbon-lang repository](https://github.com/carbon-language/carbon-lang).

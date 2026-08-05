@@ -1,0 +1,59 @@
+---
+title: "std::constant_wrapper carries a compile-time value as an argument"
+slug: "constant-wrapper"
+pubDate: 2026-08-15
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, cpp26, stdlib, constexpr, templates]
+summary: "A template parameter is a compile-time value you cannot pass as an argument. A function argument is a runtime value you cannot use as a template parameter. C++26's std::constant_wrapper is an empty object that carries a compile-time value, so it crosses that line: arithmetic on it stays constant, and the result still works as an array extent. GCC 16.1 ships it."
+draft: false
+relatedPosts: [constexpr-exceptions, portable-simd]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+C++ has always had two separate places to put a value, with a wall between them. A **template parameter** is known at compile time and usable in a `static_assert` or an array extent, but you cannot pass one as a function argument. A **function argument** can be passed around freely but is a runtime value, so it cannot be used anywhere a constant is required.
+
+The workaround everyone knows is `std::integral_constant<int, 5>{}`, which has existed since C++11 and is exactly this idea in its most spartan form: an empty type whose *type* carries the value, so passing an instance costs nothing and the value survives.
+
+C++26 finishes the job with **`std::constant_wrapper`** (P2781). The difference from `integral_constant` is that it behaves like the value it holds.
+
+<GodboltEmbed id="hfMMKP3Ee" gccOnly title="Arithmetic on compile-time values that stays compile-time" gcc_subtitle="x86-64 GCC 16.1 · -std=c++26 · runs live" />
+
+```
+cw<5> + cw<3> = 8, extent = 8
+```
+
+The interesting line is the addition. `a + b` where both are `constant_wrapper` does not produce an `int`; it produces another `constant_wrapper` holding `8`. The value never falls out of the type system, so the result still satisfies `static_assert` and can still be an array extent:
+
+```cpp
+auto c = a + b;
+static_assert(decltype(c)::value == 8);
+std::array<int, decltype(c)::value> arr{};
+```
+
+That is what `integral_constant` could not do. Adding two `integral_constant`s gives you a plain integer and the compile-time-ness is gone. `constant_wrapper` overloads the operators to preserve it, so you can compute with constants using ordinary arithmetic syntax instead of nested template expressions.
+
+## What it is for
+
+The motivating use is APIs that need a value at compile time but want to look like normal functions. Rather than
+
+```cpp
+matrix.get<2, 3>();          // template arguments, awkward to forward
+```
+
+you write
+
+```cpp
+matrix.get(std::cw<2>, std::cw<3>);   // ordinary arguments, still constant
+```
+
+which forwards through wrappers, works in a fold expression, and can be defaulted, none of which template parameters do gracefully. Library authors have hand-rolled this for years; standardising it means the idiom is recognisable across libraries instead of being a local invention with a local spelling.
+
+One availability note, and a reminder to test rather than trust. **GCC 16.1 ships it** (`__cpp_lib_constant_wrapper = 202603`). libc++ 24 *defines the feature-test macro* at a newer value but does not actually provide the facility, so a macro check will tell you it is there on a toolchain where it is not. If you are writing portable code, compile-test the feature rather than testing the macro.
+
+---
+
+**Sources**: [P2781 "std::constant_wrapper"](https://wg21.link/p2781) · [cppreference: std::constant_wrapper](https://en.cppreference.com/w/cpp/utility/constant_wrapper).

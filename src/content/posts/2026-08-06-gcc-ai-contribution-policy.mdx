@@ -1,0 +1,40 @@
+---
+title: "GCC will decline AI-generated contributions above the legal threshold"
+slug: "gcc-ai-contribution-policy"
+pubDate: 2026-08-06
+author: filip-sajdak
+language: en
+kind: short
+audience: mixed
+tags: [news, gcc, governance, ai, community, cpp]
+summary: "The GCC Steering Committee has adopted a policy declining any legally significant contribution that includes or is derived from LLM-generated content. Test cases are an explicit exception, small contributions are allowed if clearly marked, and using a model to find bugs or review patches stays permitted. Commits that had AI help need an Assisted-by tag, and only humans may submit or sign off."
+draft: false
+---
+
+The GCC Steering Committee accepted its AI Policy Working Group's recommendation on 29 July 2026, and the policy is now published on the project's site. It is more carefully drawn than the headlines suggest, and the details are worth reading if you contribute to any GNU project.
+
+The core rule: GCC declines **"any legally significant contributions which include LLM-generated content or are derived from LLM-generated content."**
+
+Everything turns on *legally significant*, which is not a new term invented for this policy. It comes from the GNU Project's existing maintainer guidelines, where the practical boundary sits at roughly fifteen lines of code or text. Below that, a change is generally not considered copyrightable on its own, which is why the threshold exists at all: the concern being addressed is provenance and copyright, not code quality.
+
+## The exceptions are the interesting part
+
+Three carve-outs keep the policy from being a blanket ban:
+
+- *Test cases are exempt.* Maintainers "are free to accept legally significant contributions to test cases, generated in whole or in part by an LLM." This is a pragmatic call. A test case asserts existing behavior rather than authoring new design, and generating them is one of the things models are genuinely good at.
+- *Small contributions are allowed if labelled.* Legally insignificant changes from a model may be accepted provided they meet the usual bar for any contribution and the contribution is clearly marked.
+- *Using a model is not contributing its output.* The policy explicitly does not forbid LLMs for "research, analysis, bug discovery and reporting... patch review... and debugging, so long as the output is not included in the contributions." Accessibility uses (screen readers, text-to-speech, translation, spelling and grammar help) are called out as fine.
+
+Two procedural requirements come with it. Commit messages must carry an `Assisted-by:` tag where a model helped, and only humans may submit contributions and provide sign-offs, which forecloses the agent-opens-a-pull-request workflow before it arrives.
+
+## Why a compiler project draws this line
+
+The reasoning is about legal provenance rather than whether models write good code. GCC has spent decades on careful copyright hygiene: the FSF assignment process, the DCO, the "legally significant" threshold itself. A contribution whose provenance cannot be established is a problem for that chain regardless of whether it compiles, and neither the training data nor the output of a model comes with a clean answer.
+
+That framing explains the shape of the exceptions. Test cases are low-risk because they encode behavior that already exists. Sub-threshold changes are low-risk because they are not copyrightable. Bug hunting is fine because nothing generated reaches the tree.
+
+The policy is explicitly provisional: it "expects the policy will evolve and will be revisited periodically", with a review no later than the start of **2027**. For a question this unsettled, committing to revisit is the right posture, and other toolchain projects will be reading this one closely.
+
+---
+
+**Sources**: the [GCC AI policy](https://gcc.gnu.org/ai-policy.html) and the [Steering Committee announcement](https://gcc.gnu.org/pipermail/gcc/2026-July/248628.html) (David Edelsohn, 29 July 2026) · [LWN coverage](https://lwn.net/Articles/1086041/) · the GNU [maintainer guidelines on legally significant changes](https://www.gnu.org/prep/maintain/html_node/Legally-Significant.html).

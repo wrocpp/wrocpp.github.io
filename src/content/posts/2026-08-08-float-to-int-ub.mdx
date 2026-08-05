@@ -1,0 +1,74 @@
+---
+title: "Two compilers, one float-to-int cast, two different wrong answers"
+slug: "float-to-int-ub"
+pubDate: 2026-08-08
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, undefined-behavior, sanitizers, conversions, cpp]
+summary: "Converting a float to an int is undefined behavior when the value does not fit, and for NaN. Nothing warns by default, and GCC and Clang produce different results for the same cast. Worse, GCC deliberately leaves the check out of -fsanitize=undefined, so you have to name float-cast-overflow to catch it."
+draft: false
+relatedPosts: [sanitizers-on-ce, erroneous-behavior]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+`static_cast<int>(some_double)` is one of the most ordinary lines in C++. It is also undefined behavior whenever the truncated value will not fit in the destination type, and whenever the source is NaN. The standard does not say the result is implementation-defined or unspecified; it imposes no requirement at all.
+
+The usual defences do not help. No compiler warns about it by default. `gsl::narrow` guards integer-to-integer narrowing but does not cover the float-to-integer case. And because the compiler is entitled to assume UB does not happen, the optimizer is free to reason from that assumption.
+
+The clearest way to see what "undefined" means is to run the same program twice.
+
+## GCC
+
+<GodboltEmbed id="55T1aob5e" gccOnly title="GCC: the same cast, reported only when you ask for the check" gcc_subtitle="x86-64 GCC 16.1 · -fsanitize=float-cast-overflow · runs live" />
+
+```
+in range   : 3
+1e18 -> -2147483648
+NaN  -> -2147483648
+runtime error: 1e+18 is outside the range of representable values of type 'int'
+runtime error: -nan is outside the range of representable values of type 'int'
+```
+
+## Clang
+
+<GodboltEmbed id="7aTvMcb4d" gccOnly title="Clang: same source, different values, and the check is on by default" gcc_subtitle="x86-64 clang (trunk) · -fsanitize=undefined · runs live" />
+
+```
+in range   : 3
+1e18 -> 0
+NaN  -> 0
+runtime error: 1e+18 is outside the range of representable values of type 'int'
+```
+
+One source file, one standard, two toolchains. **GCC produces `-2147483648`; Clang produces `0`.** Neither is wrong, because there is no right answer to be wrong about. If you have ever written a clamp that relied on the out-of-range value saturating to `INT_MIN`, it works on one compiler and silently does something else on the other.
+
+## The flag detail that matters
+
+There is a trap in the tooling, and it is the practical takeaway.
+
+**Clang includes `float-cast-overflow` in `-fsanitize=undefined`. GCC does not.** GCC deliberately excludes it from the umbrella option, so a project that dutifully turns on `-fsanitize=undefined` in CI and builds with GCC is not checking these casts at all. You have to name it:
+
+```
+g++ -fsanitize=float-cast-overflow ...
+```
+
+That gap is a plausible reason this class of bug survives in codebases that believe they are UB-clean: the [sanitizers](/posts/sanitizers-on-ce/) only check what you asked for, and on GCC the umbrella option does not cover everything its name suggests.
+
+## What to write instead
+
+Check before you cast. The range test has to be done in floating point, because converting first is the thing you are trying to avoid:
+
+```cpp
+constexpr double lo = -2147483648.0, hi = 2147483648.0;
+if (std::isfinite(d) && d >= lo && d < hi)
+    n = static_cast<int>(d);      // now well defined
+```
+
+`std::isfinite` rejects NaN and the infinities; the bounds are written as `double` literals so no conversion happens during the check itself. C++26's [erroneous behavior](/posts/erroneous-behavior/) work tightened the rules around uninitialised reads, but it does not touch this: float-to-int overflow remains undefined in C++26.
+
+---
+
+**Sources**: [\[conv.fpint\]](https://eel.is/c++draft/conv.fpint) in the working draft · [Clang UBSan checks](https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html) · [GCC's `-fsanitize` documentation](https://gcc.gnu.org/onlinedocs/gcc/Instrumentation-Options.html), which notes that `float-cast-overflow` is not enabled by `-fsanitize=undefined`.

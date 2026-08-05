@@ -1,0 +1,54 @@
+---
+title: "{fmt} can do the whole format at compile time"
+slug: "fmt-12-2"
+pubDate: 2026-08-12
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, fmt, formatting, constexpr, performance, cpp]
+summary: "FMT_COMPILE parses the format string during compilation and emits straight-line formatting code, so a format call can be a constant expression with no parsing at runtime. The 12.2 release adds a type-safe C API, a proper C++20 module target, and turns the full Dragonbox cache on by default for faster float formatting."
+draft: false
+relatedPosts: [format-smart-pointers, constexpr-exceptions]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+`std::format` checks your format string at compile time, which is the improvement everyone remembers from C++20. What it still does at *runtime* is parse it: walk the string, find the replacement fields, dispatch on each specifier.
+
+{fmt}, the library `std::format` came from, has an option to do that work during compilation as well. Wrap the format string in **`FMT_COMPILE`** and the parse happens once, at compile time, emitting straight-line formatting code instead of a parse loop.
+
+<GodboltEmbed id="oKr4hn3Yr" gccOnly title="A format call that is a constant expression" gcc_subtitle="x86-64 GCC 16.1 · -std=c++20 · fmt 12.2.1 · runs live" />
+
+```
+compile-time formatted: build-0042
+fmt version: 120201
+```
+
+The function producing that string is `constexpr` and returns a fully formatted result:
+
+```cpp
+constexpr auto make_tag() {
+    return fmt::format(FMT_COMPILE("{}-{:04d}"), "build", 42);
+}
+```
+
+Width, zero-fill and field order are all resolved during compilation. On a hot path that formats with a fixed layout (log lines, wire protocols, filenames) this removes the parse from every call. It is not free in every dimension, since specialised code is emitted per call site, so it is a targeted tool rather than a default.
+
+## What 12.2 adds
+
+The current release brings three things worth knowing:
+
+- **A type-safe C formatting API** (`fmt/fmt-c.h`), which is an unusual direction for a C++ library and aimed at C code that wants `printf` ergonomics without `printf`'s lack of type safety.
+- **A dedicated C++20 module target**, `fmt::fmt-module`, so `import fmt;` is a supported configuration rather than something you assemble yourself.
+- **The full Dragonbox cache enabled by default**, which speeds up floating-point formatting at a modest cost in binary size. Dragonbox is the shortest-round-trip float-to-string algorithm underneath both {fmt} and most `std::format` implementations.
+
+Compiler Explorer currently carries **12.2.1**, which is what `FMT_VERSION` reports as `120201` above.
+
+## Why keep using {fmt} when std::format exists
+
+The honest answer is that {fmt} is where the features arrive first, and where the ones that never made it into the standard continue to live. There is no standard equivalent of `FMT_COMPILE`, nor of the C API or the shipped module target. `std::format` remains the right default for portable code, while {fmt} is what you reach for when you want compile-time formatting or your toolchain's `<format>` is still catching up.
+
+---
+
+**Sources**: [{fmt} on GitHub](https://github.com/fmtlib/fmt) and its [releases](https://github.com/fmtlib/fmt/releases) · [format-string compilation docs](https://fmt.dev/latest/api/#compile-api).
