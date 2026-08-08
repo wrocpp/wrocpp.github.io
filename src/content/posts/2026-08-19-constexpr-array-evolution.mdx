@@ -1,0 +1,45 @@
+---
+title: "std::array became compile-time in pieces, and the algorithms went last"
+slug: "constexpr-array-evolution"
+pubDate: 2026-08-19
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, constexpr, stdlib, array, algorithms, cpp20]
+summary: "std::array's own members have been constexpr since C++17, but sorting one at compile time only became possible in C++20, when the algorithms caught up. That two-standard gap is why older lookup-table code hand-rolls its sorting. Here is a table built, squared and sorted entirely during compilation."
+draft: false
+relatedPosts: [constexpr-exceptions, constant-wrapper]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+Compile-time containers arrived in instalments, and the order confuses people who assume `std::array` was always fully usable in a constant expression.
+
+- **C++11** gave `std::array` a `constexpr` constructor and `constexpr` element access, but almost nothing else.
+- **C++14** made more member functions `constexpr`, though non-const `operator[]` still lagged.
+- **C++17** finished the container itself: `begin`, `end`, `data`, `fill`, `swap`.
+- **C++20** finished the *algorithms*, which is the step that actually mattered. `std::sort`, `std::iota`, the whole `<algorithm>` and much of `<numeric>` became `constexpr`, along with the `ranges` versions.
+
+That last step is the one worth internalising. Between C++17 and C++20 you could build a `std::array` at compile time but not sort it with the standard library, which is why so much older lookup-table code contains a hand-written compile-time bubble sort. Those can now be deleted.
+
+<GodboltEmbed id="rWevjjEKK" gccOnly title="Built, squared and sorted entirely during compilation" gcc_subtitle="x86-64 GCC 16.1 · -std=c++23 · runs live" />
+
+```
+[64, 49, 36, 25, 16, 9, 4, 1]
+sum = 204
+```
+
+Every step runs during compilation: `std::iota` fills 1 through 8, the loop squares each element, and `std::ranges::sort` with `std::greater` reverses the order. The `static_assert`s are the proof rather than decoration. If any part of `build()` escaped to runtime the program would not compile, so a green build is the guarantee.
+
+## Where this pays off
+
+The practical use is a table you would otherwise generate with a script or a macro: sorted keyword lists for a lexer, precomputed CRC or sine tables, a perfect-hash seed, dispatch tables sorted for binary search. Written this way the table lives in the source in readable form, is checked by the compiler, and reaches the binary as constant data in `.rodata` with no static initialiser and no startup cost.
+
+Two limits are worth knowing before you lean on it. Compilers cap constant evaluation (`-fconstexpr-ops-limit` on GCC, `-fconstexpr-steps` on Clang), so very large tables can exceed the budget and need the limit raised. And every element you compute this way is compile time you pay on every build, which is a trade you want to make deliberately rather than by habit.
+
+`if consteval` and the C++26 work on [constexpr exceptions](/posts/constexpr-exceptions/) keep pushing the boundary outward. The rule of thumb has flipped: instead of asking what you are allowed to do at compile time, assume you can, and check only when the compiler objects.
+
+---
+
+**Sources**: [cppreference: std::array](https://en.cppreference.com/w/cpp/container/array) and [constexpr algorithms (P0202)](https://wg21.link/p0202) · Jason Turner, [C++ Weekly ep 543 "The constexpr Evolution of std::array"](https://www.youtube.com/watch?v=T-d8l3s4Nx8).
