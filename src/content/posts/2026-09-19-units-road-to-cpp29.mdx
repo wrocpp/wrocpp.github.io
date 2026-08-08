@@ -1,0 +1,43 @@
+---
+title: "Quantities and units on the road to C++29"
+slug: "units-road-to-cpp29"
+pubDate: 2026-09-19
+author: filip-sajdak
+language: en
+kind: flagship
+series: mp-units
+series_order: 6
+audience: mixed
+tags: [mp-units, units, cpp29, wg21, standardization, poland, series]
+summary: "Everything this series showed is also a proposal: P3045, Quantities and units library, targets C++29 with mp-units as its reference implementation, led by Mateusz Pusz of Gdansk, an ISO C++ committee voting member since 2017. The series finale looks at what standardization takes, and at the Gdansk author behind the proposal."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+Every demo in this series ran on a third-party library. The finale is about the plan to make that library unnecessary.
+
+**P3045, "Quantities and units library,"** is the WG21 proposal to move what you have seen into the C++ standard library itself, targeting **C++29**: quantities with units in their types, kind safety, the affine space, formatting. mp-units is its reference implementation, so everything this series demonstrated is, in effect, a preview build of a possible `std` feature. The idea has been in front of the committee since P1935 first floated it in 2019, and P3045 is where it stands now.
+
+## The signature carries the physics
+
+The core of the pitch fits in one function:
+
+<GodboltEmbed id="bzef1hnrx" gccOnly title="Interfaces that say what they take, not just which type" gcc_subtitle="x86-64 GCC 16.1 · -std=c++23 -O2 · mp-units trunk · runs live" />
+
+`avg_speed(quantity<si::metre>, quantity<si::second>)` is a signature that carries the physics. Callers may pass kilometres or hours, and the conversions are exact and automatic, but *swapping the arguments does not compile*. Compare that with the `double avg_speed(double, double)` every codebase has today, where the only defense is parameter naming and hope. Multiply that by every interface in a flight controller, a medical device, a trading system, and you have the case for standardization: safety this fundamental should not depend on which third-party library a project happened to adopt.
+
+## P3045's author and Poland's committee seat
+
+This finale has a local angle too. P3045's lead author is **Mateusz Pusz**, a principal C++ architect from Gdańsk. He has been a voting member of the ISO C++ committee since 2017, contributes to MISRA C++, and wrote accepted C++20 papers (heterogeneous lookup for unordered containers, P0919/P0920). He also co-founded the PKN subcommittee through which Poland became a P-member of the ISO C++ committee, which means Poland votes on what C++ becomes.
+
+So the work toward a standard vocabulary for physical quantities is happening in the open, on GitHub, with a decade of library iterations behind it. Standardization is slow, and nothing is guaranteed until the final plenary vote. If P3045 lands, code like this series' demos will need nothing but `import std;`.
+
+Until then, the library is a `find_package(mp-units)` away, every episode's demo is runnable in the Godbolt embeds, and the whole series is linked below.
+
+**The series**: <PostLink slug="unit-bug-mars-orbiter">1. The unit bug that crashed into Mars</PostLink> · <PostLink slug="quantity-kinds">2. One per second is not one per second</PostLink> · <PostLink slug="points-are-not-deltas">3. Points are not deltas</PostLink> · <PostLink slug="unit-in-one-line">4. A new unit in one line</PostLink> · <PostLink slug="unit-safe-text">5. The unit travels with the value</PostLink>
+
+---
+
+**Sources**: [P3045 latest revision](https://wg21.link/p3045) · [mp-units on GitHub](https://github.com/mpusz/mp-units) · [Mateusz Pusz](https://github.com/mpusz).

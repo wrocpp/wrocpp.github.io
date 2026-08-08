@@ -1,0 +1,43 @@
+---
+title: "GCC 16.2 is out, LLVM 23.1 is nearly there, MSVC is still finishing C++23"
+slug: "gcc-16-2-toolchain-status"
+pubDate: 2026-08-17
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, gcc, llvm, msvc, toolchain, cpp26]
+summary: "GCC 16.2 shipped on 7 August with more than a hundred regression fixes and no new features. LLVM 23.1 is still at its second release candidate. MSVC has no C++26 date. If you want to write C++26 today, the practical answer remains GCC, and this is where each toolchain actually stands."
+draft: false
+relatedPosts: [constant-wrapper, std-indirect-pimpl]
+---
+
+Three months after C++26 was finalised, "which compiler should I use for it" has a clearer answer than it did in spring. Here is where the three major toolchains stand in August.
+
+## GCC 16.2, released 7 August
+
+A pure bug-fix release from the GCC 16 branch: **more than a hundred regressions fixed** against 16.1, no new language or library features. Richard Biener announced it, and it is expected to become the default compiler in Ubuntu 26.10 and Fedora 45, which matters more than the changelog does since it puts C++26 reflection in front of a lot of people who will not go looking for it.
+
+The one change worth knowing if you target recent Intel parts: handling was updated for Intel's removal of **AMX-TF32** from Diamond Rapids, affecting `-march=diamondrapids`.
+
+Nothing here changes what you can write. GCC 16.1 in April was the release that mattered, bringing static reflection, contracts, and expansion statements. 16.2 makes that release less likely to miscompile.
+
+## LLVM 23.1, still at rc2
+
+The 23.x branch was cut on 14 July, with rc1 on 23 July and **rc2 on 28 July**. No final release yet, so late August is the realistic date.
+
+When it lands it brings a substantial libc++ payload, including C++26 additions and a large batch of C++23 catch-up work: `views::enumerate`, the `ranges::fold` family, `stride_view`. Worth knowing about the split, though: some C++26 library features are ahead in libc++ and others are ahead in libstdc++, and neither is uniformly further along. When I checked in early August, GCC 16.1 had `std::indirect`, `std::constant_wrapper` and `std::copyable_function` while libc++ had none of the three, and libc++ advertised a feature-test macro for `constant_wrapper` it did not actually implement.
+
+The reflection story is unchanged and still the sharpest difference between the two: **P2996 is in mainline GCC, and in Clang only via the Bloomberg `clang-p2996` fork.** An upstreaming working group meets, but there is nothing to use in a shipping Clang yet.
+
+## MSVC
+
+Still finishing C++23, with no published C++26 timeline. Recent work has gone into conformance, a nine-month servicing cadence, and Sample Profile-Guided Optimization. If your build has to work on MSVC, C++26 is not a 2026 conversation.
+
+## What to actually do
+
+If you want to write C++26 today, use **GCC 16.2**, and prefer compile-testing a feature over checking its feature-test macro, because the macros are currently unreliable in both major standard libraries. If you need Clang for reflection specifically, that means the Bloomberg fork, and everything else in C++26 is easier on GCC. If you need MSVC, plan for C++23 and revisit next year.
+
+---
+
+**Sources**: [GCC 16 release page](https://gcc.gnu.org/gcc-16/) (16.2 on 7 August 2026, 16.1 on 30 April 2026) · [LLVM announcements](https://discourse.llvm.org/c/announce/46/l/latest) for the 23.1.0-rc1 and rc2 posts · [libc++ 23 release notes](https://github.com/llvm/llvm-project/blob/release/23.x/libcxx/docs/ReleaseNotes/23.rst) · [Bloomberg clang-p2996](https://github.com/bloomberg/clang-p2996).
