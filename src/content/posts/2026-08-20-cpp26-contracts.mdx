@@ -1,0 +1,83 @@
+---
+title: "C++26 contracts, and the const rule the compiler makes you learn"
+slug: "cpp26-contracts"
+pubDate: 2026-08-20
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, cpp26, contracts, correctness, gcc]
+summary: "Contracts are one of the four headline C++26 features and they run on GCC 16.1 today. Two things surprise people on first contact: a by-value parameter named in a postcondition must be const, and what a violation actually does is a compiler flag rather than a property of your code."
+draft: false
+relatedPosts: [hardened-stdlib-turn-it-on, erroneous-behavior]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+C++26 shipped four headline features: reflection, `std::execution`, `std::simd` and **contracts**. Contracts got the least attention of the four, partly because [the design was contested right up to the vote](/posts/brno-profiles-contracts/), and partly because until recently there was nothing to try. That has changed. GCC 16.1 implements P2900, and you can write preconditions today.
+
+The syntax attaches to the declaration rather than the body:
+
+<GodboltEmbed id="Wx6dW96Mb" gccOnly title="pre, post and contract_assert on GCC 16.1" gcc_subtitle="x86-64 GCC 16.1 · -std=c++26 -fcontracts · runs live" />
+
+```
+10 / 2 = 5
+7 / 1  = 7
+shrink(9) = 4
+all contracts held
+```
+
+Three pieces: `pre` for what the caller must guarantee, `post` for what the function promises (with `r:` naming the result), and `contract_assert` for a check inside the body. No header is required, because contracts are core language rather than library, though **GCC still needs `-fcontracts`** to enable them.
+
+## The const rule
+
+Here is the thing that catches you on first contact. Write this:
+
+```cpp
+int divide(int a, int b)
+    post (r: b == 1 ? r == a : true)   // error
+```
+
+and the compiler refuses:
+
+```
+error: a value parameter used in a postcondition must be const
+```
+
+The reason is sound once stated. A postcondition is evaluated *after* the body has run, and the body is free to reassign a by-value parameter. If `a` could have changed, then `r == a` is checking the result against whatever `a` happens to hold at the end, which is not the promise you meant to make. Rather than let you write a postcondition that silently means something else, the standard requires the parameter to be `const` so that it demonstrably has not changed.
+
+Add the `const` and it compiles. The rule only applies to parameters actually named in a postcondition: the `shrink` function in the demo takes a non-const `int` and mutates it happily, because it only has a precondition.
+
+## What a violation does is not in your source
+
+The second surprise is that the same code behaves three different ways depending on a compiler flag. The **evaluation semantic** decides what happens when a check fails:
+
+- **`ignore`** does not evaluate the check at all.
+- **`observe`** reports the violation and continues.
+- **`enforce`** reports and terminates. This is the default.
+
+<GodboltEmbed id="j7o95jnbf" gccOnly title="A precondition violated under the observe semantic" gcc_subtitle="x86-64 GCC 16.1 · -fcontract-evaluation-semantic=observe · runs live" />
+
+Built with `observe`, the violated precondition prints a structured report and the program keeps going:
+
+```
+10 / 2 = 5
+contract violation in function int divide(int, int) at example.cpp:22: b != 0
+  [assertion_kind: pre, semantic: observe, mode: predicate_false, terminating: no]
+10 / 0 = 0
+still running after the violation
+```
+
+The report names the assertion kind, the semantic in force, why it fired, and whether it is fatal. That structure is deliberate: `<contracts>` gives you `std::contracts::contract_violation`, so you can install your own handler and route violations to a logger or a crash reporter instead of the default.
+
+This flag-controlled behaviour is what makes contracts deployable. You can build with `observe` in staging to collect violations from real traffic without taking the service down, then move to `enforce` once the reports go quiet. The same source, unmodified.
+
+## Where they fit
+
+Contracts overlap with [the hardened standard library](/posts/hardened-stdlib-turn-it-on/) in spirit and differ in scope: hardening checks the *library's* preconditions for you, while contracts let you state your own. Neither replaces tests, because a precondition only fires on inputs you actually execute.
+
+The most useful habit is narrower than "write contracts everywhere": put a `pre` on the functions whose misuse is currently documented in a comment. A comment saying "n must be positive" is a contract that nothing checks; `pre (n > 0)` is the same statement with a compiler and a runtime behind it.
+
+---
+
+**Sources**: [P2900 "Contracts for C++"](https://wg21.link/p2900) · [GCC 16 contracts documentation](https://gcc.gnu.org/gcc-16/changes.html) · Timur Doumler's [CppCon 2026 session on completing the contract-assertion facility](https://isocpp.org/blog).
