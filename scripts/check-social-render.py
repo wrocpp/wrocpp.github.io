@@ -37,6 +37,21 @@ EXPECTED_CSS_LINES_MAX = 345
 # Logo SVG embedded by brand-gen is ~6KB; less means missing or wrong.
 MIN_LOGO_SVG_BYTES = 5_000
 
+# Branding markers that inject.sh patches into the RENDERED index.html.
+#
+# These have to be checked separately from assets/, because the two live on
+# different lifecycles: `brand-gen build` regenerates index.html from scratch
+# and drops inject.sh's patches, while assets/ survives untouched from an
+# earlier run. So a re-render that skips inject.sh (wrong path, or a swallowed
+# error) leaves correct assets next to an index.html with the stock logo and no
+# AI badge -- and every asset-based check below still passes. That happened on
+# 2026-08-10 and shipped a card with no AI disclosure on it.
+#
+# MAGNET_VIEWBOX is the viewBox of our magnet logo symbol (brand-kit/
+# logo-symbol.svg); the stock brand-gen logo uses the same id but not this box.
+MAGNET_VIEWBOX = 'viewBox="0 0 320 320"'
+AI_BADGE_MARKER = 'class="ai-badge"'
+
 
 def red(s: str) -> str:
     return f"\033[31m{s}\033[0m"
@@ -114,6 +129,31 @@ def check_one(platform: str, slug: str) -> list[str]:
     elif logo.stat().st_size < MIN_LOGO_SVG_BYTES:
         issues.append(f"{yellow('WARN')}  {label}: assets/logo-symbol.svg only {logo.stat().st_size} bytes")
 
+    # Rendered-HTML branding: magnet logo + AI-disclosure badge (see the
+    # MAGNET_VIEWBOX comment above for why assets/ passing is not enough).
+    index_html = base / "index.html"
+    if not index_html.exists():
+        issues.append(f"{red('ERROR')} {label}: index.html missing -- run brand-gen build")
+    else:
+        try:
+            html = index_html.read_text(encoding="utf-8", errors="replace")
+        except OSError as e:
+            html = ""
+            issues.append(f"{yellow('WARN')}  {label}: could not read index.html ({e})")
+        if html:
+            if MAGNET_VIEWBOX not in html:
+                issues.append(
+                    f"{red('ERROR')} {label}: index.html has no wro.cpp magnet logo "
+                    f"({MAGNET_VIEWBOX} not found); inject.sh did not run after "
+                    f"brand-gen build. Re-run inject.sh, then brand-gen image."
+                )
+            if AI_BADGE_MARKER not in html:
+                issues.append(
+                    f"{red('ERROR')} {label}: index.html has no AI-disclosure badge "
+                    f"({AI_BADGE_MARKER} not found). Every card must carry the badge "
+                    f"per the /ai policy. Re-run inject.sh, then brand-gen image."
+                )
+
     # Sample title-area pixel: should contain dark ink (not just paper background)
     # The mixed colour for rendered text is around #B0A0A0 (dark text + paper);
     # pure paper background gives #FCFAF5 or similar light value.
@@ -188,7 +228,12 @@ def main():
     if all_issues:
         print()
         print(f"{red('FAIL')}: {len(all_issues)} error(s) found. Do not publish.")
-        print("Fix: rm -rf the broken card dir, then brand-gen init + inject.sh + brand-gen image.")
+        print("Fix, cheapest first -- read the errors above before reaching for the big hammer:")
+        print("  missing magnet/badge, or wrong scudoai.css line count:")
+        print("    .claude/skills/advertise-post/brand-kit/inject.sh <card-dir> && brand-gen image")
+        print("  missing assets/ entirely (brand-gen init was never run for this card):")
+        print("    back up caption.md/content.md/config.yaml, remove the card dir,")
+        print("    brand-gen init, restore them, then build + inject.sh + image.")
         sys.exit(1)
 
     print()
