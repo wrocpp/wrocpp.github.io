@@ -10,13 +10,15 @@
   "scripts": {
     "dev": "astro dev",
     "start": "astro dev",
-    "prebuild": "python3 scripts/check-llms-sync.py && python3 scripts/prose-lint.py --all --strict",
+    "prebuild": "python3 scripts/check-llms-sync.py && python3 scripts/check-pubdates.py && python3 scripts/prose-lint.py --all --strict",
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
     "check": "astro check",
     "check:llms-sync": "python3 scripts/check-llms-sync.py",
-    "check:prose": "python3 scripts/prose-lint.py --all --strict"
+    "check:prose": "python3 scripts/prose-lint.py --all --strict",
+    "check:pubdates": "python3 scripts/check-pubdates.py",
+    "check:cards": "python3 scripts/check-social-render.py --all"
   },
   "dependencies": {
     "@astrojs/mdx": "^7.0.4",
