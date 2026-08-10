@@ -3,7 +3,8 @@ import BaseLayout from '../../../layouts/BaseLayout.astro';
 import ReviewedBadge from '../../../components/ReviewedBadge.astro';
 import MatrixTable from '../../../components/MatrixTable.astro';
 import RepoFile from '../../../components/RepoFile.astro';
-import yaml from 'js-yaml';
+// js-yaml 5 is ESM with named exports only; it no longer ships a default export.
+import { load as loadYaml } from 'js-yaml';
 import { readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -32,8 +33,8 @@ type Feature = {
 };
 type FeatureData = Record<string, Feature>;
 
-const godbolt = yaml.load(readFileSync(godboltPath, 'utf-8')) as GodboltData;
-const features = yaml.load(readFileSync(featuresPath, 'utf-8')) as FeatureData;
+const godbolt = loadYaml(readFileSync(godboltPath, 'utf-8')) as GodboltData;
+const features = loadYaml(readFileSync(featuresPath, 'utf-8')) as FeatureData;
 const lastRegen = statSync(godboltPath).mtime;
 
 const compilers = [

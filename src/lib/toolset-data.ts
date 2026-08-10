@@ -1,9 +1,10 @@
-import yaml from 'js-yaml';
+// js-yaml 5 is ESM with named exports only; it no longer ships a default export.
+import { load as loadYamlString } from 'js-yaml';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 function loadYaml<T>(rel: string): T {
-  return yaml.load(readFileSync(resolve(process.cwd(), rel), 'utf-8')) as T;
+  return loadYamlString(readFileSync(resolve(process.cwd(), rel), 'utf-8')) as T;
 }
 
 export interface AiAgent {

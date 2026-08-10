@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
-import yaml from 'js-yaml';
+// js-yaml 5 is ESM with named exports only; it no longer ships a default export.
+import { load as loadYaml } from 'js-yaml';
 import { readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -17,7 +18,7 @@ export const GET: APIRoute = async () => {
   };
   type FeatureData = Record<string, Feature>;
 
-  const features = yaml.load(readFileSync(featuresPath, 'utf-8')) as FeatureData;
+  const features = loadYaml(readFileSync(featuresPath, 'utf-8')) as FeatureData;
 
   const featureLines = Object.entries(features).map(([key, f]) => {
     const cells = Object.entries(f.status)
