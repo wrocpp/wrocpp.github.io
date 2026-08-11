@@ -50,11 +50,14 @@ Add the `const` and it compiles. The rule only applies to parameters actually na
 
 ## What a violation does is not in your source
 
-The second surprise is that the same code behaves three different ways depending on a compiler flag. The **evaluation semantic** decides what happens when a check fails:
+The second surprise is that the same code behaves four different ways depending on a compiler flag. The **evaluation semantic** decides what happens when a check fails:
 
 - **`ignore`** does not evaluate the check at all.
 - **`observe`** reports the violation and continues.
 - **`enforce`** reports and terminates. This is the default.
+- **`quick_enforce`** terminates without reporting anything.
+
+That last one is easy to miss and the spelling is unforgiving: GCC takes `quick_enforce` and rejects `quick-enforce` with `unrecognized contract evaluation semantic`. It exists for builds where the reporting machinery itself is unwanted, and it shows: under `quick_enforce` the demo produces no output at all, not even the lines printed before the violation, because termination is abrupt enough that buffered output never reaches the terminal.
 
 <GodboltEmbed id="j7o95jnbf" gccOnly title="A precondition violated under the observe semantic" gcc_subtitle="x86-64 GCC 16.1 · -fcontract-evaluation-semantic=observe · runs live" />
 
@@ -72,6 +75,8 @@ The report names the assertion kind, the semantic in force, why it fired, and wh
 
 This flag-controlled behaviour is what makes contracts deployable. You can build with `observe` in staging to collect violations from real traffic without taking the service down, then move to `enforce` once the reports go quiet. The same source, unmodified.
 
+It cuts the other way too, and the consequence is easy to miss. The semantic is chosen by whoever configures the build, not by whoever wrote the function, so a library author cannot make a precondition check something callers are guaranteed to get. [Lucian Radu Teodorescu puts the limitation plainly](https://accu.org/journals/overload/34/194/teodorescu/) in the August 2026 *Overload*: preconditions cannot be fully guaranteed at the code level. A `pre` states an obligation and offers a way to check it. Whether the check exists in the binary someone ships is a decision made elsewhere.
+
 ## Where they fit
 
 Contracts overlap with [the hardened standard library](/posts/hardened-stdlib-turn-it-on/) in spirit and differ in scope: hardening checks the *library's* preconditions for you, while contracts let you state your own. Neither replaces tests, because a precondition only fires on inputs you actually execute.
@@ -80,4 +85,4 @@ The most useful habit is narrower than "write contracts everywhere": put a `pre`
 
 ---
 
-**Sources**: [P2900 "Contracts for C++"](https://wg21.link/p2900) · [GCC 16 contracts documentation](https://gcc.gnu.org/gcc-16/changes.html) · Timur Doumler's [CppCon 2026 session on completing the contract-assertion facility](https://isocpp.org/blog).
+**Sources**: [P2900 "Contracts for C++"](https://wg21.link/p2900) · [GCC 16 contracts documentation](https://gcc.gnu.org/gcc-16/changes.html) · Lucian Radu Teodorescu, ["On Contracts and Safety"](https://accu.org/journals/overload/34/194/teodorescu/), *Overload* 194, August 2026 · Timur Doumler's [CppCon 2026 session on completing the contract-assertion facility](https://isocpp.org/blog).
