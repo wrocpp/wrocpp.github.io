@@ -22,7 +22,7 @@ There is a class of C++ function that must never block. An audio callback has a 
 
 **RealtimeSanitizer** (Clang, `-fsanitize=realtime`) checks exactly that. You mark a function with `[[clang::nonblocking]]`, which is a promise that it will not call anything that might block, and RTSan verifies the promise at runtime with interposed allocator and locking primitives. A violation is reported the way ASan reports a bad access: a named error and a full stack.
 
-<GodboltEmbed id="abWecWbMn" gccOnly title="RTSan catches the malloc hiding inside a push_back" gcc_subtitle="x86-64 clang (trunk) · -fsanitize=realtime · runs live" />
+<GodboltEmbed id="abWecWbMn" compilerLabel="clang (trunk)" title="RTSan catches the malloc hiding inside a push_back" gcc_subtitle="x86-64 clang (trunk) · -fsanitize=realtime · runs live" />
 
 The demo's `audio_callback` is marked `[[clang::nonblocking]]` and does two ordinary things: a `push_back` on an empty vector and a `lock_guard`. Both are reported. The first is the interesting one, because nothing in the line `buf.push_back(1.0f)` looks like an allocation:
 
