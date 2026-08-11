@@ -1,0 +1,79 @@
+---
+title: "Iterating matches, and a manual that has fallen behind"
+slug: "ctre-ranges"
+pubDate: 2026-09-19
+author: filip-sajdak
+language: en
+kind: flagship
+audience: working-cpp
+series: ctre
+series_order: 5
+tags: [regex, ctre, ranges, tokenize, documentation, series]
+summary: "search_all, split and tokenize cover scanning, separating and lexing, and the difference between the first and the last one decides which you want. The documentation still teaches ctre::range, which the compiler now reports as deprecated, so this episode is written against the header."
+draft: false
+relatedPosts: [ctre-captures-bindings, ctre-lexer]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+Matching one string is the simple case. Most real uses walk an input, and CTRE has three ways to do that which are easy to confuse.
+
+<GodboltEmbed id="5qGYnYrqh" compilerLabel="GCC 16.1" title="search_all, split and tokenize on the same inputs" gcc_subtitle="x86-64 GCC 16.1 · -std=c++20 -O2 · ctre trunk · runs live" />
+
+## Start with the documentation problem
+
+The [readthedocs page](https://compile-time-regular-expressions.readthedocs.io/en/latest/) teaches `ctre::range` and describes range support as preliminary. Compile that today and the compiler disagrees:
+
+```
+warning: 'ctre::range<...>' is deprecated: use search_all
+```
+
+The same documentation carries a literal `TODO more detailed regex information` where the syntax reference should be. Neither of those is a criticism of the library, which is under active development, but it does set the working rule for this series: **read the header, not the manual.** Everything below was checked against a compiler rather than a page.
+
+## search_all
+
+Every match of the pattern, skipping whatever lies between:
+
+```cpp
+for (auto m : ctre::search_all<"([0-9]+)">("123,456,768"sv)) {
+    m.get<1>();   // 123, then 456, then 768
+}
+```
+
+## split
+
+The pieces between matches of a separator, which is the inverse view of the same walk:
+
+```cpp
+for (auto piece : ctre::split<",">("alpha,beta,gamma"sv)) {
+    // alpha, beta, gamma
+}
+```
+
+## tokenize, and the distinction that matters
+
+`tokenize` consumes the input from the front, match after match, and stops at the first position where the pattern does not match. That sounds like a smaller `search_all` and behaves like a different tool. The same pattern over the same input:
+
+| Input `ab!!cd` | Result |
+|---|---|
+| `search_all<"[a-z]+">` | `[ab] [cd]` |
+| `tokenize<"[a-z]+">` | `[ab]` |
+
+`search_all` treats unmatched input as something to skip past. `tokenize` treats it as the end of the road.
+
+For scanning a log line for every timestamp, skipping is correct and `search_all` is the tool. For lexing a language, unmatched input is a syntax error, and silently skipping it turns a broken program into a subtly different valid one. That is why the lexer in the next episode is built on `tokenize`: stopping is the feature.
+
+## What these give you as ranges
+
+All three are usable in a range-for and compose with the standard range machinery, so the ordinary vocabulary applies:
+
+```cpp
+auto numbers = ctre::search_all<"([0-9]+)">(input)
+             | std::views::transform([](auto m) { return m.get<1>().to_view(); });
+```
+
+Which is the quiet payoff of the library being ordinary C++ rather than a separate engine: the matches are just a range, and everything that works on ranges works on them.
+
+---
+
+**Sources**: [CTRE](https://github.com/hanickadot/compile-time-regular-expressions) · [CTRE documentation](https://compile-time-regular-expressions.readthedocs.io/en/latest/)

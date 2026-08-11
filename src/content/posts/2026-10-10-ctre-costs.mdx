@@ -1,0 +1,79 @@
+---
+title: "What compile-time regex costs, measured"
+slug: "ctre-costs"
+pubDate: 2026-10-10
+author: filip-sajdak
+language: en
+kind: flagship
+audience: working-cpp
+series: ctre
+series_order: 8
+tags: [regex, ctre, compile-time, limits, cpp26, series]
+summary: "Moving work to compile time moves the bill there too. Including the CTRE header costs about three quarters of a second, and each distinct pattern adds to that. The library also declines some PCRE syntax and reports it through an error message that names the offset while wrapping it in template noise."
+draft: false
+relatedPosts: [ctre-reflection, ctre-why-std-regex]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+Seven episodes of what CTRE does well earns one about what it costs. Three things: build time, syntax coverage, and what happens when you get a pattern wrong.
+
+## Build time
+
+Every distinct pattern instantiates its own matcher, so the cost scales with how many different patterns a translation unit contains. Compiling N unique patterns on GCC 16.1 at `-O1`:
+
+| Patterns | Compile time |
+|---|---|
+| 0 (header only) | 724 ms |
+| 1 | 1374 ms |
+| 5 | 1771 ms |
+| 10 | 2237 ms |
+| 20 | 4206 ms |
+
+Two things stand out. Including the header at all costs about three quarters of a second before you write a single pattern, which is the floor for any translation unit that touches CTRE. After that the growth is roughly linear, at very approximately a hundred milliseconds per pattern.
+
+The honest caveat: these were measured on Compiler Explorer, which is a shared machine, and repeated runs moved by a factor approaching two. A 40-pattern measurement came out barely above the 20-pattern one, which is not plausible as real scaling and is better read as noise. Treat the shape as the finding and re-measure on your own hardware before making a decision on it.
+
+None of that is alarming for the usual case, where a program has a handful of patterns. It matters if you are tempted to put CTRE in a widely included header, which turns the fixed cost into a per-translation-unit cost across the build.
+
+## Syntax that is declined
+
+The library describes itself as almost PCRE-compatible, and the documentation lists what is missing: atomic groups, conditional patterns, subroutines, callouts, comments, `\K`, `\X`, character properties, octal escapes, boundaries beyond `^` and `$`.
+
+There are also smaller divergences the list does not mention. A bare dash inside a character class is one:
+
+```
+[-+*/=()]   rejected
+[+*/=()-]   rejected
+[+*/=()\-]  accepted
+```
+
+PCRE takes a dash at either end of a class as a literal. CTRE wants it escaped in both positions. Nothing here is unreasonable, but it is the kind of thing you find by compiling rather than by reading, which has been the theme of this series.
+
+## The error message
+
+Get a pattern wrong and the failure arrives at compile time, which is the point. What it looks like:
+
+<GodboltEmbed id="K3zqj78qr" compilerLabel="GCC 16.1" title="A malformed pattern, rejected during compilation" gcc_subtitle="x86-64 GCC 16.1 · -std=c++20 -O1 · ctre trunk · compile error" />
+
+```
+error: invalid use of incomplete type 'struct ctre::problem_at_position<23>'
+note: declaration of 'struct ctre::problem_at_position<23>'
+  template <size_t> struct problem_at_position; // do not define!
+```
+
+The mechanism is a deliberate trick. CTRE declares `problem_at_position` and never defines it, so instantiating it fails and the offset rides along in the type name. Position 23 is exactly where the pattern goes wrong.
+
+The information is precise and the delivery is a compiler diagnostic about incomplete types, which the reader has to translate. That gap is what [P2741](https://wg21.link/p2741), user-generated `static_assert` messages in C++26, exists to close: a library will be able to compute a sentence and have the compiler print it. A future CTRE could say which character it disliked and why, in words, rather than encoding the offset in a type name and hoping.
+
+## When to reach for it
+
+Use it when the pattern is known when you write the code, which is most of the time. Validation, log lines, configuration keys, tokenising a small language: all fixed patterns, all better checked during compilation than repeatedly at run time.
+
+Reach for something else when the pattern is genuinely dynamic, arriving from a user or a config file, because a template argument cannot come from run-time data. That is not a gap CTRE can close; it is the definition of what compile-time means.
+
+That boundary is the series in one line. Everything CTRE does well follows from the pattern being known at compile time, and its one real limitation is the same fact seen from the other side.
+
+---
+
+**Sources**: [CTRE](https://github.com/hanickadot/compile-time-regular-expressions) · [P2741 "User-generated static_assert messages"](https://wg21.link/p2741) · measurements in the [examples repo](https://github.com/wrocpp/cpp26-reflection-examples)

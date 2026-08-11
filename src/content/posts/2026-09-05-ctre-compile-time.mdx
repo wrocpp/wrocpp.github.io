@@ -1,0 +1,92 @@
+---
+title: "Validating a string before the program exists"
+slug: "ctre-compile-time"
+pubDate: 2026-09-05
+author: filip-sajdak
+language: en
+kind: flagship
+audience: working-cpp
+series: ctre
+series_order: 3
+tags: [regex, ctre, constexpr, consteval, compile-time, series]
+summary: "CTRE matches run inside constant expressions, so a regex can check and parse a string literal while the compiler is still working. A malformed version string then stops the build rather than surviving into production, and the parsed result is available as a constant."
+draft: false
+relatedPosts: [ctre-cnttp, ctre-captures-bindings]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+A regex that runs at compile time sounds like a parlour trick until you notice what it replaces: the class of bug where a hardcoded string is subtly wrong and nobody finds out until the code path runs.
+
+CTRE matches are usable in constant expressions, which makes this a build error:
+
+```cpp
+static_assert(is_semver("1.2"));   // fails: two components, not three
+```
+
+## Proving it really is compile time
+
+The demo below is written so it cannot cheat. Every check is a `static_assert`, and the validator is `consteval` rather than `constexpr`, which means it cannot be called at run time at all. If the matcher were not running during translation, the file would not compile.
+
+```cpp
+static constexpr auto kSemver = ctll::fixed_string{R"((\d+)\.(\d+)\.(\d+))"};
+
+consteval bool is_semver(std::string_view s) {
+    return static_cast<bool>(ctre::match<kSemver>(s));
+}
+
+static_assert(is_semver("1.2.3"));
+static_assert(!is_semver("1.2"));
+static_assert(!is_semver("1.2.3-rc1"));
+static_assert(!is_semver("banana"));
+```
+
+<GodboltEmbed id="bq37qxzT4" compilerLabel="GCC 16.1" title="Eleven assertions checked before main exists" gcc_subtitle="x86-64 GCC 16.1 · -std=c++20 -O2 · ctre trunk · runs live" />
+
+## Parsing, not just checking
+
+The captures are ordinary `string_view`s into the literal, so they work in a constant expression like anything else. That is enough to turn a string into a structure at compile time:
+
+```cpp
+consteval version parse_semver(std::string_view s) {
+    auto m = ctre::match<kSemver>(s);
+    if (!m) { return version{-1, -1, -1}; }
+    return version{to_int(m.get<1>().to_view()),
+                   to_int(m.get<2>().to_view()),
+                   to_int(m.get<3>().to_view())};
+}
+
+constexpr auto v = parse_semver("2.11.4");
+static_assert(v.major == 2);
+static_assert(v.minor == 11);
+static_assert(v.patch == 4);
+```
+
+`v` is a constant. Nothing about the parse survives into the binary; what remains is three integers the compiler already knew.
+
+## consteval or constexpr
+
+One detail that catches people, and caught me while writing this. A `constexpr` function may be called at run time, so it cannot forward its parameter to a `consteval` one:
+
+```cpp
+constexpr bool require_semver(std::string_view s) { return is_semver(s); }
+// error: call to consteval function 'is_semver(s)' is not a constant expression
+```
+
+The compiler is right, and the fix is to say what you meant. If the check only ever happens during compilation, the function is `consteval`:
+
+```cpp
+consteval bool require_semver(std::string_view s) { return is_semver(s); }
+```
+
+Choosing between the two is choosing whether run-time callers are allowed. For a validator over string literals, they are not, and saying so is the more honest signature.
+
+## Where this earns its place
+
+Version strings are the small example. The shape generalises to anything spelled as a literal and structured by convention: a route table, a set of environment-variable names, a configuration key, an identifier format your team agreed on. Each of those is usually checked by a comment, a code review, or a test that runs long after the mistake was typed.
+
+A `static_assert` over a pattern moves that check to the place where the mistake happens, and costs nothing at run time because there is no run time involved. The bill arrives at compile time instead, which the last episode of this series measures rather than hand-waves.
+
+---
+
+**Sources**: [CTRE](https://github.com/hanickadot/compile-time-regular-expressions) · demo source in the [examples repo](https://github.com/wrocpp/cpp26-reflection-examples)

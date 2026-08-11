@@ -1,0 +1,87 @@
+---
+title: "Getting values out of a match"
+slug: "ctre-captures-bindings"
+pubDate: 2026-09-12
+author: filip-sajdak
+language: en
+kind: flagship
+audience: working-cpp
+series: ctre
+series_order: 4
+tags: [regex, ctre, structured-bindings, cpp26, captures, series]
+summary: "Numbered captures, named captures, and structured bindings that destructure a match directly. C++26 lets the binding itself be the condition, which removes the trailing test, though one compiler currently disagrees about that inside constant expressions."
+draft: false
+relatedPosts: [ctre-compile-time, p0963-constexpr-tuple-divergence]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+A match object answers two questions at once: did it match, and what did it capture. CTRE gives three ways to ask the second one, and the choice is mostly about how much the pattern is doing.
+
+<GodboltEmbed id="7fTT5z8ec" compilerLabel="GCC 16.1" title="Numbered captures, named captures and bindings" gcc_subtitle="x86-64 GCC 16.1 · -std=c++20 -O2 · ctre trunk · runs live" />
+
+## By number
+
+Index 0 is the whole match, and the groups follow in the order their opening parenthesis appears:
+
+```cpp
+if (auto m = ctre::match<"([a-z]+)([0-9]+)">("abc123"sv)) {
+    m.get<0>();   // abc123
+    m.get<1>();   // abc
+    m.get<2>();   // 123
+}
+```
+
+Fine for one or two groups. Past that, `get<4>` in code that someone reads six months later is a small puzzle every time.
+
+## By name
+
+```cpp
+if (auto m = ctre::match<"(?<word>[a-z]+)(?<number>[0-9]+)">("abc123"sv)) {
+    m.get<"word">();
+    m.get<"number">();
+}
+```
+
+The name lives in the pattern and is checked against it, so a typo is a compile error rather than an empty capture. This is the same C++20 feature from episode 2 doing a second job: the name reaches `get` as a template argument.
+
+## By destructuring
+
+The result works with structured bindings directly, which reads best when the pattern is genuinely a record:
+
+```cpp
+if (auto [whole, y, m, d] = ctre::match<R"((\d{4})/(\d{1,2})/(\d{1,2}))">(s); whole) {
+    return date{y.to_view(), m.to_view(), d.to_view()};
+}
+```
+
+Note the `; whole` at the end. The bindings are the captures, so testing success needs the whole-match binding explicitly.
+
+## What C++26 changes, and where it does not
+
+[P0963](https://wg21.link/p0963) lets a structured binding declaration be the condition, which drops the trailing test:
+
+```cpp
+if (auto [whole, y, m, d] = ctre::match<...>(s)) { ... }
+```
+
+At run time that works on GCC 16.1 and Clang 22.1 alike. Inside a constant expression it currently works on Clang only: GCC rejects the combination of a P0963 condition, a type that decomposes through the tuple protocol, and constant evaluation, which is precisely what a `constexpr` CTRE match is. That is [a compiler defect rather than anything about your code](/posts/p0963-constexpr-tuple-divergence/), and the portable spelling with the explicit `; whole` works everywhere today.
+
+So the demo uses the explicit form in the `constexpr` function and reserves the shorter one for prose. When GCC catches up, deleting two characters is the whole migration.
+
+## Captures that did not participate
+
+An alternation leaves some groups unmatched, and an unmatched capture converts to `false`. That distinguishes "matched nothing" from "did not match":
+
+```cpp
+if (auto m = ctre::match<"([a-z]+)|([0-9]+)">("abc"sv)) {
+    (bool)m.get<1>();   // true
+    (bool)m.get<2>();   // false
+}
+```
+
+Which is the whole basis of building a lexer from one pattern, two episodes from here.
+
+---
+
+**Sources**: [P0963R3](https://wg21.link/p0963) · [CTRE](https://github.com/hanickadot/compile-time-regular-expressions)

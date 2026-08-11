@@ -1,0 +1,85 @@
+---
+title: "Measuring std::regex against a compile-time matcher"
+slug: "ctre-why-std-regex"
+pubDate: 2026-08-22
+author: filip-sajdak
+language: en
+kind: flagship
+audience: working-cpp
+series: ctre
+series_order: 1
+tags: [regex, ctre, performance, benchmark, cpp20, tooling, series]
+summary: "std::regex has a reputation, and reputations are worth checking. Measured at its most favourable, with the pattern compiled once outside the timed loop, it takes about seventy times longer per match than CTRE. Include the construction that real code usually pays for and the gap widens by another order of magnitude. Episode 1 of a series on compile-time regular expressions and the language features that make them possible."
+draft: false
+relatedPosts: [google-benchmark-on-ce, sanitizers-on-ce]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+Everyone knows `std::regex` is slow. Rather less often does anyone say by how much, against what, and measured how, which is how folklore survives long after the thing it describes has changed. So here is a measurement you can rerun in a browser.
+
+The comparison is against [CTRE](https://github.com/hanickadot/compile-time-regular-expressions), Hana Dusikova's compile-time regular expression library, on the same pattern and the same input.
+
+## Making the comparison fair
+
+A rigged regex benchmark is easy to write by accident, so three decisions matter more than the numbers.
+
+The `std::regex` object is **constructed once, outside the timed loop**. Building it per iteration would measure pattern parsing every time, which is the least flattering thing you can do to it. Steady-state matching is where `std::regex` looks best, and that is the headline comparison.
+
+Both sides run the same pattern and extract captures, so neither is quietly doing less work. And both loop bodies are wrapped in `benchmark::DoNotOptimize`, which matters more here than usual: CTRE resolves the pattern at compile time, so an unguarded loop can fold away entirely and report a spectacular result for doing nothing at all.
+
+```cpp
+const std::regex kStdRe{std::string{kPattern}};      // built once
+
+void StdRegexMatch(benchmark::State& state) {
+    for (auto _ : state) {
+        std::smatch m;
+        bool ok = std::regex_match(kSubject, m, kStdRe);
+        benchmark::DoNotOptimize(ok);
+    }
+}
+
+void CtreMatch(benchmark::State& state) {
+    for (auto _ : state) {
+        auto m = ctre::match<R"((\d{4})/(\d{1,2})/(\d{1,2}))">(subject);
+        bool ok = static_cast<bool>(m);
+        benchmark::DoNotOptimize(ok);
+    }
+}
+```
+
+<GodboltEmbed id="xWqYP4x4P" compilerLabel="GCC 16.1" title="std::regex against CTRE, google/benchmark, runs live" gcc_subtitle="x86-64 GCC 16.1 · -std=c++20 -O2 · ctre + benchmark · runs live" />
+
+## The numbers
+
+CPU time per operation, GCC 16.1 and Clang 22.1:
+
+| Benchmark | GCC 16.1 | Clang 22.1 |
+|---|---|---|
+| `std::regex`, pattern built once | 455 ns | 319 ns |
+| CTRE | 6.6 ns | 4.5 ns |
+| `std::regex`, construction included | 7048 ns | 11856 ns |
+
+About seventy times, on both compilers, in the setup that favours `std::regex` most. Include construction and it reaches roughly a thousand times on GCC and rather more on Clang.
+
+Two caveats on reading these. Compiler Explorer is a shared machine, so absolute figures move between runs; across repeats the wall-clock column swung by nearly a factor of two while CPU time stayed close and the ratio held near seventy. And Clang matches faster than GCC yet constructs more slowly, on the same standard library, which is a codegen difference rather than anything about the two regex designs.
+
+## Where the time goes
+
+`std::regex` parses the pattern at run time into a data structure the matcher walks. That structure is built with allocations, the walk is indirect, and the pattern is invisible to the optimiser because it is data rather than code. Nothing in the design lets a compiler specialise the matcher for one particular pattern, because the pattern is not known when the matcher is compiled.
+
+CTRE inverts that. The pattern is a template argument, so the matcher for `(\d{4})/(\d{1,2})/(\d{1,2})` is generated as ordinary code at compile time, inlined into the caller, with no pattern structure to walk and nothing to allocate. What runs is straight-line code that happens to have been written by a template.
+
+That is also why the construction row is so lopsided. There is no CTRE equivalent of it, because there is nothing to construct.
+
+## The part that is not free
+
+Compile time is the bill. Every distinct pattern instantiates a new matcher, and a program with many large patterns pays for that on every build. The library also supports most of PCRE rather than all of it. Both of those get an episode of their own later in the series, with measurements rather than adjectives.
+
+## What this series covers
+
+CTRE is interesting beyond being fast, because almost every part of its interface exists as a direct consequence of a specific language feature landing. Passing a pattern as `ctre::match<"...">` needs C++20 class-type template parameters. Destructuring a result needs structured bindings. Matching inside a `static_assert` needs the constexpr work of the last decade. The library is a readable argument for why those features were worth having, which is the thread the next seven episodes follow.
+
+---
+
+**Sources**: [CTRE](https://github.com/hanickadot/compile-time-regular-expressions) · [google/benchmark](https://github.com/google/benchmark) · benchmark source in the [examples repo](https://github.com/wrocpp/cpp26-reflection-examples)
