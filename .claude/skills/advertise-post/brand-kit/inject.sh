@@ -68,16 +68,41 @@ PY
 
   # 3. Stamp the AI-disclosure badge into the card (bottom-right; styled by
   #    .ai-badge in wrocpp.css). Idempotent: skip if already present.
-  python3 - "$INDEX_HTML" <<'PY'
-import sys
-p = sys.argv[1]
-html = open(p).read()
+  #
+  #    The label follows `ai_disclosure` in the card's config.yaml, mirroring
+  #    the post's own frontmatter field (see content.config.ts):
+  #      ai-generated (default) -> "AI-generated"
+  #      ai-assisted            -> "AI-assisted"
+  #      human                  -> NO badge at all
+  #    A human-authored guest post must not carry an AI badge: labelling a
+  #    contributor's own writing as machine-generated is exactly the kind of
+  #    misattribution the /ai page exists to prevent.
+  python3 - "$INDEX_HTML" "$PROJECT_DIR/config.yaml" <<'PY'
+import re, sys
+index_html, config_yaml = sys.argv[1], sys.argv[2]
+
+disclosure = "ai-generated"
+try:
+    for line in open(config_yaml):
+        m = re.match(r'\s*ai_disclosure:\s*["\']?([a-z-]+)', line)
+        if m:
+            disclosure = m.group(1)
+            break
+except OSError:
+    pass
+
+if disclosure == "human":
+    print("ok   ai_disclosure: human -> no badge stamped")
+    raise SystemExit(0)
+
+label = "AI-assisted" if disclosure == "ai-assisted" else "AI-generated"
+html = open(index_html).read()
 if 'class="ai-badge"' in html:
-    print("ok   ai-badge already present (skipped)")
+    print(f"ok   ai-badge already present (skipped)")
 elif '</section>' in html:
-    html = html.replace('</section>', '<div class="ai-badge">AI-generated</div></section>', 1)
-    open(p, 'w').write(html)
-    print("ok   stamped ai-badge")
+    html = html.replace('</section>', f'<div class="ai-badge">{label}</div></section>', 1)
+    open(index_html, 'w').write(html)
+    print(f"ok   stamped ai-badge ({label})")
 else:
     sys.exit("error: no </section> anchor to attach ai-badge")
 PY

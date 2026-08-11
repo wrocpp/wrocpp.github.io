@@ -13,6 +13,7 @@ Exit code: 0 = all OK, 1 = at least one ERROR.
 """
 
 import argparse
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -147,11 +148,33 @@ def check_one(platform: str, slug: str) -> list[str]:
                     f"({MAGNET_VIEWBOX} not found); inject.sh did not run after "
                     f"brand-gen build. Re-run inject.sh, then brand-gen image."
                 )
-            if AI_BADGE_MARKER not in html:
+            # The badge requirement follows the card's ai_disclosure, mirroring
+            # the post frontmatter. A human-authored guest post must NOT carry
+            # an AI badge, so for those the check inverts.
+            disclosure = "ai-generated"
+            cfg = base / "config.yaml"
+            if cfg.exists():
+                try:
+                    for line in cfg.open():
+                        m = re.match(r'\s*ai_disclosure:\s*["\']?([a-z-]+)', line)
+                        if m:
+                            disclosure = m.group(1)
+                            break
+                except OSError:
+                    pass
+
+            if disclosure == "human":
+                if AI_BADGE_MARKER in html:
+                    issues.append(
+                        f"{red('ERROR')} {label}: ai_disclosure is 'human' but the card "
+                        f"carries an AI badge. That mislabels a person's writing as "
+                        f"machine-generated. Re-run inject.sh, then brand-gen image."
+                    )
+            elif AI_BADGE_MARKER not in html:
                 issues.append(
                     f"{red('ERROR')} {label}: index.html has no AI-disclosure badge "
-                    f"({AI_BADGE_MARKER} not found). Every card must carry the badge "
-                    f"per the /ai policy. Re-run inject.sh, then brand-gen image."
+                    f"({AI_BADGE_MARKER} not found). Cards for AI-drafted posts must "
+                    f"carry it per the /ai policy. Re-run inject.sh, then brand-gen image."
                 )
 
     # Sample title-area pixel: should contain dark ink (not just paper background)

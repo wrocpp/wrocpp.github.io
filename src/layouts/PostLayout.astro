@@ -13,7 +13,14 @@ const { title, summary, pubDate, updatedDate, language, tags, series, series_ord
 const date = pubDate.toISOString().slice(0, 10);
 
 // AI disclosure (see /ai). authorName maps the author id to a display name.
-const authorNames: Record<string, string> = { 'filip-sajdak': 'Filip Sajdak' };
+// Guest authors go here too. A post with aiDisclosure: 'human' renders a plain
+// "by <name>" byline and its social card carries no AI badge (inject.sh reads
+// ai_disclosure from the card config), so a contributor's own writing is never
+// labelled machine-generated.
+const authorNames: Record<string, string> = {
+  'filip-sajdak': 'Filip Sajdak',
+  'neiltalap': 'Neil',
+};
 const authorName = authorNames[author] ?? author;
 const aiWord = aiDisclosure === 'ai-assisted' ? 'AI-assisted' : 'AI-generated';
 const aiVerb = aiDisclosure === 'ai-assisted' ? 'edited' : 'reviewed';
