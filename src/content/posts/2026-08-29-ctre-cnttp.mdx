@@ -1,0 +1,86 @@
+---
+title: "The C++20 feature that gave CTRE its interface"
+slug: "ctre-cnttp"
+pubDate: 2026-08-29
+author: filip-sajdak
+language: en
+kind: flagship
+audience: working-cpp
+series: ctre
+series_order: 2
+tags: [regex, ctre, cpp20, templates, nttp, series]
+summary: "Writing ctre::match<\"[a-z]+\"> requires a string literal to be a template argument, which C++20 allowed and every earlier standard did not. The older spelling still works and still compiles under C++17, so the two sit side by side and show exactly what the feature bought."
+draft: false
+relatedPosts: [ctre-why-std-regex, ctre-compile-time]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+The CTRE call everyone recognises looks like this:
+
+```cpp
+ctre::match<"[a-z]+([0-9]+)">(subject)
+```
+
+A string literal, sitting where a type or a number usually goes. That spelling was impossible before C++20, and the reason it became possible is a small feature with a large effect on how libraries read.
+
+## What changed
+
+Template parameters that are values rather than types have always been restricted. Integers, enumerators, pointers with linkage, and not much else. A string literal was firmly outside the list, because the rules had no way to compare two of them for template-argument equivalence.
+
+[P0732](https://wg21.link/p0732) widened it to class types whose members are all public and themselves usable this way, with [P1907](https://wg21.link/p1907) repairing the specification afterwards. That is enough for a small struct holding a character array, which is what `ctll::fixed_string` is. Once such a type can be a template parameter, and a string literal can initialise it, the pattern can travel as a template argument.
+
+## Both spellings, side by side
+
+Before C++20, the pattern needed a name and a `constexpr` variable:
+
+```cpp
+static constexpr auto pattern = ctll::fixed_string{"[a-z]+([0-9]+)"};
+if (auto m = ctre::match<pattern>(subject)) { ... }
+```
+
+After, the literal goes straight in:
+
+```cpp
+if (auto m = ctre::match<"[a-z]+([0-9]+)">(subject)) { ... }
+```
+
+<GodboltEmbed id="7K3493cez" compilerLabel="GCC 16.1" title="Both spellings compiling in one program" gcc_subtitle="x86-64 GCC 16.1 · -std=c++20 -O2 · ctre trunk · runs live" />
+
+Both instantiate the same matcher. The literal is converted to the same `ctll::fixed_string`; it simply no longer needs somewhere to live.
+
+Worth knowing: the older form is not deprecated history. On current CTRE it still compiles under `-std=c++17` on both GCC and Clang, which matters if you are on a codebase that has not moved yet. What C++17 cannot do is the direct-literal spelling.
+
+## Why the ergonomics matter more than they look
+
+A named constant per pattern sounds like a minor tax until patterns are used the way regexes actually are, which is inline and locally. Compare a function that validates three fields:
+
+```cpp
+static constexpr auto p_year  = ctll::fixed_string{R"(\d{4})"};
+static constexpr auto p_month = ctll::fixed_string{R"(\d{1,2})"};
+static constexpr auto p_day   = ctll::fixed_string{R"(\d{1,2})"};
+// ... three names to invent, three declarations to scroll past
+```
+
+against three inline literals at the point of use. The feature did not make anything newly possible, since the `fixed_string` form was already there. It removed a naming ceremony that discouraged using the library in small ways.
+
+## A named pattern still needs the right type
+
+One trap worth naming, because the error is unhelpful. This does not work:
+
+```cpp
+constexpr auto kSemver = R"((\d+)\.(\d+)\.(\d+))";   // const char*
+ctre::match<kSemver>(s);                             // does not compile
+```
+
+A pointer to a string literal is not a valid template argument, C++20 or otherwise. Naming a pattern means naming a `ctll::fixed_string`:
+
+```cpp
+static constexpr auto kSemver = ctll::fixed_string{R"((\d+)\.(\d+)\.(\d+))"};
+```
+
+The next episode uses exactly that, because a pattern worth naming is usually a pattern worth checking at compile time.
+
+---
+
+**Sources**: [P0732 "Class Types in Non-Type Template Parameters"](https://wg21.link/p0732) · [P1907 "Inconsistencies with non-type template parameters"](https://wg21.link/p1907) · [CTRE](https://github.com/hanickadot/compile-time-regular-expressions)

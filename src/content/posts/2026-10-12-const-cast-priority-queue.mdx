@@ -1,0 +1,50 @@
+---
+title: "You cannot move out of a priority_queue without a const_cast"
+slug: "const-cast-priority-queue"
+pubDate: 2026-10-12
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, stl, containers, move-semantics, cpp]
+summary: "priority_queue::top() returns a const reference, so a move-only element cannot be taken out of the queue at all: the copy constructor is selected and the code does not compile. The accepted workaround is a const_cast immediately followed by pop(), which is safe for one specific reason worth understanding before you write it."
+draft: false
+relatedPosts: [function-wrapper-explosion, flat-map]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+`std::priority_queue` is a heap, and a heap is only a heap while its ordering invariant holds. If you could mutate the top element in place you could change the very key the heap is organised by, so `top()` returns a **`const_reference`**. That is a sound design decision.
+
+It also means you cannot get a move-only element back out. `Task t = pq.top();` selects the copy constructor, and if `Task` holds a `unique_ptr` there is no copy constructor to select, so the line does not compile. There is no `extract()` on `priority_queue` the way there is on the associative containers, and no move-aware `pop()` that hands you the element.
+
+The accepted workaround is to cast the const away:
+
+<GodboltEmbed id="5jxM3Y8xa" gccOnly title="Moving a move-only element out of a priority_queue" gcc_subtitle="x86-64 GCC 16.1 · -std=c++23 · runs live" />
+
+```
+priority 9 -> high
+priority 5 -> mid
+priority 1 -> low
+```
+
+The queue holds `Task`s carrying a `unique_ptr<std::string>`, and each one is moved out and printed in priority order.
+
+## Why this particular const_cast is defensible
+
+Casting away const is usually where bugs come from, so it is worth being precise about why this instance is not one. `const_cast` is undefined behavior only when you **modify an object that was originally declared const**. The elements inside the queue's underlying `vector` are not const objects; they are ordinary objects that `top()` merely hands you a const view of. Removing that view's constness is legal.
+
+What makes it *safe* rather than merely legal is the line that follows:
+
+```cpp
+Task t = std::move(const_cast<Task&>(pq.top()));  // cast, then
+pq.pop();                                          // pop immediately
+```
+
+After the move, the top element is in a valid but unspecified state, which would be a genuine problem if the heap ever compared it again. `pop()` destroys it before that can happen. The two lines are effectively one operation, and **anything inserted between them is a bug**: an early `return`, a `continue`, or a throw between the move and the pop leaves a moved-from element sitting at the root of the heap.
+
+If that makes you uncomfortable, the alternative is to stop using `priority_queue` and keep a `std::vector` with `std::make_heap`, `push_heap` and `pop_heap`. It is the same algorithm with the guardrails removed: `pop_heap` moves the top to the back and you take it from there with no cast at all. `priority_queue` is a convenience wrapper, and this is one of the places where the wrapper costs more than it saves.
+
+---
+
+**Source**: Ben Deane, ["const_cast: A Necessary Evil"](https://www.elbeno.com/blog/?p=1858) · [cppreference: std::priority_queue::top](https://en.cppreference.com/w/cpp/container/priority_queue/top).

@@ -1,0 +1,83 @@
+---
+title: "A lexer that is one pattern and no allocations"
+slug: "ctre-lexer"
+pubDate: 2026-09-26
+author: filip-sajdak
+language: en
+kind: flagship
+audience: working-cpp
+series: ctre
+series_order: 6
+tags: [regex, ctre, lexer, parsing, tokenize, series]
+summary: "An alternation where each branch is a capture group doubles as a token table: whichever capture engaged names the token kind. Built on tokenize, unmatched input stops the scan instead of being skipped, which is what a lexer wants. The whole thing runs at compile time as readily as at run time."
+draft: false
+relatedPosts: [ctre-ranges, ctre-reflection]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+Hand-written lexers are mostly a loop, a switch, and a lot of careful index arithmetic. Regex-based ones usually cost an allocation per token and a pattern compilation at startup. CTRE gives a third option with neither.
+
+The shape is one alternation, one capture per token kind:
+
+```cpp
+constexpr auto kToken =
+    ctll::fixed_string{R"(([A-Za-z_]\w*)|(\d+)|([+*/=()\-])|(\s+))"};
+```
+
+Whichever capture engaged tells you what you matched, so the pattern is also the token table.
+
+<GodboltEmbed id="dqKr6455v" compilerLabel="GCC 16.1" title="Tokenising an expression, and counting tokens at compile time" gcc_subtitle="x86-64 GCC 16.1 · -std=c++20 -O2 · ctre trunk · runs live" />
+
+```cpp
+for (auto m : ctre::tokenize<kToken>(src)) {
+    if (m.get<1>())      { sink(token{kind::ident,  m.get<1>().to_view()}); }
+    else if (m.get<2>()) { sink(token{kind::number, m.get<2>().to_view()}); }
+    else if (m.get<3>()) { sink(token{kind::op,     m.get<3>().to_view()}); }
+    else if (m.get<4>()) { sink(token{kind::space,  m.get<4>().to_view()}); }
+}
+```
+
+Running it over `total = price * 3 + tax_rate` gives the expected stream, with whitespace dropped by the sink rather than by the pattern:
+
+```
+ident   total      op      =        ident   price
+op      *          number  3        ident   tax_rate
+```
+
+## Why tokenize rather than search_all
+
+Because of the behaviour from the previous episode. Feed the lexer `ok then #bad` and it produces `[ok] [then]` and stops. The `#` matches no branch, so the scan ends there.
+
+That is the correct failure. A lexer that skipped the `#` would hand the parser a token stream that looks valid and describes a program the author did not write. Stopping at the first thing you cannot explain is how a lexer reports a lexical error, and `tokenize` does it by construction rather than by an extra check.
+
+## It also runs at compile time
+
+Nothing about the lexer is run-time-only, so counting tokens in a constant expression works:
+
+```cpp
+constexpr int counted = [] {
+    int n = 0;
+    lex("a = 1 + 22"sv, [&n](token t) { if (t.k != kind::space) { ++n; } });
+    return n;
+}();
+static_assert(counted == 5);
+```
+
+Which is more useful than it first appears. A domain-specific string embedded in your source, a format specifier, a query template, can be lexed during compilation and rejected then, rather than being parsed on every call at run time.
+
+## The escaped dash
+
+One detail in the pattern that cost me two compiles. The operator class is written `[+*/=()\-]`, with the dash escaped. PCRE treats a dash at the start or the end of a character class as a literal; CTRE accepts neither position and rejects the pattern at compile time, naming the offset:
+
+```
+[-+*/=()]   -> problem_at_position<23>
+[+*/=()-]   -> problem_at_position<30>
+[+*/=()\-]  -> compiles
+```
+
+Which is a fair trade, and the final episode looks at what that error message is made of and what C++26 could do about how it reads.
+
+---
+
+**Sources**: [CTRE](https://github.com/hanickadot/compile-time-regular-expressions) · lexer source in the [examples repo](https://github.com/wrocpp/cpp26-reflection-examples)
