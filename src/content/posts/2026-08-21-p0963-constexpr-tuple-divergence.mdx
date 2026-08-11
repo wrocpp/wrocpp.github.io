@@ -1,0 +1,101 @@
+---
+title: "A C++26 structured binding that GCC and Clang disagree about"
+slug: "p0963-constexpr-tuple-divergence"
+pubDate: 2026-08-21
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, cpp26, gcc, clang, structured-bindings, constexpr]
+summary: "C++26 lets a structured binding declaration be the condition of an if. GCC 16.1 and Clang 22.1 both implement it and both agree on ordinary structs. Put a tuple-protocol type in the condition and evaluate it at compile time, and GCC rejects the program while Clang accepts it. The reproducer is twenty lines and needs no library."
+draft: false
+relatedPosts: [constexpr-exceptions, cpp26-contracts]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+C++26 added [P0963R3](https://wg21.link/p0963), which lets a structured binding declaration serve as a condition. Instead of declaring the bindings and then testing something separately:
+
+```cpp
+if (auto [a, b] = f(); ok) { ... }
+```
+
+the declaration itself becomes the condition, and `operator bool()` on the underlying object decides:
+
+```cpp
+if (auto [a, b] = f()) { ... }
+```
+
+GCC 15 and Clang both shipped it. On ordinary structs they agree. They stop agreeing when the bound type uses the tuple protocol and the call happens during constant evaluation.
+
+## The reproducer
+
+Twenty lines, no third-party code. A type with `operator bool()`, a `get<I>()`, and the matching `tuple_size` specialisation:
+
+```cpp
+struct Result {
+    int a, b;
+    bool ok;
+    constexpr explicit operator bool() const { return ok; }
+    template <std::size_t I> constexpr int get() const { return I == 0 ? a : b; }
+};
+template <> struct std::tuple_size<Result> : std::integral_constant<std::size_t, 2> {};
+template <std::size_t I> struct std::tuple_element<I, Result> { using type = int; };
+
+constexpr int sum_if_ok(int v) {
+    if (auto [a, b] = Result{v, v * 2, v != 0}) { return a + b; }
+    return -1;
+}
+
+static_assert(sum_if_ok(1) == 3);
+```
+
+<GodboltEmbed id="Yaxjv1r4E" compilerLabel="clang 22.1.0" title="Clang accepts it and folds the whole thing at compile time" gcc_subtitle="x86-64 clang 22.1.0 · -std=c++26 -O2 · runs live" />
+
+Clang compiles this, evaluates both assertions, and runs. GCC 16.1 refuses:
+
+```
+error: non-constant condition for static assertion
+   54 | static_assert(sum_if_ok(1) == 3);
+error: accessing '<anonymous>' outside its lifetime
+   47 |     if (auto [a, b] = Result{v, v * 2, v != 0}) {
+```
+
+<GodboltEmbed id="9GYx4xaf7" compilerLabel="GCC 16.1" title="The same file, rejected during constant evaluation" gcc_subtitle="x86-64 GCC 16.1 · -std=c++26 -O2 · compile error" />
+
+## Three ingredients, all required
+
+The interesting part is how specific the trigger is. Four variants, two compilers:
+
+| Variant | GCC 16.1 | Clang 22.1 |
+|---|---|---|
+| Plain struct, P0963 condition, constant evaluation | accepts | accepts |
+| Plain struct, P0963 condition, runtime only | accepts | accepts |
+| **Tuple protocol, P0963 condition, constant evaluation** | **rejects** | accepts |
+| Tuple protocol, pre-P0963 spelling with `; ok` | accepts | accepts |
+
+Drop any single ingredient and GCC is content. Bind the members directly instead of going through `get<I>()`, move the call out of constant evaluation, or write the older `; ok` form, and it compiles. All three together are what it takes.
+
+That last row matters most in practice, because it is also the workaround: the pre-P0963 spelling still works everywhere.
+
+## Where it turned up
+
+Not in a language test. It surfaced while checking whether P0963 shortens the canonical [CTRE](https://github.com/hanickadot/compile-time-regular-expressions) example, which destructures a match result:
+
+```cpp
+if (auto [whole, year, month, day] = ctre::match<"(\\d{4})/(\\d{1,2})/(\\d{1,2})">(s)) { ... }
+```
+
+`ctre::regex_results` decomposes through the tuple protocol, and CTRE's whole appeal is running at compile time, so a CTRE match in a `constexpr` function assembles all three ingredients without anyone setting out to. The library is doing nothing unusual. Any tuple-protocol type with an `operator bool()` gets there the same way.
+
+## Reading the disagreement
+
+GCC's message points at the lifetime of the temporary that the condition materialises. Clang keeps that object alive across the condition and the branch, which is the behaviour the paper describes, and GCC does the same everywhere except this one intersection.
+
+That fits the feature's history. GCC's P0963 support arrived in version 15 under [PR115745](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=115745), and two follow-up defects have been found and fixed since: an ICE when the binding is the condition of a `while` or `for` ([PR118833](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=118833)), and another ICE in the same area ([PR120039](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=120039)). A young feature accumulating corner cases is unremarkable; this looks like one more, and a search of the tracker turns up no open report covering it.
+
+For now, if you write P0963 conditions over tuple-protocol types and want them usable in constant expressions, GCC 16.1 will stop you, and the `; ok` form is the way through.
+
+---
+
+**Sources**: [P0963R3 "Structured binding declaration as a condition"](https://wg21.link/p0963) · [GCC PR115745, the P0963 implementation](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=115745) · [CTRE](https://github.com/hanickadot/compile-time-regular-expressions)
