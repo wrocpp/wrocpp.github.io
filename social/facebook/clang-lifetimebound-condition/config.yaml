@@ -6,7 +6,7 @@ size:
   dpr: 2
 
 project:
-  name: "constexpr-array-evolution"
+  name: "clang-lifetimebound-condition"
   author: "wro.cpp -- Wroclaw C++ community"
   email: "office@wro.cpp"
-  date: "2026-10-04"
+  date: "2026-08-19"
