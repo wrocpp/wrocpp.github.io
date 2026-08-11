@@ -1,0 +1,74 @@
+---
+title: "Clang's lifetimebound warns about a copy, and that is the problem"
+slug: "clang-lifetimebound-condition"
+pubDate: 2026-08-19
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, clang, lifetime, safety, attributes, tooling]
+summary: "The lifetimebound attribute lets -Wdangling see through a function call, which is how clang catches a string_view into a temporary. It has no conditional form, so a function that returns a copy on some instantiations and a reference on others has to pick between missing real dangles and warning about correct code. A proposal on the LLVM forum wants to close that gap."
+draft: false
+relatedPosts: [hardened-stdlib-turn-it-on, sanitizers-on-ce]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+`-Wdangling` cannot normally see inside a function call. If you write a helper that returns a `string_view` into its argument, the compiler has no idea the result borrows from the parameter, so passing a temporary compiles quietly and you get a dangling view. The `[[clang::lifetimebound]]` attribute is how you tell it:
+
+```cpp
+std::string_view first_word(const std::string& s [[clang::lifetimebound]]);
+```
+
+That one annotation is enough for clang to reject `first_word(std::string("hi there"))`. The attribute comes from [P0936R0](https://wg21.link/p0936), which was never voted into the standard; it survives as a vendor extension, in clang since version 7 and in MSVC 17.7 as `[[msvc::lifetimebound]]`.
+
+## The annotation has no off switch
+
+Now put it on a function whose return type depends on the instantiation. A `value_or` is the standard example: sometimes it hands back a reference into the argument, sometimes a copy. The attribute cannot express "only when I return a reference", so it applies always.
+
+<GodboltEmbed id="Mha4677s9" compilerLabel="clang 22.1.0" title="A dangling warning with nothing to dangle" gcc_subtitle="x86-64 clang 22.1.0 · -Wdangling -fsanitize=address · runs live" />
+
+The demo annotates a `value_or` that returns `std::string` by value, then calls it with a temporary:
+
+```cpp
+std::string value_or(const std::string& fallback [[clang::lifetimebound]]) const {
+    return has ? val : fallback;          // returns a copy
+}
+
+std::string copied = opt.value_or(std::string("fallback"));
+```
+
+Clang reports:
+
+```
+warning: temporary whose address is used as value of local variable 'copied'
+         will be destroyed at the end of the full-expression [-Wdangling]
+```
+
+There is nothing to dangle. The return type is `std::string`, so `copied` owns its characters; the temporary dying at the semicolon costs it nothing. The program runs to completion under AddressSanitizer and prints `fallback`, which is the point of wiring the sanitizer into the demo rather than arguing about it. The same code warns identically on released clang 21.1.0 and 22.1.0, so this is not a trunk artefact.
+
+Drop the attribute and the warning goes away, along with the ability to catch the case where `value_or` really does return a reference into the argument. There is no third option.
+
+## What is being proposed
+
+On 4 August, Barry Revzin [opened a thread on the LLVM forum](https://discourse.llvm.org/t/extending-clang-lifetimebound-to-take-a-condition/91475) proposing that the attribute take a boolean condition:
+
+```cpp
+R value_or(U&& rhs [[clang::lifetimebound(is_reference_v<R>)]]) const&;
+```
+
+Verbose, as he acknowledges. The alternative he is weighing it against is splitting `value_or` into additional overloads purely to carry different annotations, which costs readability and compile time for something that is not a real API distinction.
+
+Clang reviewers were receptive without committing. Aaron Ballman called it "reasonable to consider" while flagging uncertainty about "implementation burdens for the analysis". Others questioned the scope: whether conditional attributes should be a general mechanism rather than a `lifetimebound` special case, and whether a richer lifetime-annotation system would serve better in the long run. An alternative spelling using a templated attribute was floated on 7 August.
+
+**No patch has been posted, and there is no RFC.** This is a design discussion a week old with genuine disagreement about the right shape, so treat it as a problem statement rather than a feature heading your way.
+
+## Using it today
+
+The gap is narrow and worth knowing rather than avoiding. `[[clang::lifetimebound]]` earns its place on the ordinary case: a function returning a view, reference, iterator or pointer that borrows from a parameter. Annotate those and `-Wdangling` starts catching a class of bug that otherwise reaches production.
+
+The place to stop is a function whose return type varies by instantiation. There the annotation is a choice between false positives and missed dangles, and no amount of care in the caller changes that. Until the attribute learns a condition, the honest options are extra overloads or leaving it off and documenting why.
+
+---
+
+**Sources**: [Extending clang lifetimebound to take a condition](https://discourse.llvm.org/t/extending-clang-lifetimebound-to-take-a-condition/91475) (LLVM Discourse, 2026-08-04) · [P0936R0 "Bind Returned/Passed Significant Address"](https://wg21.link/p0936) · [D49922, the original clang implementation](https://reviews.llvm.org/D49922)
