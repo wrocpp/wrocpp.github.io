@@ -22,10 +22,10 @@
     "check:future": "WROCPP_RENDER_ALL=1 astro build --outDir dist-preflight"
   },
   "dependencies": {
-    "@astrojs/mdx": "^7.0.4",
+    "@astrojs/mdx": "^7.0.5",
     "@astrojs/rss": "^4.0.18",
     "@astrojs/sitemap": "^3.7.3",
-    "astro": "^7.1.4",
+    "astro": "^7.2.0",
     "js-yaml": "^5.2.3"
   },
   "devDependencies": {
