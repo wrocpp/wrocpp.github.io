@@ -16,3 +16,6 @@ yarn-error.log*
 .env.*
 !.env.example
 scripts/__pycache__/
+
+# preflight build output (npm run check:future)
+dist-preflight/
