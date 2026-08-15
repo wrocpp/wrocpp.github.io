@@ -16,6 +16,8 @@ import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
 C++26 shipped four headline features: reflection, `std::execution`, `std::simd` and **contracts**. Contracts got the least attention of the four, partly because [the design was contested right up to the vote](/posts/brno-profiles-contracts/), and partly because until recently there was nothing to try. That has changed. GCC 16.1 implements P2900, and you can write preconditions today.
 
+They are also still being argued about, which is worth knowing before you read the rest. The August 2026 mailing carries [P4334R0, "P2900 Contracts' fundamental flaws"](https://wg21.link/p4334), by Bjarne Stroustrup, J-Daniel Garcia, Vinnie Falco, John Spicer and Ville Voutilainen, which calls the design "an existential threat to C++" and asks for it to be replaced with something smaller before C++26's final ballot. Several companion papers argue the same case, and the authors of P2900 have answered them in turn. Nothing below is affected: the feature is in the working draft, GCC implements it, and the code in this post compiles and runs. But a reader deciding whether to build on contracts should know the design is under active challenge rather than settled.
+
 The syntax attaches to the declaration rather than the body:
 
 <GodboltEmbed id="Wx6dW96Mb" gccOnly title="pre, post and contract_assert on GCC 16.1" gcc_subtitle="x86-64 GCC 16.1 · -std=c++26 -fcontracts · runs live" />

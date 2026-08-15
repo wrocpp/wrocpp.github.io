@@ -1,0 +1,45 @@
+---
+title: "The August 2026 C++ mailing, and the fight over contracts"
+slug: "wg21-2026-08-mailing"
+pubDate: 2026-08-20
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, wg21, standardization, contracts, safety, mailing]
+summary: "Forty-eight papers, and a dozen of them are the same argument. Bjarne Stroustrup and four co-authors want the C++26 contracts design replaced before the final ballot, the P2900 authors have answered, and the committee already voted once against removal. Plus profiles, a reflection paper from Barry Revzin, and the usual crop of ranges additions."
+draft: false
+relatedPosts: [cpp26-contracts, brno-profiles-contracts]
+---
+
+The pre-Búzios mailing is out: [48 papers](https://wg21.org/mailing/2026-08/), and roughly a dozen of them are the same argument. If you read one thing from this batch, read the contracts dispute, because it is about whether a feature already in the C++26 working draft stays there.
+
+## The case against P2900
+
+[P4334R0 "P2900 Contracts' fundamental flaws"](https://wg21.link/p4334) (Bjarne Stroustrup, J-Daniel Garcia, Vinnie Falco, John Spicer, Ville Voutilainen) is the headline paper, and it is blunt: the design is "an existential threat to C++". The objections run to a list of fifteen, among them that contracts are unimplemented at scale, incomplete because virtual functions and old-value capture are deferred to C++29, absent from any shipping production codebase, and not wired into the hardened standard libraries that already do production checking at around 0.3% overhead. The authors are careful to say they are not against contracts as an idea, only against this design.
+
+Four companions push the same direction. [P4332R0](https://wg21.link/p4332) argues contracts are the wrong tool for undefined-behaviour checks. [P4347R0](https://wg21.link/p4347) proposes decoupling the two. [P4324R0](https://wg21.link/p4324) sketches a smaller library-based alternative the authors say is already implemented and tested. [P4238R0](https://wg21.link/p4238) asks for C++26 to go back for evaluation it is said to have skipped.
+
+## The case for
+
+[P3100R8](https://wg21.link/p3100) (Timur Doumler, Joshua Berne) continues the framework for systematically handling undefined behaviour, and [P4277R0](https://wg21.link/p4277) is its 232-page implementation report, walking every instance of UB in the standard with notes on whether a runtime check is even possible. That paper also records the relevant poll. At Brno on 10 June, EWG approved the direction of P3100 at **SF:16 F:15 N:6 A:2 SA:0**, recorded as consensus.
+
+The other number matters more. P4334 itself reports that the earlier poll to remove contracts from C++26 came out **SF:9 F:8 N:3 A:19 SA:41**, recorded as consensus against removal. So the committee has already decided this once. What the August papers argue is partly that the decision was wrong and partly that the process was: as P4334 puts it, "a numeric rule does not weigh the implementation responsibility behind a sustained objection".
+
+Worth keeping straight, because the papers blur it: P2900 contracts are in the C++26 draft now, while P3100's UB framework targets C++29 and was deferred. They are two arguments wearing one coat.
+
+## Everything else
+
+[P3589R3 "C++ Profiles: The Framework"](https://wg21.link/p3589) (Gabriel Dos Reis) and [P4222R2 "An initialization profile"](https://wg21.link/p4222) (Stroustrup) keep the profiles track moving, which is the other half of the safety story and the one [Brno left unresolved](/posts/brno-profiles-contracts/).
+
+[P4340R0](https://wg21.link/p4340) (Barry Revzin) extends constant template parameter support by letting `std::meta::reflect_constant` be customised. That is reflection reaching into the same corner of the language that [makes compile-time regex possible](/posts/ctre-cnttp/), and it is the paper to watch if you care about what can be a template argument.
+
+[P2806R5 "do expressions"](https://wg21.link/p2806) (Revzin, Cardoso Lopez, Laine, Park) is on its fifth revision. [P3817R0](https://wg21.link/p3817) proposes structured binding assignments, extending the feature that [C++26 already let into conditions](/posts/p0963-constexpr-tuple-divergence/).
+
+The ranges crop continues: `views::slice`, `views::scan`, `views::take_last` and `views::drop_last`, range-based searchers, and `clear()` for container adaptors. Two revisions touch things covered here before, [bitmask enums](/posts/bitmask-enums/) reaching R1 and an [mdspan](/posts/mdspan/) paper on const-qualifying an accessor.
+
+The through-line is that C++26 is not as finished as "C++26 is done" suggests. The draft has not had its final ballot, and a group including the language's designer is using that window to argue a headline feature is not ready. Búzios decides.
+
+---
+
+**Sources**: [August 2026 mailing](https://wg21.org/mailing/2026-08/) · [open-std papers index](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/#mailing2026-08) · polls quoted from P4334R0 and P4277R0.

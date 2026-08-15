@@ -1,0 +1,67 @@
+---
+title: "Who gets to say a feature is not ready"
+slug: "contracts-dispute"
+pubDate: 2026-08-30
+author: filip-sajdak
+language: en
+kind: flagship
+audience: mixed
+tags: [wg21, contracts, standardization, safety, cpp26]
+summary: "Contracts are in the C++26 working draft. The committee voted against removing them, decisively. Bjarne Stroustrup and four co-authors are asking again anyway, before the final ballot, on the grounds that counting votes is the wrong way to settle whether a foundational feature is finished. Both cases, from the papers."
+draft: false
+relatedPosts: [cpp26-contracts, wg21-2026-08-mailing]
+---
+
+C++26 contracts are not a proposal. They are text in the working draft, voted in, implemented in GCC 16.1, and [demonstrable today](/posts/cpp26-contracts/). The August 2026 mailing contains a paper by the designer of C++ arguing they should come out anyway.
+
+That is unusual enough to be worth understanding properly, and it is not a story about contracts being broken. It is a story about what "consensus" means when a feature is nearly shipped.
+
+## What is actually on the table
+
+[P4334R0](https://wg21.link/p4334), by **Bjarne Stroustrup, J-Daniel Garcia, Vinnie Falco, John Spicer and Ville Voutilainen**, is titled "P2900 Contracts' fundamental flaws" and runs under the header "Violation of Founding principles". Its charge is that P2900 "aims to change the nature of C++" and is "an existential threat" to it.
+
+The concrete objections are more interesting than the framing. Stripped to the ones that can be checked:
+
+- **Deferred pieces.** Contracts on virtual functions (P3097), capturing an object's original value for a postcondition (P3098), and the framework for core-language UB (P3100) are all targeted at C++29 rather than shipped in C++26. The paper's claim is that these are not exotic corners but things ordinary use needs.
+- **No production deployment.** The one library experiment was a fork limited to `contract_assert`, adding no new preconditions or postconditions.
+- **Not used by the standard library.** libc++, libstdc++ and the Microsoft STL all harden using their own assertion macros rather than `pre`, `post` and `contract_assert`. The hardened libraries that ship today run production checks at roughly 0.3% overhead, measured across Google's fleet, and contracts are not wired into them.
+- **Growth during review.** The set of evaluation semantics was still changing late: `quick_enforce` arrived in revision 7, taking three semantics to four. P2900R14 carries around 56 pages of normative wording inside a 119-page paper.
+- **A default that removes checks.** The `ignore` semantic, the paper argues, takes the checks out exactly where the code runs for real.
+
+Four companion papers carry the same direction: [P4332R0](https://wg21.link/p4332) on contracts being the wrong tool for UB checks, [P4347R0](https://wg21.link/p4347) on decoupling them, [P4324R0](https://wg21.link/p4324) offering a smaller library-based design, and [P4238R0](https://wg21.link/p4238) asking that C++26 go back for evaluation.
+
+## What the record says on the other side
+
+Two numbers, both from the papers themselves.
+
+The committee has already voted on removal. P4334 reports the result: **SF:9 F:8 N:3 A:19 SA:41**, recorded as consensus against removing contracts from C++26. That is not a narrow result.
+
+And the UB framework has support rather than opposition. [P4277R0](https://wg21.link/p4277), Joshua Berne's 232-page implementation report, records the EWG poll at Brno on 10 June 2026: approval of P3100's direction at **SF:16 F:15 N:6 A:2 SA:0**, recorded as consensus. Zero strongly against.
+
+That report is itself an answer to the "untried" charge, in the sense that it walks every instance of undefined behaviour in the standard and records, case by case, whether a runtime check is possible, how it might be implemented, and what a replacement behaviour would look like. Whether that counts as implementation experience or as more paperwork is precisely what the two sides disagree about.
+
+## The real disagreement is procedural
+
+Read the papers together and the technical objections are not new. Most were raised in [P3573R0](https://wg21.link/p3573), whose nine authors include compiler and library implementers, and P4334 says plainly that they were "basically ignored" and that "none of those objections were resolved".
+
+The argument that follows is about method:
+
+> A numeric rule does not weigh the implementation responsibility behind a sustained objection.
+
+That is the crux. The committee resolves disagreement by counting votes in five buckets. P4334's position is that when compiler vendors sustain an objection to a foundational feature, a majority against them is evidence of a process failure rather than a settled question. The counter-position, implicit in the polls, is that a vote is how a standards body decides things and that losing one is not the same as being ignored.
+
+The timing follows from the same logic. As P4334 notes, the C++26 draft has not had its final ballot, so a default changed now "changes text that no implementation relies on", while the same change after C++26 ships "changes what a decade of code will have been written against". The window is closing, which is why the case is being made again now.
+
+## What it means if you write C++
+
+Very little, immediately, and that is worth saying clearly because standards disputes read as more alarming than they are.
+
+Contracts are in the working draft. GCC implements them. The syntax works, the evaluation semantics work, and nothing in the dispute suggests the code you write today stops compiling. If contracts are removed or replaced before the final ballot, a feature nobody has shipped in production goes away, which is the outcome the objectors consider cheap and the proponents consider a decade wasted.
+
+The reason to follow it is not the feature. It is that this is the clearest recent case of a question every technical body eventually faces: whether a decision is legitimate because the procedure was followed, or whether the people who have to implement the thing get a say the procedure does not capture. C++ is unusually public about it. The papers are all readable, both sides are named, and the votes are on the record.
+
+Búzios decides.
+
+---
+
+**Sources**: [P4334R0](https://wg21.link/p4334) · [P4277R0](https://wg21.link/p4277) · [P3100R8](https://wg21.link/p3100) · [P4324R0](https://wg21.link/p4324) · [P4332R0](https://wg21.link/p4332) · [P4238R0](https://wg21.link/p4238) · [August 2026 mailing](https://wg21.org/mailing/2026-08/). Polls quoted as recorded in P4334R0 and P4277R0.

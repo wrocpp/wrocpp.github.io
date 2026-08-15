@@ -6,7 +6,7 @@ size:
   dpr: 2
 
 project:
-  name: "wg21-2026-07-mailing"
+  name: "contracts-dispute"
   author: "wro.cpp -- Wroclaw C++ community"
   email: "office@wro.cpp"
-  date: "2026-08-20"
+  date: "2026-08-30"
