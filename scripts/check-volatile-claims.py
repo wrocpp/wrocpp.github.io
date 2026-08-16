@@ -43,8 +43,13 @@ PATTERNS = [
      "latest-version claim"),
     # explicit version-with-date assertions
     (r"\b\d+\.\d+(?:\.\d+)?\s+(?:is out|shipped|released|landed)\b", "dated release claim"),
-    # counts that grow
-    (r"\bso far\b|\bas of (?:today|writing|this week)\b", "as-of-writing claim"),
+    # counts and states that grow. "so far" is only interesting when it is
+    # about the world; "everything in this series so far" or "the pattern so
+    # far" is the article referring to itself, which never goes stale.
+    (r"\bas of (?:today|writing|this week|now)\b"
+     r"|\b(?:announced|released|shipped|published|available|known)\s+so far\b"
+     r"|\bso far\s+(?:only|just|there)\b",
+     "as-of-writing claim"),
 ]
 
 FENCE = re.compile(r"```.*?```", re.S)
