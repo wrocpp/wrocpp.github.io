@@ -1,0 +1,75 @@
+---
+title: "Parsing your config file before the program exists"
+slug: "embed-reflect-config"
+pubDate: 2026-10-17
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp26, reflection, embed, compile-time, constexpr]
+summary: "#embed puts a file into the translation unit and reflection enumerates a struct's fields. Together they turn a configuration file into a compile-time constant, with the keys derived from the struct rather than written twice, and a missing entry becoming a build error rather than a failed startup."
+draft: false
+relatedPosts: [embed-the-file, reflect-special-members]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+Two C++26 features that are individually neat and jointly useful. [`#embed`](/posts/embed-the-file/) pulls a file into the translation unit as data. Reflection enumerates a type's members. Put them together and a configuration file is parsed while the compiler is running, into a struct, with the field names doing double duty as the keys.
+
+<GodboltEmbed id="1464rrnG5" compilerLabel="clang-p2996" title="A config file parsed during compilation, keys taken from the struct" gcc_subtitle="clang-p2996 · -std=c++26 -freflection-latest -stdlib=libc++ · runs live" />
+
+## The part that removes work
+
+The usual version of this code writes every key twice, once in the struct and once in the parser:
+
+```cpp
+cfg.host    = lookup(text, "host");
+cfg.port    = lookup(text, "port");
+cfg.retries = lookup(text, "retries");
+```
+
+Reflection gets the names from the members themselves, so the struct is the only place the schema is written:
+
+```cpp
+template <typename T>
+consteval T parse_config(std::string_view text) {
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    constexpr auto members =
+        std::define_static_array(std::meta::nonstatic_data_members_of(^^T, ctx));
+
+    T out{};
+    [&]<std::size_t... I>(std::index_sequence<I...>) {
+        ((out.[:members[I]:] = lookup(text, std::meta::identifier_of(members[I]))), ...);
+    }(std::make_index_sequence<members.size()>{});
+    return out;
+}
+```
+
+`identifier_of` is what makes it work: the member's own name, available as a compile-time string, used as the lookup key. Add a field to `config` and it is looked up without touching the parser.
+
+## The part that catches mistakes early
+
+Because the whole thing runs during translation, the result is a constant and the checks are assertions:
+
+```cpp
+constexpr config cfg = parse_config<config>(kRaw);
+
+static_assert(!cfg.host.empty(), "config is missing host");
+static_assert(cfg.port == "8080");
+```
+
+Delete a line from the config file and the build fails with that message. The alternative, which most programs still do, is to discover it when the service will not start, in an environment where the file is different from the one you tested with.
+
+That is the real argument for doing it this way. Not speed, though there is no parsing at run time, and not elegance. It is that a configuration error becomes a compile error, and compile errors happen to the person who made them.
+
+## Where it stops
+
+The format here is deliberately trivial, key equals value, because a full parser would be longer without being more instructive. The technique scales to anything you can parse in a `consteval` function, which since C++26 is a surprisingly large set, but every format you support is a parser you now maintain in constant-expression form.
+
+It also only applies to configuration that is genuinely fixed at build time. A file the operator edits after deployment is not this. Feature flags, embedded schemas, route tables, build-stamped defaults: those are.
+
+Reflection is on the [clang-p2996 fork](https://github.com/bloomberg/clang-p2996) rather than a released compiler, so this is a technique to file away rather than deploy this quarter. `#embed` you can use now.
+
+---
+
+**Sources**: [P2996 "Reflection for C++26"](https://wg21.link/p2996) · [P1967 "#embed"](https://wg21.link/p1967) · source in the [examples repo](https://github.com/wrocpp/cpp26-reflection-examples)
