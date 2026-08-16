@@ -16,7 +16,9 @@ Three months after C++26 was finalised, "which compiler should I use for it" has
 
 ## GCC 16.2, released 7 August
 
-A pure bug-fix release from the GCC 16 branch: **more than a hundred regressions fixed** against 16.1, no new language or library features. Richard Biener announced it, and it is expected to become the default compiler in Ubuntu 26.10 and Fedora 45, which matters more than the changelog does since it puts C++26 reflection in front of a lot of people who will not go looking for it.
+A pure bug-fix release from the GCC 16 branch: **more than a hundred regressions fixed** against 16.1, no new language or library features. Richard Biener announced it.
+
+Where it lands matters more than the changelog does. Fedora 45 has an accepted system-wide change to move the GNU toolchain to gcc 16.2, which puts C++26 reflection in front of a lot of people who will not go looking for it. Ubuntu has not published a default compiler for 26.10 yet; 26.04 shipped GCC 15.
 
 The one change worth knowing if you target recent Intel parts: handling was updated for Intel's removal of **AMX-TF32** from Diamond Rapids, affecting `-march=diamondrapids`.
 
