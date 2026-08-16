@@ -6,7 +6,7 @@ size:
   dpr: 2
 
 project:
-  name: "constexpr-exceptions"
+  name: "reflect-special-members"
   author: "wro.cpp -- Wroclaw C++ community"
   email: "office@wro.cpp"
-  date: "2026-10-15"
+  date: "2026-09-01"
