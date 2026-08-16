@@ -1,0 +1,45 @@
+---
+title: "What a C++ team can actually point at when asked about memory safety"
+slug: "memory-safety-what-to-point-at"
+pubDate: 2026-10-16
+author: filip-sajdak
+language: en
+kind: short
+audience: mixed
+tags: [safety, security, hardening, sanitizers, cpp26, tooling]
+summary: "The question now arrives in procurement paperwork rather than in conference talks, and C++26 shipped without the profiles that were supposed to answer it. What exists today is less impressive and more useful: a hardened standard library measured at a fraction of a percent, sanitizers in CI, and warnings that catch the class of bug being asked about."
+draft: false
+relatedPosts: [hardened-stdlib-turn-it-on, sanitizers-on-ce]
+---
+
+The memory-safety question has changed shape. It used to arrive in conference talks and blog arguments, where the answer could be a position. Now it arrives in vendor security questionnaires and supplier assessments, where the answer has to be a list of things you actually do.
+
+C++26 did not settle it. The profiles work is still moving, [contracts are being argued about](/posts/contracts-dispute/) rather than deployed, and neither of them is in a compiler you can ship against this quarter. So the honest answer to "what is your memory-safety story" is not a standard feature. It is a set of things that already work.
+
+## What you can point at today
+
+**A hardened standard library, switched on in production.** libc++ and libstdc++ both ship modes that turn out-of-range container access and similar precondition violations into a trap rather than undefined behaviour. The cost is the part people assume is prohibitive and is not: [measured across Google's fleet at roughly 0.3%](/posts/hardened-stdlib-turn-it-on/). That is a number you can put in a questionnaire, and it covers a large share of the bug class being asked about.
+
+**Sanitizers in CI, not just on a developer's laptop.** AddressSanitizer, UndefinedBehaviorSanitizer and ThreadSanitizer find the bugs the type system does not. They are too slow for most production builds and entirely affordable on a test suite. ["We run ASan and UBSan on every pull request" is a concrete control](/posts/sanitizers-on-ce/); "we are careful" is not.
+
+**Warnings promoted to errors, including the ones about buffers.** Clang's `-Wunsafe-buffer-usage` is the mechanism behind Chrome's spanification work, which reached [97% compliance while fixing over a thousand security bugs](/posts/chrome-spanification/). Whatever you think of the migration cost, it is a measurable programme with a number attached.
+
+**Types that make the bug unrepresentable.** `std::span` instead of pointer and length. `std::string_view` where lifetimes allow. C++26's `std::indirect` for the [PImpl case](/posts/std-indirect-pimpl/). None of this is new, and all of it removes a category rather than checking for it.
+
+## What not to claim
+
+Do not claim profiles. They are not in a shipping compiler, the framework paper is still being revised, and asserting otherwise in a security document is the kind of thing that surfaces badly later.
+
+Do not claim contracts as a safety feature. They are in the C++26 draft, GCC implements them, and [a group including Stroustrup is arguing they should be removed before the final ballot](/posts/contracts-dispute/) partly on the grounds that they do not deliver safety guarantees. Whatever the outcome, "we use C++26 contracts" is not an answer to a memory-safety question today.
+
+Do not claim the compiler catches it. The [float-to-int conversion case](/posts/float-to-int-ub/) is a good reminder: undefined behaviour that no warning fires on, in code that looks obviously fine, caught only by a sanitizer flag that GCC does not include in `-fsanitize=undefined`.
+
+## The shape of an honest answer
+
+An inventory of where memory-unsafe patterns live, a hardened build for the parts that ship, sanitizers gating the test suite, warnings-as-errors on new code, and a migration plan for the highest-risk components. Everything in that list exists now and none of it depends on the standard settling its argument.
+
+The reason to write it down is not compliance theatre. It is that the alternative answer, that C++ is memory-unsafe and always will be, is the one being written down for you.
+
+---
+
+**Sources**: [hardened stdlib overhead measurement](/posts/hardened-stdlib-turn-it-on/) · [Chrome's spanification report](/posts/chrome-spanification/) · NSA and CISA, "The Case for Memory Safe Roadmaps" · CISA guidance on memory-unsafe languages in critical infrastructure.

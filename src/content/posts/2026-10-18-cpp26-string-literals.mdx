@@ -1,0 +1,82 @@
+---
+title: "C++26 tightened unevaluated strings, and GCC did half of it"
+slug: "cpp26-string-literals"
+pubDate: 2026-10-18
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp26, gcc, clang, string-literals, conformance]
+summary: "P2361R6 makes encoding prefixes and numeric escapes ill-formed in the strings that only exist at compile time. GCC 16.1 rejects the prefixes and accepts the escapes; Clang 22.1 rejects both. The same source compiles on one and fails on the other, which is worth knowing before you rely on either."
+draft: false
+relatedPosts: [p0963-constexpr-tuple-divergence, gcc-16-2-toolchain-status]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+Some string literals never become objects. The text in `static_assert`, `[[deprecated]]`, `[[nodiscard]]`, `extern "C"` and `asm` is read by the compiler and never encoded into anything at run time. C++26 calls these **unevaluated strings** and, via [P2361R6](https://wg21.link/p2361), makes two things ill-formed in them:
+
+- an encoding prefix, as in `static_assert(true, u8"message")`
+- a numeric escape, as in `static_assert(true, "bell \x07 here")`
+
+Neither ever meant anything. There is no encoding to apply and no byte to escape into. Tightening this is the sort of cleanup that costs nobody anything.
+
+Except that the two compilers disagree about how much of it is in force.
+
+## The same file, two answers
+
+```cpp
+static_assert(sizeof(int) >= 2, "needs \x07 at least two bytes");
+```
+
+That is ill-formed under P2361R6. GCC 16.1 compiles it and runs the program.
+
+<GodboltEmbed id="9MKfcajEY" gccOnly title="GCC accepts a numeric escape the standard rejects" gcc_subtitle="x86-64 GCC 16.1 · -std=c++26 -O1 · builds and runs" />
+
+Clang 22.1, same source, same flag:
+
+```
+error: invalid escape sequence '\x07' in an unevaluated string literal
+```
+
+<GodboltEmbed id="7MME44no6" compilerLabel="clang 22.1.0" title="Clang rejects the same line" gcc_subtitle="x86-64 clang 22.1.0 · -std=c++26 -O1 · compile error" />
+
+## What each compiler enforces
+
+| Rule from P2361R6 | GCC 16.1 | Clang 22.1 |
+|---|---|---|
+| encoding prefix, `u8"..."` or `L"..."` | rejected | rejected |
+| hex escape, `"\x07"` | **accepted** | rejected |
+| octal escape, `"\007"` | **accepted** | rejected |
+
+So GCC has the first half and not the second. Both compilers reject the prefix in `static_assert` and in `[[deprecated]]` alike, which is the part most likely to appear in real code, and only Clang follows through on escapes.
+
+The diagnostics are worth comparing too. Clang names the concept:
+
+```
+an unevaluated string literal cannot have an encoding prefix
+```
+
+GCC says:
+
+```
+a wide string is invalid in this context
+```
+
+which is true but leaves the reader to work out which context and why. The paper introduced a term precisely so that this error could use it.
+
+## The other half of the cleanup
+
+[P1854R4](https://wg21.link/p1854), applied as a defect report, deals with the opposite case: literals that *are* evaluated but contain a character the execution encoding cannot represent. That used to be substituted silently, MSVC's habit of turning such a character into `?` being the best-known example. C++26 makes it ill-formed, so a literal either means what it says or fails to compile.
+
+Nothing about evaluated literals changed otherwise. Every prefix and every escape still works exactly as before.
+
+## Whether this matters
+
+Directly, barely. Writing `u8` on a `static_assert` message is not a thing people do on purpose, and a `\x07` in an assertion message is a typo rather than a technique.
+
+Indirectly, it is a reminder worth having: a paper being in the standard, and having a feature-test macro, says nothing about how much of it your compiler implements. This is a two-clause rule that landed in the working paper years ago, and today one major compiler enforces one clause. Compile the thing you are relying on.
+
+---
+
+**Sources**: [P2361R6 "Unevaluated strings"](https://wg21.link/p2361) · [P1854R4](https://wg21.link/p1854) · Sandor Dargo's [walkthrough of both papers](https://www.sandordargo.com/blog/2026/06/10/cpp26-string-literals-cleaned-up) · compiler behaviour verified on Compiler Explorer, GCC 16.1 and clang 22.1.0.
