@@ -1,0 +1,86 @@
+---
+title: "Defaulting a destructor costs you both move operations"
+slug: "reflect-special-members"
+pubDate: 2026-09-01
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp26, reflection, special-members, rule-of-five, verification]
+summary: "Howard Hinnant's table tells you which special member functions survive once you declare one yourself. C++26 reflection can check it rather than trusting it, and the result for a defaulted destructor is the one worth internalising: a line that looks like a no-op removes move construction and move assignment."
+draft: false
+relatedPosts: [derive-eq-hash, cpp26-contracts]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+Write this and you have quietly given up move semantics:
+
+```cpp
+struct Widget {
+    int x{};
+    int y{};
+    ~Widget() = default;    // looks free, is not
+};
+```
+
+Most C++ programmers know the rule in the abstract. Declaring a destructor suppresses the implicit move operations, so `Widget` copies where it used to move. Knowing it and checking it are different things, and until recently there was no way to check without reading the standard or trusting a table.
+
+The approach here comes from [Lieven de Cock's article in the August 2026 *Overload*](https://accu.org/journals/overload/34/194/), which uses C++26 reflection to verify Hinnant's table empirically. It is a good idea and it deserves a link you can click, so this post reproduces it on Compiler Explorer and extends it to all eight rows.
+
+## Counting what the compiler actually made
+
+`std::meta::members_of` returns every member the compiler produced, including the ones it generated for you. `is_function` picks out the methods, and `is_deleted` separates those that exist only to be deleted:
+
+```cpp
+template <typename T>
+consteval int live_functions() {
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    int n = 0;
+    template for (constexpr auto m : std::define_static_array(std::meta::members_of(^^T, ctx))) {
+        if (std::meta::is_function(m) && !std::meta::is_deleted(m)) { ++n; }
+    }
+    return n;
+}
+```
+
+Give each test struct one ordinary method to subtract and the count of surviving special members falls out.
+
+<GodboltEmbed id="zPW16o885" compilerLabel="clang-p2996" title="All eight rows of Hinnant's table, counted by reflection" gcc_subtitle="clang-p2996 · -std=c++26 -freflection-latest -stdlib=libc++ · runs live" />
+
+## The table, verified
+
+```
+  Row1  nothing                    special=6/6  deleted=0
+  Row2  some constructor           special=5/6  deleted=0
+  Row3  default constructor        special=6/6  deleted=0
+  Row4  ~T() = default             special=4/6  deleted=0
+  Row5  copy constructor           special=3/6  deleted=0
+  Row6  copy assignment            special=4/6  deleted=0
+  Row7  move constructor           special=2/6  deleted=2
+  Row8  move assignment            special=3/6  deleted=2
+```
+
+Three things stand out.
+
+**Row 4 is the trap.** `~T() = default` is the most innocent-looking line in the language. It changes nothing about behaviour, adds no code, and reads as documentation. It also takes the count from six to four, because declaring a destructor at all suppresses both move operations. A type that was move-only-cheap becomes a type that copies, silently, at every call site that used to move.
+
+**Rows 7 and 8 delete rather than omit.** Declare a move operation and the copy operations do not disappear; they are generated as deleted. That is why the deleted column reads 2. The difference matters at the call site: an omitted function is a lookup failure, a deleted one is a hard error that names the function, which is the better diagnostic of the two.
+
+**Row 3 recovers what Row 2 lost.** Declaring any constructor costs the default one, and declaring the default constructor explicitly gets it back. Nothing surprising, but it is the pair that makes the rule concrete.
+
+## One thing to get right when counting
+
+The arithmetic has a trap of its own, which I fell into first time. Every test struct carries one ordinary method to subtract, but Row 2 also declares `Row2(int)`, which is a constructor and not a special member. Subtract only the ordinary method and Row 2 reports 6/6, contradicting the very table the program is checking.
+
+That is a small mistake with a general shape: a program written to verify a claim can be wrong in a way that happens to confirm what you expected. The number looked plausible, which is exactly why it needed checking against the published figures rather than against intuition.
+
+## Why do it this way
+
+The rules have not changed. What changed is that they became observable from inside the language, so "I think the compiler still generates move here" is now a question with a printed answer.
+
+That is worth more on real types than on eight toy structs. Point the same counting at a class in your codebase that has grown a destructor over the years, and the count tells you whether it still moves.
+
+---
+
+**Sources**: Lieven de Cock, "C++ Reflection: Verifying Compiler-generated Functions", [*Overload* 194](https://accu.org/journals/overload/34/194/), August 2026, whose approach this follows · [Howard Hinnant's table](https://howardhinnant.github.io/) · [P2996 "Reflection for C++26"](https://wg21.link/p2996)
