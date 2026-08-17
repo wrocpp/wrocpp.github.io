@@ -1,0 +1,107 @@
+---
+title: "CUDA lock-in is real, and it is not in the C++"
+slug: "cuda-lock-in-is-not-the-language"
+pubDate: 2026-10-19
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cuda, gpu, toolchain, portability, cpp, compiler-explorer]
+summary: "The usual account says CUDA's warp primitives and template layers weld your code to Nvidia hardware. Compile the same kernel through a third-party toolchain for an AMD GPU and the warp shuffle comes out as native cross-lane instructions with the addition fused in. What binds you is the toolchain and the licence, not the language."
+draft: false
+relatedPosts: [portable-simd, gcc-16-2-toolchain-status]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+The standard argument about CUDA goes like this. You write kernels against Nvidia's warp primitives, `__shfl_sync` and cooperative groups, layered under template machinery like CUB and Thrust tuned for a particular warp width. That welds your source to Nvidia's execution model, so porting means rewriting rather than recompiling.
+
+The first half is accurate. The conclusion is not, and it is checkable.
+
+## The kernel
+
+A warp-level float reduction, the shape that appears in every reduction tutorial and a lot of production code:
+
+```cpp
+__global__ void warp_reduce(const float* in, float* out, int n) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    float v = (tid < n) ? in[tid] : 0.0f;
+
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        v += __shfl_down_sync(0xffffffffu, v, offset);
+    }
+    if ((threadIdx.x & 31) == 0) { atomicAdd(out, v); }
+}
+```
+
+`__shfl_down_sync` is the Nvidia primitive, and the `16` and `31` encode a 32-lane warp. This is the code the portability argument is about.
+
+## Two things that are not the same
+
+Compile it with nvcc and you get two device views, because PTX and SASS are different programs.
+
+<GodboltEmbed id="fhjvxdve1" compilerLabel="NVCC 13.3.0" title="PTX and SASS for the same kernel, side by side" gcc_subtitle="NVCC 13.3.0 · -arch=sm_90 -O3 · PTX and SASS device views" />
+
+PTX is the virtual ISA, in virtual registers:
+
+```
+shfl.sync.down.b32 	%r11|%p2, %r6, %r9, %r8, %r10;
+```
+
+SASS is what the hardware runs, in real registers:
+
+```
+SHFL.DOWN PT, R3, R2, 0x10, 0x1f
+```
+
+Sixty lines of PTX become forty-five of SASS. The `0x1f` is the lane mask, the warp width compiled in. PTX is documented and stable; SASS is neither, and the translation between them happens inside `ptxas` or the driver.
+
+You can watch that instability directly. The same source at `-arch=sm_80` and `-arch=sm_90` picks different instructions, `LOP3.LUT` in one and `LDC` in the other. And CUDA 13.3 will not target Volta at all:
+
+```
+nvcc fatal : Unsupported gpu architecture 'sm_70'
+```
+
+An architecture that shipped in 2017, and that this toolchain no longer emits code for.
+
+## The part that surprised me
+
+Compiler Explorer carries SCALE, a third-party toolchain that presents itself as nvcc and targets AMD GPUs. Hand it the identical file, unmodified, with an AMD architecture:
+
+<GodboltEmbed id="KscTxxrWo" compilerLabel="SCALE NVCC (AMD)" title="The same CUDA source compiled for an AMD GPU" gcc_subtitle="SCALE NVCC (AMD) 1.7.2 · -arch=gfx942 -O3 · AMDGPU output" />
+
+It compiles. Not through emulation, and not by falling back on shared memory. The warp reduction comes out as AMD's native cross-lane instructions:
+
+```
+ds_swizzle_b32 v1, v1 offset:swizzle(REVERSE,32)
+v_add_f32_dpp  v1, v1, v1 row_shr:1 row_mask:0xf bank_mask:0xf
+v_add_f32_dpp  v1, v1, v1 row_shr:2 row_mask:0xf bank_mask:0xf
+```
+
+`v_add_f32_dpp` is an add whose operand comes through the Data Parallel Primitives path, which is how you are supposed to write a wavefront reduction on AMD. The addition is **fused into the cross-lane operation**. Nvidia's own output needs `SHFL.DOWN` and then a separate `FADD`.
+
+So the supposedly unportable primitive did not merely survive the port. It came out as idiomatic code on the other vendor's hardware, arguably tighter than the original.
+
+## Where the lock-in actually lives
+
+Not in the language. `__shfl_down_sync` is a function call that a compiler can lower however the target prefers, and one does.
+
+It lives in three other places.
+
+**The toolchain.** nvcc splits host from device using a proprietary frontend, and the device path runs through a closed LLVM fork to PTX and then through `ptxas` to an undocumented instruction set. Nothing in that chain is specified for anyone else to reimplement, which is why SCALE is an achievement rather than a weekend project.
+
+**The headers.** Including `<cuda_runtime.h>` defines `__CUDACC__`, `__NVCC__`, `__CUDACC_VER_MAJOR__` and, in the host pass too, `__CUDA_ARCH__`. Add `__global__` and `__device__` and the file has stopped being C++ that another compiler can read.
+
+<GodboltEmbed id="sTP48q19G" compilerLabel="NVCC 13.3.0" title="What a CUDA header does to a translation unit" gcc_subtitle="NVCC 13.3.0 · -arch=sm_90 · macro definitions confirmed" />
+
+**The licence.** In 2024 Nvidia added terms to the CUDA EULA forbidding reverse engineering, decompiling or disassembling the output of its tools in order to run those artifacts on non-Nvidia platforms. That is aimed squarely at translation layers. It is worth being precise about scope: it addresses the *output* of Nvidia's toolchain, and a compiler that reads CUDA source and generates its own code is a different thing. But the clause exists, and its existence shapes what companies are willing to build.
+
+## What to take from it
+
+If you are choosing how to write GPU code, the honest framing is not "CUDA traps your source". It is that your source is more portable than the ecosystem around it, and the binding constraints are a toolchain nobody else can implement from a specification and a licence that discourages trying.
+
+That is a better position than the pessimistic version, and a worse one than it sounds. Code that ports in principle still needs a toolchain that exists, is maintained, and is safe to depend on commercially. Right now that is one third-party project and a lot of goodwill.
+
+---
+
+**Sources**: all output above reproduced on [Compiler Explorer](https://godbolt.org) with NVCC 13.3.0 and SCALE NVCC (AMD) 1.7.2 · kernel source in the [examples repo](https://github.com/wrocpp/cpp26-reflection-examples) · CUDA EULA terms on translation layers, 2024.
