@@ -52,7 +52,7 @@ constexpr std::optional<T> parse_into(std::string_view s) {
 
 Capture `I + 1` goes to member `I`, since capture 0 is the whole match. That is the entire implementation.
 
-<GodboltEmbed id="exoT4redG" compilerLabel="clang-p2996" title="One helper, two unrelated structs, no per-struct code" gcc_subtitle="clang-p2996 · -std=c++26 -freflection-latest -stdlib=libc++ · runs live" />
+<GodboltEmbed id="1Tv54x37c" gccOnly title="One helper, two unrelated structs, no per-struct code" gcc_subtitle="x86-64 GCC 16.1 · -std=c++26 -freflection · ctre trunk · runs live" />
 
 Two different shapes, same function, nothing written per type:
 
@@ -88,7 +88,7 @@ It also fails safely. A non-matching input returns `nullopt` rather than a parti
 
 ## Availability
 
-This one needs the reflection fork, `clang-p2996`, with `-std=c++26 -freflection-latest -stdlib=libc++`. Reflection is in C++26, and the mainstream compilers are working through it; the rest of this series runs on released GCC and Clang. One caution learned the hard way: **do not gate on `__cpp_impl_reflection`**, because the fork implements reflection without defining it, and a feature test that lies is worse than no feature test.
+This runs on released GCC 16.1 with `-std=c++26 -freflection`, using the standard `<meta>` header, and on the `clang-p2996` fork with `-freflection-latest -stdlib=libc++`. Reflection is available further than its reputation suggests. One caution learned the hard way: **do not gate on `__cpp_impl_reflection`**, because the fork implements reflection without defining it, and a feature test that lies is worse than no feature test.
 
 ---
 

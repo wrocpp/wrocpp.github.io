@@ -1,0 +1,74 @@
+---
+title: "Naming a constant makes GCC stop believing it is one"
+slug: "gcc-expansion-named-range"
+pubDate: 2026-10-21
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp26, gcc, reflection, expansion-statements, compiler-bug]
+summary: "A C++26 expansion statement over a compile-time range works on GCC 16.1 when the range is written inline and fails when the identical expression is given a name. The error says the constexpr variable is not a constant. Clang accepts both, and the workaround is to delete the name."
+draft: false
+relatedPosts: [reflection-on-released-gcc, p0963-constexpr-tuple-divergence]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+This compiles on GCC 16.1:
+
+```cpp
+template for (constexpr auto m : std::define_static_array(
+                  std::meta::nonstatic_data_members_of(^^T, ctx))) {
+    std::println("  {} = {}", std::meta::identifier_of(m), obj.[: m :]);
+}
+```
+
+This does not:
+
+```cpp
+constexpr auto members = std::define_static_array(
+    std::meta::nonstatic_data_members_of(^^T, ctx));
+
+template for (constexpr auto m : members) {
+    std::println("  {} = {}", std::meta::identifier_of(m), obj.[: m :]);
+}
+```
+
+```
+error: 'members' is not a constant
+```
+
+Same expression, same initializer, same `constexpr`. The only difference is that the second one has a name.
+
+<GodboltEmbed id="5MWzjhzT5" gccOnly title="GCC rejects the named range" gcc_subtitle="x86-64 GCC 16.1 · -std=c++26 -freflection -DNAMED_RANGE · compile error" />
+
+## The matrix
+
+| Range given as | GCC 16.1 | clang-p2996 |
+|---|---|---|
+| named `constexpr` local | **rejected** | accepted |
+| identical expression inline | accepted | accepted |
+
+Clang takes both spellings and prints the same output either way, which is what you would expect: naming a constant expression does not stop it being one.
+
+## Why it is worth knowing rather than filing away
+
+The named form is the one people write. You compute the member list once, give it a name that says what it is, and use it. Splitting a long expression out of a loop header is ordinary style, and here it turns a working program into a compile error with a message that sounds like your code is wrong.
+
+The workaround is unpleasant in proportion: inline the expression back into the `template for`, which is exactly the edit a reviewer would ask you to undo.
+
+If you are porting reflection code written against clang, this is the shape of breakage to expect. It is not that GCC lacks the feature. It is that GCC disagrees about when a `constexpr` variable is usable as an expansion range.
+
+## A note on the reproducer
+
+The version in the examples repo switches between the two forms with a macro, and the first draft of it was wrong in a way worth repeating:
+
+```cpp
+#if FORM == named       // always true
+```
+
+Undefined identifiers evaluate to `0` in a preprocessor condition, so `FORM == named` compares `0` with `0` whichever way you set it, and both branches take the same path. It looked like GCC rejecting the workaround too. Ask whether a macro is `defined` instead of comparing it to a bare word.
+
+---
+
+**Sources**: reduced from the splicing example in the [reflection series](/posts/reflection-on-released-gcc/) · [P1306 "Expansion statements"](https://wg21.link/p1306) · [P2996 "Reflection for C++26"](https://wg21.link/p2996) · both compilers on Compiler Explorer, GCC 16.1 and clang-p2996.
