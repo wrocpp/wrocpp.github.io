@@ -1,0 +1,83 @@
+---
+title: "A type that is trivially copyable and cannot be copied"
+slug: "trivially-copyable-but-not-copyable"
+pubDate: 2026-10-22
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp, type-traits, msvc, gcc, clang, conformance, wg21]
+summary: "std::is_trivially_copyable answers a narrower question than its name suggests. There is a type for which it is true while the type is neither copy-constructible nor copy-assignable, MSVC says so, GCC and Clang disagree, and the paper that documents it says MSVC is the one following the standard."
+draft: false
+relatedPosts: [reflect-special-members, cpp26-string-literals]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+Here is a type. On a conforming compiler, all three of these assertions hold:
+
+```cpp
+static_assert(std::is_trivially_copyable_v<Nutshell>);
+static_assert(!std::is_copy_constructible_v<Nutshell>);
+static_assert(!std::is_copy_assignable_v<Nutshell>);
+```
+
+Trivially copyable, and you cannot copy it.
+
+<GodboltEmbed id="7jK3oxGxv" compilerLabel="MSVC 19.51" title="All three assertions hold on MSVC" gcc_subtitle="x86 MSVC v19.51 · /std:c++latest · compiles clean" />
+
+## The type
+
+From [P3279R0](https://wg21.link/p3279), Arthur O'Dwyer's paper on what "trivially fooable" ought to mean:
+
+```cpp
+struct Hamlet {
+    Hamlet(const Hamlet&) { }                    // user-provided: not trivial
+    Hamlet(Hamlet&&) = default;
+    Hamlet& operator=(Hamlet&&) = default;
+};
+
+struct Nutshell {
+    Hamlet h_;
+    Nutshell(Nutshell&&) = default;
+    Nutshell& operator=(Nutshell&&) = default;
+};
+```
+
+The mechanism is easy to miss. Declaring the move operations **suppresses the copy operations**, so `Nutshell` has no eligible copy constructor and no eligible copy assignment at all. The standard's definition asks whether every *eligible* copy or move operation is trivial. Delete the copies and only the trivial moves are left, so the condition holds by having nothing left to fail.
+
+`Hamlet` is not trivially copyable. `Nutshell`, which contains one, is.
+
+## The divergence, still live
+
+The paper reports that EDG and MSVC say true while Clang and GCC say false, and states plainly: "EDG+MSVC are certainly correct according to the Standard." That was May 2024. Two years on:
+
+| | GCC 16.1 | Clang 22.1 | MSVC 19.51 |
+|---|---|---|---|
+| `is_trivially_copyable_v<Nutshell>` | false | false | **true** |
+
+<GodboltEmbed id="rM8j1b61P" gccOnly title="The same file, rejected by GCC" gcc_subtitle="x86-64 GCC 16.1 · -std=c++23 · static assertion fails" />
+
+Two compilers give the answer people expect and the standard does not ask for. The one that follows the wording stands alone.
+
+## What the retelling gets wrong
+
+This case travels as "a trivially copyable type with a non-trivially-copyable member", which makes it sound like any aggregate would do. It would not:
+
+```cpp
+struct PlainPair { Hamlet a; Hamlet b; };   // false on GCC, Clang AND MSVC
+```
+
+A plain aggregate of non-trivially-copyable members is not trivially copyable anywhere, MSVC included. The defaulted move declarations do all the work, and dropping them from the example removes the effect entirely. Worth checking before repeating, because the short version is memorable and wrong.
+
+## Why the trait behaves this way
+
+`is_trivially_copyable` is not asking "can I copy this cheaply". It asks a structural question about which operations are eligible and whether those are trivial. A type with no copy operations at all passes on a technicality.
+
+O'Dwyer's proposal is to redefine the triviality traits so they mean what library authors read them to mean: that every supported value-semantic operation is trivial, phrased as implications rather than a list of eligibility conditions. Under that definition a type you cannot copy would not claim to be trivially copyable.
+
+The practical takeaway is smaller and more immediate. `is_trivially_copyable_v<T>` is not a licence to `memcpy` a `T` unless you have also checked that copying is something `T` supports. If you are dispatching on that trait in a container or a serialiser, pair it with `is_copy_constructible_v` and you will not care how the committee resolves this.
+
+---
+
+**Sources**: [P3279R0 "CWG2463: What 'trivially fooable' should mean"](https://wg21.link/p3279), Arthur O'Dwyer, 15 May 2024 · behaviour verified on Compiler Explorer with GCC 16.1, clang 22.1.0 and MSVC v19.51 · brought to attention by a quantdev.blog post.
