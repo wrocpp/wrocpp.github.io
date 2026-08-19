@@ -16,7 +16,7 @@ import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
 Two C++26 features that are individually neat and jointly useful. [`#embed`](/posts/embed-the-file/) pulls a file into the translation unit as data. Reflection enumerates a type's members. Put them together and a configuration file is parsed while the compiler is running, into a struct, with the field names doing double duty as the keys.
 
-<GodboltEmbed id="1464rrnG5" compilerLabel="clang-p2996" title="A config file parsed during compilation, keys taken from the struct" gcc_subtitle="clang-p2996 · -std=c++26 -freflection-latest -stdlib=libc++ · runs live" />
+<GodboltEmbed id="doWxGYhs8" gccOnly title="A config file parsed during compilation, keys taken from the struct" gcc_subtitle="x86-64 GCC 16.1 · -std=c++26 -freflection · runs live" />
 
 ## The part that removes work
 
@@ -68,7 +68,7 @@ The format here is deliberately trivial, key equals value, because a full parser
 
 It also only applies to configuration that is genuinely fixed at build time. A file the operator edits after deployment is not this. Feature flags, embedded schemas, route tables, build-stamped defaults: those are.
 
-Reflection is on the [clang-p2996 fork](https://github.com/bloomberg/clang-p2996) rather than a released compiler, so this is a technique to file away rather than deploy this quarter. `#embed` you can use now.
+Both halves work on a released compiler. GCC 16.1 takes this file with `-std=c++26 -freflection` and the standard `<meta>` header; the [clang-p2996 fork](https://github.com/bloomberg/clang-p2996) also builds it. Reflection is further along than "wait for the next standard" suggests.
 
 ---
 
