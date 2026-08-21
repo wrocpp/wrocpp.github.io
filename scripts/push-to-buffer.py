@@ -289,6 +289,36 @@ def create_post(
     return gql(token, CREATE_POST_MUTATION, {"input": inp})
 
 
+def verify_image_reachable(url: str) -> None:
+    """Refuse to schedule a post whose card image Buffer cannot fetch.
+
+    Buffer resolves the media when the post is SCHEDULED, not when it fires.
+    Queue a post before its deploy has published the OG image and Buffer stores
+    an unusable media reference, then fails at send time with "Please update
+    the media URL to be publicly accessible before retrying the post" even
+    though the URL works by then. Recovering means deleting and recreating the
+    post, so it is far cheaper to refuse up front.
+
+    That is exactly how the 2026-08-20 mailing post was lost on both channels.
+    """
+    req = urllib.request.Request(url, method="GET", headers={"User-Agent": "wrocpp-push-to-buffer"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            code = r.getcode()
+            ctype = r.headers.get("Content-Type", "")
+            length = r.headers.get("Content-Length") or "0"
+    except Exception as e:
+        sys.exit(f"error: card image is not fetchable: {url}\n"
+                 f"       {e}\n"
+                 f"       Buffer fetches this when scheduling. Deploy the site first, "
+                 f"then push.")
+    if code != 200:
+        sys.exit(f"error: card image returned HTTP {code}: {url}")
+    if not ctype.startswith("image/"):
+        sys.exit(f"error: card image is not an image (Content-Type: {ctype}): {url}")
+    print(f"    image ok: {url} ({ctype}, {length} bytes)")
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--slug", required=True, help="post slug, e.g. why-cpp26-reflection-matters")
@@ -316,6 +346,11 @@ def main() -> int:
     token = os.environ.get("BUFFER_API_KEY")
     if not token and not args.dry_run:
         sys.exit("error: BUFFER_API_KEY not set (put it in .env or export it)")
+
+    # Pre-flight: the image must be publicly fetchable BEFORE we schedule,
+    # because Buffer resolves it now rather than at send time.
+    if not args.dry_run:
+        verify_image_reachable(args.image_url)
 
     # Pre-flight: refuse to push a card that looks broken (giant logo / no CSS).
     # We learned this the hard way when lifetime-safety-2026 shipped on 2026-06-01
