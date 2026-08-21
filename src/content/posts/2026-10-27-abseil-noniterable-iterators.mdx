@@ -1,0 +1,86 @@
+---
+title: "Abseil changed what an iterator does, and nothing warns you"
+slug: "abseil-noniterable-iterators"
+pubDate: 2026-10-27
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, abseil, containers, iterators, api-design, hash-map]
+summary: "One line in Abseil's August release notes says iterators returned from insert and emplace are now non-iterable. The types did not change, the signatures did not change, and the code still compiles. A loop that used to visit elements now visits none, and the build says nothing about it."
+draft: false
+relatedPosts: [cpp14-shims-deleted, hardened-stdlib-turn-it-on]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+Abseil's LTS 20260817.0 landed on 18 August with a short breaking-changes list. One entry:
+
+> Hashtable iterators returned from `insert`/`emplace` are now non-iterable (any prior use of iteration was likely a bug).
+
+That parenthesis is doing a lot of work.
+
+## What insert hands you
+
+`insert` and `emplace` on a hash map return `pair<iterator, bool>`. The bool tells you whether anything was added; the iterator points at the element, which is how you get at it without a second lookup:
+
+```cpp
+auto [it, inserted] = m.emplace(99, "value-99");
+if (inserted) { it->second += " (new)"; }
+```
+
+That is the intended use, and it is unaffected. Dereferencing works exactly as before.
+
+The problem is that the thing you were handed was an ordinary table iterator, and ordinary table iterators increment. So this compiles:
+
+```cpp
+for (auto walk = it; walk != m.end(); ++walk) { /* ... */ }
+```
+
+and it does something. What it does is walk from wherever the key happened to hash to, through whatever the table's internal layout puts after it, to the end of the storage. The order is unspecified. The starting point is a hash artefact. Insert one more element, trigger a rehash, and the set of elements that walk visits changes completely. It has the shape of a sensible range and none of the properties of one.
+
+You can watch the old behaviour, because Compiler Explorer's Abseil predates the change:
+
+<GodboltEmbed id="Khx8hrEv4" compilerLabel="GCC 16.2" title="Walking from an insert iterator on the older Abseil" gcc_subtitle="x86-64 GCC 16.2 · -std=c++20 -O1 · abseil 20260107.1 · runs live" />
+
+Thirteen elements go into the table. Insert one more and walk from the iterator you got back, and the walk visits three of them: the new key, then 10, then 7. There is no sense in which those three belong together.
+
+The clearest evidence that the walk means nothing is that it does not even survive a change of language standard. Compile the identical source at `-std=c++23` instead and it visits two elements rather than three, the new key and then 9. Nothing about the program changed. The table's internal layout did, and the walk is a report on that layout rather than on your data.
+
+## Two bytes of static data
+
+The fix is smaller than you would guess. Abseil did not introduce a new iterator type or add a flag to the existing one. From `raw_hash_set.h`:
+
+```cpp
+// Returns a pointer to a full byte followed by a sentinel byte.
+ABSL_DLL extern const ctrl_t kInsertIteratorControl[2];
+```
+
+A Swiss table iterator carries a pointer into the control bytes that describe which slots are occupied. Normally that points into the table. For an iterator returned by `insert`, it points at that two-byte constant instead: one byte saying "there is an element here", then a sentinel, which is the same marker that terminates a normal traversal.
+
+So dereferencing finds the element. Incrementing steps onto the sentinel, which is what `end()` compares as. The header says so directly:
+
+```cpp
+// Special iterator that can be returned by insert/emplace functions.
+// It is non-iterable, meaning that std::next(it) always points to end().
+```
+
+No new type, no extra storage per iterator, no branch on the hot path. Two bytes of read-only data shared by every insert in the process.
+
+## The part worth being uneasy about
+
+Consider what a caller sees. The return type is the same. The signature is the same. The iterator satisfies the same concepts and still advertises `forward_iterator_tag`. Code that walked from an insert result compiles identically before and after.
+
+It just stops doing anything. The loop body runs zero times where it used to run some unpredictable number of times.
+
+Abseil's position is defensible, and the release note states it: this was almost certainly a bug wherever it appeared, so the new behaviour turns unpredictable results into no results. If your loop was accumulating something, you now get an empty accumulation instead of an arbitrary one.
+
+Both are wrong. Only one of them is quiet in a way that survives your tests, and which one that is depends on what the tests assert. A test checking "we processed at least one thing" fails loudly. A test checking a total that was always arbitrary now passes with zero.
+
+This is worth contrasting with the deprecations covered [when Boost and Abseil started deleting their C++14 shims](/posts/cpp14-shims-deleted). `absl::void_t` going away produces a deprecation warning: the compiler tells you, you fix it, you move on. This change produces nothing. It is the same project, in the same release, choosing a silent behavioural change for one thing and a noisy compile-time one for the other, because in the first case there was a type to attach a warning to and in the second there was not.
+
+The search that catches this is short: `++` or `std::next` applied to whatever `insert` or `emplace` handed back. In most codebases it turns up nothing at all, which is exactly why it is worth running before the upgrade rather than after.
+
+---
+
+**Sources**: [Abseil LTS 20260817.0 release notes](https://github.com/abseil/abseil-cpp/releases/tag/20260817.0) · `kInsertIteratorControl` and `non_iterable_iterator_at_slot` in [absl/container/internal/raw_hash_set.h](https://github.com/abseil/abseil-cpp/blob/master/absl/container/internal/raw_hash_set.h) · demo source in the [examples repo](https://github.com/wrocpp/cpp26-reflection-examples).
