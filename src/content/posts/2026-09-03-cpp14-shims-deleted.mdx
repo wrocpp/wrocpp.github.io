@@ -1,0 +1,77 @@
+---
+title: "Boost and Abseil start deleting their C++14 shims"
+slug: "cpp14-shims-deleted"
+pubDate: 2026-09-03
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, boost, abseil, cpp17, compatibility, stdlib]
+summary: "Two release notes nine days apart point the same way. Boost 1.92 tells Heap and Lockfree users that C++14 support ends here, and Abseil's August LTS deprecates absl::void_t in favour of the standard one. Both are removing code that only ever existed because C++17 was not yet safe to assume."
+draft: false
+relatedPosts: [modules-2026, leaner-standard-library]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+Two release notes went out nine days apart in August, and they say the same thing in different words.
+
+Boost 1.92.0, on 12 August, in the Heap and Lockfree section: this release is the last to support C++14, and future releases will require C++17. Abseil's LTS 20260817.0, on 18 August, under breaking changes: `absl::void_t` is deprecated, and users should use C++17's `std::void_t` directly.
+
+Neither is a headline feature. Together they mark the point where two of the most widely deployed C++ libraries stopped carrying code whose only purpose was to serve people who could not yet assume C++17.
+
+## What a shim actually was
+
+`void_t` is a good example because it looks trivial and is not.
+
+It is the machinery behind the detection idiom: a way to ask whether an expression is well-formed for a given type, and pick a different template if it is not. The standard library got it in C++17. Before that, everyone who wanted it wrote their own, which is where `absl::void_t` and `boost::void_t` came from.
+
+The obvious spelling is one line:
+
+```cpp
+template <typename...>
+using naive_void_t = void;
+```
+
+That does not reliably work. Unused parameters in an alias template were not required to participate in substitution, so the partial specialization built on it could collapse to `void_t<>` and match everything, detection always succeeding. The resolution is CWG 1558, and until compilers implemented it libraries shipped the workaround instead: route the parameter pack through a class template so the substitution has to happen.
+
+```cpp
+template <typename...>
+struct make_void { using type = void; };
+
+template <typename... Ts>
+using shim_void_t = typename make_void<Ts...>::type;
+```
+
+That extra indirection is the shim. Here are all three spellings in one file, detecting whether a type has `reserve`:
+
+<GodboltEmbed id="jr54e6d5a" compilerLabel="GCC 16.2" title="Three spellings of void_t, and the one that needs C++17" gcc_subtitle="x86-64 GCC 16.2 · -std=c++17 -O1 · runs live" />
+
+All three agree on a current compiler, which is the point. The workaround exists for the compilers where they did not, and those are what a library drops when it raises its floor.
+
+Change that link to `-std=c++14` and GCC 16.2 does not get as far as the disagreement:
+
+```
+error: 'void_t' in namespace 'std' does not name a template type
+note: 'std::void_t' is only available from C++17 onwards
+```
+
+## GoogleTest got there first
+
+Worth being accurate about the timing, because it is easy to read three releases as a sudden shift. GoogleTest made this move well before either of them. Version 1.16 announced itself as the last branch to support C++14, and 1.17 raised the floor to C++17 back in April 2025, under Google's Foundational C++ Support Policy. Its 1.18.0 release on 10 August repeats the same paragraph rather than changing anything.
+
+So the pattern is not two libraries deciding something in August. It is Boost and Abseil arriving where GoogleTest already was, sixteen months later.
+
+## What this costs you
+
+If you are on C++17 or newer, nothing. The deprecations are the visible part of a cleanup that makes these libraries smaller and their template error messages shorter.
+
+If you are still on C++14, the bill is now itemised. Boost Heap and Lockfree pin at 1.92. `absl::void_t` still compiles, but it is marked deprecated and Abseil has not published a removal date. Neither project is dropping you this month, but both have now said in writing where the road ends, which is more warning than these things usually come with.
+
+The thing worth noticing is which direction the dependency runs. For a decade the standard library was the laggard and third-party libraries filled gaps ahead of it. `void_t`, `optional`, `string_view`, `span`: all of them existed in Boost or Abseil first. What is happening now is the reverse. The standard caught up, the gap-fillers became redundant, and the libraries are deleting them. That is the cleanup phase of a migration that started in 2017.
+
+One caveat on the evidence above. Compiler Explorer does not yet carry Boost 1.92 (it tops out at 1.90.0) or the new Abseil LTS (it has 20260107.1), so the claims about those two releases are cited to their release notes rather than shown running. The `void_t` demonstration uses no library at all, which is why it is the part you can click.
+
+---
+
+**Sources**: [Boost 1.92.0 release notes](https://www.boost.org/releases/1.92.0/) · [Abseil LTS 20260817.0](https://github.com/abseil/abseil-cpp/releases/tag/20260817.0) · [GoogleTest v1.18.0](https://github.com/google/googletest/releases/tag/v1.18.0) and [v1.16.0](https://github.com/google/googletest/releases/tag/v1.16.0) · [CWG 1558](https://cplusplus.github.io/CWG/issues/1558.html) · demo source in the [examples repo](https://github.com/wrocpp/cpp26-reflection-examples).
