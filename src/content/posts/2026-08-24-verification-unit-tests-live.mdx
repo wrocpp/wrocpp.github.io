@@ -42,7 +42,7 @@ That also makes it a good teaching surface. `EXPECT_EQ` versus `ASSERT_EQ` (cont
 
 The choice matters less than people argue about. All the mainstream options run on Compiler Explorer and all of them will serve you well:
 
-- **GoogleTest** is the default in most large codebases and the one FuzzTest builds on, which matters for the next episode. Version 1.17 requires C++17 or later; 1.16 was the last release supporting C++14.
+- **GoogleTest** is the default in most large codebases and the one FuzzTest builds on, which matters for the next episode. 1.16 was the last release to support C++14; 1.17 raised the floor to C++17, and 1.18.0 (August 2026) is the current release.
 - **Catch2** v3 is no longer header-only (it is a compiled library now), and its `GENERATE` expressions give you a light form of property testing.
 - **doctest** is the fastest to compile and stays header-only, which makes it pleasant for small projects and for putting tests in the same file as the code.
 - **snitch** is the interesting newer entrant: C++20, no exceptions and no heap allocation required, Catch2-compatible macros. Worth knowing about if you work on embedded targets where the others do not fit.
@@ -53,4 +53,4 @@ The rest of this series is about those gaps. Next: the same assertion you just w
 
 ---
 
-**Sources**: [GoogleTest](https://github.com/google/googletest) ([v1.17.0 release notes](https://github.com/google/googletest/releases/tag/v1.17.0)) · [Catch2](https://github.com/catchorg/Catch2) · [doctest](https://github.com/doctest/doctest) · [snitch](https://github.com/snitch-org/snitch).
+**Sources**: [GoogleTest](https://github.com/google/googletest) ([v1.18.0 release notes](https://github.com/google/googletest/releases/tag/v1.18.0)) · [Catch2](https://github.com/catchorg/Catch2) · [doctest](https://github.com/doctest/doctest) · [snitch](https://github.com/snitch-org/snitch).

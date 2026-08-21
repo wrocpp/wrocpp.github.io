@@ -1,0 +1,59 @@
+---
+title: "GoogleTest tells you not to use its releases"
+slug: "googletest-live-at-head"
+pubDate: 2026-10-25
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, testing, googletest, tooling, versioning]
+summary: "Every GoogleTest release since 1.16 opens by saying the branch will not accept new features and recommending you build from the latest commit instead. Version 1.18 arrived in August after sixteen months and listed one macro change. Compiler Explorer's library list makes the consequence visible: a six-year-old release, or trunk, and nothing in between."
+draft: false
+relatedPosts: [verification-unit-tests-live, verification-fuzztest]
+---
+
+GoogleTest 1.18.0 shipped on 10 August 2026. The release notes open like this:
+
+> GoogleTest will **not** accept patches of new features to the `v1.18.x` branch.
+> We recommend building GoogleTest from the latest commit instead.
+
+That is not a note about this particular release. The same paragraph, with the version number swapped, opens 1.17.0 and 1.16.0 as well. It is a standing position: the release exists, and the project would rather you did not use it.
+
+## What sixteen months bought
+
+Version 1.17.0 came out at the end of April 2025. Version 1.18.0 came out in August 2026. Between them, under "Notable Changes", 1.18.0 lists one item and a catch-all:
+
+- `GTEST_INTERNAL_HAS_STRING_VIEW` is now set to 1 unconditionally, because C++17 always has `std::string_view`.
+- Many bug fixes.
+
+Sixteen months, one macro simplification, and an unspecified number of fixes. Read alongside the "do not use this branch" notice, the arithmetic is not surprising. The release is a snapshot cut from a trunk that never stopped moving, published because packagers need something with a version number on it.
+
+## The dropdown makes it concrete
+
+Compiler Explorer carries GoogleTest as a library, which is what makes it possible to build and run a real test binary in a browser tab. Ask the API what versions it offers and the answer is short:
+
+```
+googletest: 1.10.0, trunk
+```
+
+Two entries. One is from 2019. The other is whatever was on `main` when the image was built. Nothing in between, and in particular not 1.17 or 1.18.
+
+That is Google's engineering philosophy showing up as a user interface. The [Foundational C++ Support Policy](https://opensource.google/documentation/policies/cplusplus-support) that GoogleTest follows is downstream of how Google builds software internally: one repository, everything at head, no version pinning, breakages fixed at the point they are introduced. Abseil publishes LTS snapshots for the outside world under the same policy and gives the same advice.
+
+If you want to see a GoogleTest suite running in a browser, the [episode on live test binaries](/posts/verification-unit-tests-live) does it against `trunk`, which is the only current option there.
+
+## Which leaves you where, exactly
+
+The awkward part is that almost nobody outside Google actually lives at head. vcpkg and Conan resolve to tagged releases. Debian, Ubuntu, Fedora and Homebrew package tagged releases. Corporate build systems pin a SHA and review the bump. The entire packaging ecosystem is built on the assumption that a release is the thing you consume, and GoogleTest's release notes politely decline that assumption in their first sentence.
+
+In practice this is mostly fine, and it is worth saying so plainly rather than manufacturing alarm. GoogleTest is stable, widely used, and a version that is sixteen months old will run your tests correctly. The cost is narrower than "you are on unsupported software":
+
+- A bug you hit on 1.18.0 may already be fixed on trunk, and the fix will not be backported unless someone judges it critical.
+- A feature you read about in the documentation may not exist in your version, because the documentation tracks head.
+- The gap between what the project considers current and what your package manager offers is now measured in years rather than months.
+
+The version number on a dependency usually tells you what its maintainers support. Here it tells you which snapshot you took. Those are different pieces of information, and the release notes are unusually honest about which one you are getting.
+
+---
+
+**Sources**: GoogleTest [v1.18.0](https://github.com/google/googletest/releases/tag/v1.18.0), [v1.17.0](https://github.com/google/googletest/releases/tag/v1.17.0) and [v1.16.0](https://github.com/google/googletest/releases/tag/v1.16.0) release notes · [Google's Foundational C++ Support Policy](https://opensource.google/documentation/policies/cplusplus-support) · library versions read from [Compiler Explorer's library API](https://godbolt.org/api/libraries/c++) on 21 August 2026.

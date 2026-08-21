@@ -1,0 +1,61 @@
+---
+title: "Boost starts shipping modules, one library at a time"
+slug: "boost-modules-1-92"
+pubDate: 2026-10-26
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, boost, modules, cpp20, build-systems, tooling]
+summary: "Boost 1.92 adds C++20 module support to six of its libraries. The interesting part is the migration path: define BOOST_USE_MODULES and your existing includes quietly become imports, so a codebase can get module build times without editing a single include line."
+draft: false
+relatedPosts: [modules-2026, cpp14-shims-deleted]
+---
+
+In June the [state of modules](/posts/modules-2026) here came down to one sentence: `import std;` works, and `import boost;` is coming. Boost 1.92.0, released on 12 August, is the first instalment of the second half.
+
+Six libraries gained C++20 module support: Conversion, DLL, LexicalCast, PFR, Stacktrace and TypeIndex. Out of roughly 180 Boost libraries, that is a rounding error. The mechanism they chose is what makes it worth writing about.
+
+## You do not have to rewrite anything
+
+The obvious way to add module support is to publish a module and let users migrate to it. Every `#include <boost/type_index.hpp>` becomes `import boost.type_index;`, across every file, all at once, and you find out afterwards whether your build got faster.
+
+Boost did something less disruptive. Build with the CMake option:
+
+```
+-DBOOST_USE_MODULES=1
+```
+
+and then, per the TypeIndex documentation, all the `boost/type_index/...` includes implicitly do `import boost.type_index;`. Your source keeps saying `#include`. The header notices the macro and forwards to the module.
+
+You can still write the import by hand if you want it:
+
+```cpp
+import boost.type_index;
+```
+
+and there is a path for people not using CMake, precompiling the `.cppm` directly:
+
+```
+clang++ -I ../include -std=c++20 --precompile -x c++-module boost_type_index.cppm
+```
+
+The include-forwarding trick is the part worth stealing. Modules have a genuine adoption problem that has nothing to do with whether they work: a large codebase cannot flip from includes to imports incrementally without ending up in a half-migrated state where both spellings are live and the build system has to cope with each. Making the macro do the switch turns that from a source migration into a build-flag experiment. Turn it on, measure, turn it off if it disappoints.
+
+## What the documentation is careful to say
+
+Boost is not overselling this. The TypeIndex module page says support is at an early stage and that targets, flags and behaviour may change. It also notes that for the best compile times you want `import std;` available when building the module, which quietly restates the dependency that has held modules back everywhere else: the payoff arrives when the whole chain is modularised, not when one link is.
+
+Stacktrace and TypeIndex are both tested with and without `import std;`, which suggests the maintainers expect a long stretch where neither assumption is safe.
+
+## Where this leaves the build
+
+Nowhere dramatic yet, and it would be dishonest to pretend otherwise. Six libraries, an early-stage flag, and an explicit warning that the interface may move. Nobody should be rewriting a build on this.
+
+What changed is the shape of the problem. A year ago the honest answer about Boost and modules was that the work had not started in a form you could try. Now there is a flag, a documented module name, and a migration story that does not require touching source. The next question is whether the remaining libraries follow the same pattern, because six libraries each inventing their own module naming and their own opt-in macro would be considerably worse than none.
+
+One caveat about evidence. Compiler Explorer does not yet carry Boost 1.92 (its newest is 1.90.0), so there is no clickable demonstration to attach here. Everything above is from the release notes and the library documentation rather than from a build I ran. When CE catches up, a working `import boost.type_index;` is worth a follow-up.
+
+---
+
+**Sources**: [Boost 1.92.0 release notes](https://www.boost.org/releases/1.92.0/) · [Boost.TypeIndex C++20 module documentation](https://www.boost.org/doc/libs/latest/doc/html/boost_typeindex/c_20_module.html) · Compiler Explorer library versions checked on 21 August 2026.
