@@ -177,32 +177,43 @@ def check_one(platform: str, slug: str) -> list[str]:
                     f"carry it per the /ai policy. Re-run inject.sh, then brand-gen image."
                 )
 
-    # Sample title-area pixel: should contain dark ink (not just paper background)
-    # The mixed colour for rendered text is around #B0A0A0 (dark text + paper);
-    # pure paper background gives #FCFAF5 or similar light value.
+    # Confirm the card actually rendered text, by measuring ink coverage.
+    #
+    # This used to crop a fixed 1600x200 band, average it down to one pixel, and
+    # warn when that average came out light. It did not work. A short title line
+    # leaves most of the band as blank paper, so the average goes light even
+    # though the text rendered perfectly. Measured over all 296 cards in the repo
+    # on 2026-08-21 it produced 15 false positives and zero true ones, and it was
+    # not even ordering cards correctly: contracts-dispute was flagged at 12.5%
+    # ink while cpp26-contracts passed at 9.9%.
+    #
+    # Counting dark pixels survives short lines, long lines and layout changes: a
+    # rendered card has genuinely dark glyph pixels wherever the text sits, and a
+    # card that rendered no text has essentially none. Observed range across every
+    # current card is 3.0% (splicing, whose title is deliberately just "[:r:].")
+    # to 19.2%, so the floor below leaves a wide margin while still catching the
+    # failure this is here to catch.
+    MIN_INK_PERCENT = 1.0
     if img.exists():
         try:
-            color = subprocess.run(
+            raw = subprocess.run(
                 [
                     "magick", str(img),
-                    "-crop", "1600x200+400+800",
-                    "+repage", "-resize", "1x1!",
-                    "-format", "%[hex:u]", "info:",
+                    "-crop", "2000x1100+200+300", "+repage",
+                    "-colorspace", "gray", "-threshold", "50%",
+                    "-format", "%[fx:100*(1-mean)]", "info:",
                 ],
                 capture_output=True, text=True, check=True, timeout=10,
             ).stdout.strip()
-            # Treat darker mixed colors as evidence of rendered text.
-            if color and len(color) >= 6:
-                r = int(color[0:2], 16)
-                g = int(color[2:4], 16)
-                b = int(color[4:6], 16)
-                avg = (r + g + b) // 3
-                if avg > 220:
+            if raw:
+                ink = float(raw)
+                if ink < MIN_INK_PERCENT:
                     issues.append(
-                        f"{yellow('WARN')}  {label}: title area sample is light (#{color[:6]}, avg {avg}); "
-                        f"text may not be rendering"
+                        f"{red('ERROR')} {label}: title/body region is only {ink:.2f}% ink "
+                        f"(floor {MIN_INK_PERCENT}%); the card looks like it rendered no text"
                     )
-        except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        except (FileNotFoundError, subprocess.CalledProcessError,
+                subprocess.TimeoutExpired, ValueError):
             pass
 
     return issues
