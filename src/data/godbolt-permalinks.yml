@@ -576,3 +576,31 @@ cpp26-string-improvements:
     gcc_id: bjGsGjcTc
     gcc_url: https://godbolt.org/z/bjGsGjcTc
     gcc_expected_output: sum = 102
+# MANUAL MINT. This demo is about the C++17 floor, so it needs plain
+# `-std=c++17` on a mainstream compiler. shorten-examples.py hardcodes
+# `-std=c++26 -freflection`, which cannot express that, so this link was minted
+# by hand against x86-64 GCC 16.2 (g162) with `-std=c++17 -O1`.
+# Do NOT regenerate it with shorten-examples.py; that would silently repoint the
+# post at a clang-p2996 C++26 build and undercut what the post demonstrates.
+cpp14-shims-deleted:
+  void_t_shim:
+    title: Void t shim
+    id: jr54e6d5a
+    url: https://godbolt.org/z/jr54e6d5a
+    expected_output: "detecting .reserve(size_t)\n\n                       std::void_t    naive alias    make_void shim\n\
+      std::vector<int>       yes            yes            yes           \nNoReserve              no             no      \
+      \       no            \nstd::unique_ptr<int>   no             no             no            \n\nthe standard spelling\
+      \ needs C++17; the other two exist because it did not"
+
+# MANUAL MINT. Needs the abseil CE library attached and -std=c++20 (CE's abseil
+# 20260107.1 does not build at -std=c++17). shorten-examples.py forces
+# `-std=c++26 -freflection`, so it cannot produce this link.
+# The library must be attached by version id 202601071, NOT the display string
+# "20260107.1"; the dotted form silently fails to attach and the build dies on a
+# missing absl header.
+# Do NOT regenerate with shorten-examples.py.
+abseil-noniterable-iterators:
+  insert_iterator:
+    title: Walking from an insert iterator on the older Abseil
+    id: Khx8hrEv4
+    url: https://godbolt.org/z/Khx8hrEv4
