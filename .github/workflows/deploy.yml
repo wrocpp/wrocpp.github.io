@@ -2,7 +2,7 @@
 #
 # Triggers:
 #   1. Push to main              — normal edit/commit flow.
-#   2. Daily cron (07:00 UTC)    — picks up scheduled posts crossing pubDate.
+#   2. Cron every 2 hours       — picks up scheduled posts crossing pubDate.
 #   3. Manual (workflow_dispatch) — operator override.
 #
 # No untrusted inputs are passed to `run:` steps; this workflow only consumes
@@ -16,21 +16,52 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    # Three staggered daily builds. GitHub-Actions free-tier scheduled
-    # runners drift up to several hours late under load, which
-    # repeatedly missed Buffer fires at 08:00 UTC for posts whose
-    # `pubDate` rolled over at 00:00 UTC the same day. Even with the
-    # 05:30 UTC backup added in PR #79, the 2026-05-18 fire still
-    # required a manual deploy. The 03:30 UTC defensive third trigger
-    # gives ~4 hr of total drift absorption before any pre-Buffer
-    # cron guard hits at 07:45 UTC. Three runs/day stays well under
-    # the free-tier quota and is harmless when all succeed (the
-    # `concurrency: pages, cancel-in-progress: false` group below
-    # serialises them; duplicate builds get a fresh dist with the same
-    # source so the deploy is idempotent).
-    - cron: '0 7 * * *'
-    - cron: '30 5 * * *'
-    - cron: '30 3 * * *'
+    # Twelve builds a day, every two hours. This replaced three crons at
+    # 03:30/05:30/07:00 UTC on 2026-08-28.
+    #
+    # Why: a post only reaches the site once a build runs on or after its
+    # pubDate, but Buffer fires the social post on its own schedule regardless.
+    # The old three-cron spread assumed GitHub's scheduler runs up to ~4 hours
+    # late. Measured delivery on this repo:
+    #
+    #   2026-08-20..26   fired 04:00-04:10, 05:54-06:04, 07:30-07:57  (~30 min)
+    #   2026-08-27       fired 14:21, 16:39, 18:06                    (~11 hours)
+    #   2026-08-28       nothing by 11:52 UTC
+    #
+    # Two days running, the day's post sat at 404 through the whole morning
+    # while its LinkedIn and Facebook posts pointed at it. Both were fixed by
+    # hand. Three crons of drift absorption does not survive an 11 hour delay,
+    # because three times late is still late.
+    #
+    # Spreading the crons across the full day means that whatever the constant
+    # delay happens to be, from zero to about twelve hours, some run lands in
+    # the window between 00:00 UTC (pubDate rollover) and the morning Buffer
+    # fire. Under normal drift the 00:17 run publishes within the hour, which
+    # is better than the old 04:00.
+    #
+    # Running early is harmless: src/lib/posts.ts isPublished() gates on
+    # `pubDate <= today` in UTC, so a build before midnight simply omits
+    # tomorrow's post rather than publishing it early. Only lateness hurts.
+    #
+    # Cost is nil: this repo is public, so Actions minutes are unmetered. The
+    # `concurrency: pages, cancel-in-progress: false` group below serialises
+    # runs, and a rebuild is idempotent (same source, fresh dist).
+    #
+    # Minute 17 rather than :00 on purpose. GitHub documents that scheduled
+    # workflows are delayed most at the top of the hour, when everyone else's
+    # crons land.
+    - cron: '17 0 * * *'
+    - cron: '17 2 * * *'
+    - cron: '17 4 * * *'
+    - cron: '17 6 * * *'
+    - cron: '17 8 * * *'
+    - cron: '17 10 * * *'
+    - cron: '17 12 * * *'
+    - cron: '17 14 * * *'
+    - cron: '17 16 * * *'
+    - cron: '17 18 * * *'
+    - cron: '17 20 * * *'
+    - cron: '17 22 * * *'
   workflow_dispatch: {}
 
 concurrency:
