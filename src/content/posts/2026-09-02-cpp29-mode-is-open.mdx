@@ -1,0 +1,70 @@
+---
+title: "C++29 mode is open, and the compilers already disagree"
+slug: "cpp29-mode-is-open"
+pubDate: 2026-09-02
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, cpp29, cpp26, gcc, clang, toolchain, conformance]
+summary: "LLVM 23.1 shipped with -std=c++2d, a mode for the standard after C++26, and GCC trunk has one too. Both report __cplusplus as 202700. They do not agree about C++26 itself: GCC says 202603, which is the ratified value, and clang still says 202400."
+draft: false
+relatedPosts: [llvm-23-1-shipped, gcc-16-2-toolchain-status]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+C++26 was finished in March. The next one is now something you can compile against.
+
+LLVM 23.1.0 shipped on 25 August with `-std=c++2d`, and GCC's development branch has the same mode. Neither current release will take the flag: clang 22.1 and GCC 16.2 both refuse it at the driver, before they ever look at your file.
+
+## Four lines
+
+```cpp
+#include <cstdio>
+
+int main() {
+    std::printf("__cplusplus = %ld\n", (long)__cplusplus);
+    return 0;
+}
+```
+
+On GCC's trunk in the new mode:
+
+<GodboltEmbed id="n1ob4Wz3o" compilerLabel="GCC trunk" title="C++29 mode on GCC trunk" gcc_subtitle="x86-64 GCC trunk 17.0.0 · -std=c++2d -O1 · runs live" />
+
+`202700`. Clang's trunk in the same mode [prints the same number](https://godbolt.org/z/dW6sf7shx), which is the useful part: two independent implementations picked the same placeholder for a standard that does not exist yet.
+
+The convention is year and month of ratification, so `202700` is not a date anyone is committing to. It is a value chosen to sort after everything currently shipped, and it will be replaced by a real one when the standard is done.
+
+## The number they do not agree on
+
+Ask the same two compilers about C++26 and the answer splits.
+
+GCC's trunk at `-std=c++26` reports [`202603`](https://godbolt.org/z/efTvYGzTY). Clang's trunk at `-std=c++2c` reports `202400`:
+
+<GodboltEmbed id="MGGKda8cs" compilerLabel="clang trunk" title="clang still reports the C++26 placeholder" gcc_subtitle="x86-64 clang trunk · -std=c++2c -O1 · runs live" />
+
+`202603` is the correct one. C++26 was completed in March 2026, so year-and-month gives `202603`, and that is what GCC's documentation of the predefined macros specifies. `202400` is the placeholder clang used while the standard was still in progress and has not yet updated.
+
+This is a small thing that behaves like a large one. Feature-test macros are the recommended way to detect a feature, and for good reason, but `__cplusplus` is what a great deal of existing code actually tests, usually as `__cplusplus >= 202302L` or similar. A comparison written against the ratified value silently takes the wrong branch on clang, because `202400 < 202603` even though clang is in its C++26 mode. That will get fixed, and until it is, a version check spanning C++23 and C++26 is not portable between the two compilers.
+
+## Even the flag is not agreed
+
+GCC accepts `-std=c++29` and `-std=c++2d`, and gives `202700` for both. Clang accepts only `-std=c++2d` and rejects the spelled-out form:
+
+```
+error: invalid value 'c++29' in '-std=c++29'
+```
+
+The letter form is the older convention, `2a` for what became C++20 and `2b` for C++23, used while the year is unsettled. GCC adding the numeric alias early is a convenience rather than a claim about the schedule.
+
+## What you can actually do with it
+
+Very little, deliberately. Turning the mode on does not hand you features. It opens a bucket for papers voted into the working draft after C++26, and the working draft has only just started collecting them. What you get today is a compiler that will not reject a paper's syntax on the grounds that no mode enables it.
+
+The reason to know the flag exists is narrower. If you follow a paper that has been voted in and want to try an implementation as it lands, this is where it will appear first. If you maintain a build matrix, this is the row that will start appearing in bug reports.
+
+---
+
+**Sources**: [LLVM 23.1.0 release](https://github.com/llvm/llvm-project/releases/tag/llvmorg-23.1.0) · [Clang 23.1 release notes](https://releases.llvm.org/23.1.0/tools/clang/docs/ReleaseNotes.html) · [GCC standard predefined macros](https://gcc.gnu.org/onlinedocs/cpp/Standard-Predefined-Macros.html) · all four values measured on [Compiler Explorer](https://godbolt.org) on 28 August 2026 · demo source in the [examples repo](https://github.com/wrocpp/cpp26-reflection-examples).
