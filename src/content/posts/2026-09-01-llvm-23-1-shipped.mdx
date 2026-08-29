@@ -1,0 +1,59 @@
+---
+title: "LLVM 23.1 shipped, and one of its changes is silent"
+slug: "llvm-23-1-shipped"
+pubDate: 2026-09-01
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, llvm, clang, toolchain, modules, conformance, cpp26]
+summary: "Clang 23.1 landed on 25 August with partial expansion statements, modules dependency discovery, and a batch of core-issue fixes. It also elides more dead stores than 22 did, which is the one change that alters behaviour without saying anything at build time."
+draft: false
+relatedPosts: [cpp29-mode-is-open, gcc-16-2-toolchain-status]
+---
+
+LLVM 23.1.0 was released on 25 August, about two weeks after rc3. The [toolchain status piece here on 17 August](/posts/gcc-16-2-toolchain-status/) guessed late August, which turned out to be right for once.
+
+Here is what the C++ front end gained, and the one thing to check before you upgrade a codebase.
+
+## The change that does not announce itself
+
+Clang 23 is more aggressive about dead-store elimination, and there is a new flag to turn it off:
+
+```
+-fno-lifetime-dse
+```
+
+That flag existing is the tell. Optimisations that remove stores the compiler can prove nobody reads are ordinary, right up to the point where the proof leans on lifetime rules that a codebase quietly violates. Code that writes through a pointer to an object whose lifetime has ended, or that reuses storage without the standard blessing it, can have those writes removed now where 22 kept them. Nothing warns you. The program simply behaves differently, usually in the parts that were already the least well-defined.
+
+If a project upgrades to 23 and something goes strange in exactly the code you would not want to debug, `-fno-lifetime-dse` is the first thing to try. If it fixes the problem, you have not found a compiler bug; you have found where your code depends on writes the standard does not require to happen. Which is worth knowing either way.
+
+## Language features
+
+**Expansion statements arrive, partly.** P1306R5 has partial support. Iterating expansion statements are not implemented yet, so the useful half is still missing, but the syntax is now recognised. GCC has had its own implementation since 15 and tracks the remainder under a separate report, so this is the second implementation starting to land rather than a first.
+
+**Modules dependency discovery.** P1857R3 is implemented. This is the piece build systems need to work out what to compile in which order without parsing your source themselves, and it matters more for CMake and Ninja than for anything you write by hand.
+
+**Structured bindings.** Clang now propagates `constexpr` and `constinit` into structured bindings with tuple-like initialisers, and implements the CWG3135 resolution so that bindings use non-reference types for prvalue initialisers.
+
+**Named universal character escapes.** P3733R1 is implemented as a defect report, so it applies in every language mode rather than only C++26.
+
+## Conformance
+
+A batch of core issues landed: CWG1504 on devirtualising through non-zero array subscripts, CWG1780 on explicitly specialising generic lambda call operators, CWG2413 on omitting `typename` before template names in conversion operators, and CWG727 on member specialisations at class scope.
+
+Three other changes reject code that 22 accepted. `export` declarations in module implementation partitions are now an error. Template argument deduction treats a `_BitInt(N)` parameter as `std::size_t` rather than `int`. Nested local classes declared in a different block scope from their parent are rejected.
+
+## And a new mode
+
+Clang 23 also brings `-std=c++2d`, for the standard after C++26. That is [its own story](/posts/cpp29-mode-is-open/), because GCC's development branch has the same mode and the two already disagree about what version they are compiling.
+
+## A caveat about this post
+
+Compiler Explorer does not carry clang 23.1 yet. Its list stops at 22.1.0 and then jumps to trunk, so there is no clickable demonstration to attach here and everything above is cited to the release notes rather than to something I ran. Trunk is ahead of 23.1 rather than equal to it, so testing there tells you about 24, not about the release you would actually install.
+
+That is a real limitation and worth stating plainly rather than dressing a trunk link up as a 23.1 link. When CE picks up the release, the dead-store change is the one worth putting under a microscope.
+
+---
+
+**Sources**: [LLVM 23.1.0 release](https://github.com/llvm/llvm-project/releases/tag/llvmorg-23.1.0) · [Clang 23.1 release notes](https://releases.llvm.org/23.1.0/tools/clang/docs/ReleaseNotes.html) · [P1306R5 expansion statements](https://wg21.link/p1306) · [P1857R3 modules dependency discovery](https://wg21.link/p1857) · release date and prerelease status confirmed via the GitHub releases API on 28 August 2026.
