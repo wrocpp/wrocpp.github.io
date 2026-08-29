@@ -1,0 +1,55 @@
+---
+title: "Catch2 3.16 fixes a bug that shipped with the feature"
+slug: "catch2-3-16"
+pubDate: 2026-10-31
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, catch2, testing, cmake, tooling, benchmarking]
+summary: "A maintenance release with no new API. The interesting entry is that catch_discover_tests has been splitting test names containing semicolons since the first version of the script, which is a long time for a bug to survive by only affecting people who punctuate their test names."
+draft: false
+relatedPosts: [verification-unit-tests-live, googletest-live-at-head]
+---
+
+Catch2 3.16.0 came out on 25 August, the same day as LLVM 23.1 and CMake 4.4.3. It adds no API and changes no language requirement. Most of it is performance work and CMake fixes, and it is worth a short read rather than a long one.
+
+One entry stands out, and not because it is dramatic.
+
+## A bug with a long life
+
+`catch_discover_tests` is the CMake function that enumerates your tests at build time so CTest can run them individually. Three fixes landed in it, and the second is this: the `<target>_TESTS` variable was not escaping test names, so a name containing a semicolon got split into several partial names.
+
+The release notes are direct about the age of it: "This bug has existed since the first version of the script."
+
+Semicolons are how CMake spells a list. A string containing one is a list of two things unless somebody escapes it, and this is the kind of detail that is obvious once stated and invisible until it bites. It survived this long because it only affects people who put punctuation in test names, and the failure mode is a test that quietly does not run rather than an error.
+
+That combination, rare trigger plus silent failure, is what lets a bug reach adulthood. A test that vanishes from the list looks exactly like a test that passed.
+
+The other two fixes in the same function are of a piece: the variable was accumulating JSON fragments alongside test names, introduced in the previous release's refactor, and `TEST_PREFIX` and `TEST_SUFFIX` were having leading and trailing whitespace stripped.
+
+## Speed
+
+Test registration got materially faster. The notes put it at roughly 3000 tests registered per second, up from about 1000, along with a faster initial `TEST_CASE` registration and reduced overhead the first time `BENCHMARK` machinery appears in a translation unit.
+
+The string matchers were rewritten. Case-sensitive matching, which is the default, is described as significantly faster; case-insensitive is faster in most cases.
+
+Compilation improved too, for the specific situation where several templated test-case macros use the same set of types.
+
+## One change that affects measurements
+
+Benchmarks that return nothing now get an optimizer barrier around the call.
+
+This is a correctness fix dressed as a performance note. When a benchmarked function returns a value, the usual trick is to keep that value alive so the optimiser cannot delete the work. With no return value there is nothing to hold, and a compiler is free to notice that two consecutive calls have no observable effect and merge or drop them. The barrier limits what can be moved between calls, so numbers from void-returning benchmarks should be more honest and, quite possibly, worse than they were.
+
+If you track benchmark results over time and a void-returning case suddenly reports more work after upgrading, that is the fix, not a regression.
+
+There is also a new warning when sharding is used without a deterministic test order, which is the configuration where shards can overlap or miss tests entirely.
+
+## No demo for this one
+
+Compiler Explorer carries Catch2, but nothing past the 3.0 previews, so there is no version there new enough to show any of the above. Everything here comes from the release notes rather than from something I ran, which is worth saying rather than implying otherwise.
+
+---
+
+**Sources**: [Catch2 v3.16.0 release notes](https://github.com/catchorg/Catch2/releases/tag/v3.16.0) · release date confirmed via the GitHub releases API on 28 August 2026 · available Compiler Explorer library versions checked the same day.
