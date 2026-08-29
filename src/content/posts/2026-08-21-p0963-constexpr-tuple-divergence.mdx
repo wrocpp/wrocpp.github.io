@@ -98,4 +98,25 @@ For now, if you write P0963 conditions over tuple-protocol types and want them u
 
 ---
 
-**Sources**: [P0963R3 "Structured binding declaration as a condition"](https://wg21.link/p0963) · [GCC PR115745, the P0963 implementation](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=115745) · [CTRE](https://github.com/hanickadot/compile-time-regular-expressions)
+## Update, 29 August 2026
+
+The sentence above about the tracker was true when this was published and is not any more.
+There is now a report: [PR127109](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=127109),
+filed on 27 August against GCC 16.2 and trunk.
+
+It was confirmed and diagnosed the same afternoon, by Jakub Jelinek, who implemented P0963
+in the first place. The cause is more interesting than "a young feature accumulating corner
+cases" suggested. Building the condition wraps the contextual conversion to `bool` in a
+temporary, and a cleanup point around the whole structured binding declaration then ends
+that temporary's lifetime. The cleanup point is not a mistake. It is there to satisfy
+[CWG 2867](https://cplusplus.github.io/CWG/issues/2867.html), which is about destroying
+temporaries created while initialising a structured binding. Constant evaluation is simply
+where it shows, because that is where object lifetime is tracked exactly rather than
+approximately.
+
+So the fix for one defect is what produces this one, and the workaround below still stands
+until it lands.
+
+---
+
+**Sources**: [P0963R3 "Structured binding declaration as a condition"](https://wg21.link/p0963) · [GCC PR115745, the P0963 implementation](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=115745) · [GCC PR127109, this defect](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=127109) · [CTRE](https://github.com/hanickadot/compile-time-regular-expressions)
