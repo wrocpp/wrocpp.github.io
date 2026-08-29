@@ -1,0 +1,65 @@
+---
+title: "The bug got an answer in 95 minutes"
+slug: "p0963-bug-root-caused"
+pubDate: 2026-10-30
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, gcc, cpp26, structured-bindings, constexpr, compiler-bug]
+summary: "A GCC report filed at 15:44 had a header-free reduction by 16:42 and a root cause by 17:19, from the person who implemented the feature. The cause is a cleanup point that exists to satisfy one core issue and ends a lifetime it should not during constant evaluation."
+draft: false
+relatedPosts: [p0963-constexpr-tuple-divergence, ctre-captures-bindings]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+In August this site [wrote up a disagreement](/posts/p0963-constexpr-tuple-divergence/) between GCC and clang: a C++26 structured binding used as an `if` condition, over a type that decomposes through the tuple protocol, is rejected by GCC when the call happens in a constant expression. Clang accepts it. Take away any one of the three ingredients and GCC accepts it too.
+
+That post ended by noting the tracker had no report covering it. On 27 August it got one, [PR127109](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=127109). What happened next is the part worth writing down.
+
+## The timeline
+
+The report went in at 15:44 UTC. At 16:42, fifty-eight minutes later, Jakub Jelinek posted a reduced testcase. At 17:19, ninety-five minutes after filing, he posted the root cause with the relevant compiler internals quoted. The bug moved from unconfirmed to confirmed in the same afternoon.
+
+Jelinek implemented P0963 in GCC. The person who wrote the feature read the report and diagnosed it before the end of the working day.
+
+## What a good reduction removes
+
+Here is his version:
+
+<GodboltEmbed id="TfEzWcq94" gccOnly title="Jakub Jelinek's reduction, no headers at all" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 · rejected, as expected" />
+
+Two changes are worth noticing.
+
+Every header is gone. `std::size_t` becomes `decltype(sizeof 0)`, and `tuple_size` and `tuple_element` are forward-declared into namespace `std` rather than pulled in from `<tuple>`. The specialisation uses a plain `static constexpr int value = 2` instead of `std::integral_constant`. Nothing about the failure needed the standard library, so none of it survives.
+
+The second change is quieter. The original report had five variants, and variant five made `get()` return `const int&` rather than `int` by value, which removes the temporaries that a by-value `get()` would create. That variant existed to rule out a plausible wrong explanation: that this was about lifetime extension of those temporaries. The reduction is built on that form, so the property is preserved rather than accidentally reintroduced.
+
+## The cause
+
+Building the condition is not as simple as it looks. For a tuple-protocol type, the standard requires the contextual conversion to `bool` to happen before the `get()` calls, so GCC evaluates the conversion, wraps the result in a temporary, and holds onto it. That temporary is the `TARGET_EXPR_SLOT` of what GCC calls `DECL_DECOMP_BASE`, created in `cp_finish_decomp`.
+
+Then `cp_finish_decl` wraps the whole structured binding declaration in a cleanup point:
+
+```
+decomp_init = maybe_cleanup_point_expr_void (sl);
+```
+
+That cleanup point is correct and deliberate. It is there to destroy temporaries created while initialising a structured binding, as required by [CWG 2867](https://cplusplus.github.io/CWG/issues/2867.html). The trouble is that it also covers the `bool` temporary holding the condition, and ends its lifetime along with everything else.
+
+At run time none of this shows. A `bool` has no destructor, so ending its lifetime emits no code at all, and the storage still holds the value when the condition gets read a moment later.
+
+Constant evaluation is stricter by construction. It tracks object lifetime exactly rather than approximately, which is most of what makes it useful, so reading an object whose lifetime has ended is an error instead of a value. The diagnostic you get, `accessing '<anonymous>' outside its lifetime`, points at a variable nobody wrote.
+
+So the defect is not a missing case. It is a fix for one core issue reaching one object further than intended, and only the strictest evaluation mode in the compiler is exacting enough to notice.
+
+## What it suggests about filing
+
+The report that got this response was not clever. It had a testcase that fits on a screen, the exact compiler versions with their configure lines, the verbatim diagnostic, and a table of four variants showing which combinations were accepted. The variant table did most of the work: it demonstrated that each ingredient was necessary, which is the difference between "GCC rejects my program" and "GCC rejects exactly this intersection and here is the proof".
+
+The one guess in it, that the P0963 implementation's `TARGET_EXPR` was involved, came from reading the commit message of the patch that added the feature. That guess turned out to point at the right code. Reading the implementation history of a feature before reporting a bug in it costs half an hour and occasionally saves a maintainer the same.
+
+---
+
+**Sources**: [GCC PR127109](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=127109), including [the reduction](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=127109#c1) and [the diagnosis](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=127109#c2) · [CWG 2867](https://cplusplus.github.io/CWG/issues/2867.html) · [PR115745, the P0963 implementation](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=115745) · reduction reproduced with permission of the public record, and it is Jakub Jelinek's code, not mine.

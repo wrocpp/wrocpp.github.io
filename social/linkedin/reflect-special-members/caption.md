@@ -39,5 +39,5 @@ All eight rows, running: https://wrocpp.github.io/posts/reflect-special-members/
 A wro.cpp card reading "The most expensive no-op in C++", about a defaulted destructor removing move operations.
 
 ## Suggested post time
-Tuesday 2026-09-01, 10:00 CET
+Wednesday 2026-10-28, 10:00 CET
 Reason: weekday mid-morning CET suits the EU C++ audience.

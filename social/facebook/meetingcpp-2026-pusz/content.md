@@ -4,7 +4,7 @@ template: social/linkedin-post
 
 ::::post{type=insight theme=dark logo=top-left}
 
-:::insight{citation="wro.cpp -- 2026-09-02"}
+:::insight{citation="wro.cpp -- 2026-10-29"}
 # The mp-units author keynotes in Berlin
 Meeting C++ 2026 runs 26 to 28 November. Mateusz Pusz, whose units library is heading into the standard, gives one of the keynotes.
 :::

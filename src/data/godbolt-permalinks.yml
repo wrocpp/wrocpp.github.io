@@ -604,3 +604,39 @@ abseil-noniterable-iterators:
     title: Walking from an insert iterator on the older Abseil
     id: Khx8hrEv4
     url: https://godbolt.org/z/Khx8hrEv4
+
+# MANUAL MINTS. Both need a plain -std= that shorten-examples.py cannot express
+# (it hardcodes -std=c++26 -freflection). Do NOT regenerate with that script.
+#
+# cpp29-mode-is-open: four links, one per compiler and mode, because the whole
+# point is comparing the __cplusplus values they report. Measured 2026-08-28.
+cpp29-mode-is-open:
+  cplusplus_macro:
+    title: C++29 mode on GCC trunk
+    id: n1ob4Wz3o
+    url: https://godbolt.org/z/n1ob4Wz3o
+    expected_output: "__cplusplus = 202700\nmode        = after C++26"
+  cplusplus_macro_clang_cxx2d:
+    title: C++29 mode on clang trunk
+    id: dW6sf7shx
+    url: https://godbolt.org/z/dW6sf7shx
+    expected_output: "__cplusplus = 202700\nmode        = after C++26"
+  cplusplus_macro_gcc_cxx26:
+    title: GCC trunk reports the ratified C++26 value
+    id: efTvYGzTY
+    url: https://godbolt.org/z/efTvYGzTY
+    expected_output: "__cplusplus = 202603\nmode        = C++26 (ratified value)"
+  cplusplus_macro_clang_cxx26:
+    title: clang trunk still reports the C++26 placeholder
+    id: MGGKda8cs
+    url: https://godbolt.org/z/MGGKda8cs
+    expected_output: "__cplusplus = 202400\nmode        = C++26 (placeholder value, not yet updated)"
+
+# p0963-bug-root-caused: Jakub Jelinek's reduction from PR127109 comment 1.
+# His code, not ours. Compilers session (the TU has no main, only static_asserts)
+# because the point is the diagnostic, not an exit code.
+p0963-bug-root-caused:
+  jelinek_reduction:
+    title: Jakub Jelinek's reduction, no headers at all
+    id: TfEzWcq94
+    url: https://godbolt.org/z/TfEzWcq94
