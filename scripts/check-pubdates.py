@@ -37,6 +37,24 @@ POSTS = REPO / "src" / "content" / "posts"
 KNOWN_PAST_COLLISIONS = {
     "2026-06-28",  # reflect-tracing + hello-sender
     "2026-06-30",  # structured-concurrency + gor-nishanov-memorial
+    # llvm-23-1-shipped + reflect-special-members. Different cause from the two
+    # above, and the one worth reading before adding a third entry here.
+    #
+    # reflect-special-members was scheduled for 2026-09-01 and Buffer had
+    # already queued its social posts. On 2026-08-29 it was re-dated to
+    # 2026-10-28 to free the slot, and the Buffer queue was not reconciled.
+    # Both social posts fired on schedule at 08:01Z on 2026-09-01, pointing at
+    # a URL that would not exist until October, and a reader hit the 404.
+    #
+    # Sent posts cannot be recalled from LinkedIn or Facebook, so the only fix
+    # that helps that reader is to make the advertised URL resolve. The post was
+    # moved back to 2026-09-01, colliding with the post that had taken its slot.
+    #
+    # The usual reason a collision is an error does not apply: that rule exists
+    # because one of the two posts would publish with no social post, and here
+    # both had already been sent. Before re-dating anything inside the Buffer
+    # window, run scripts/check-buffer-status.py --slug <slug> --kind post.
+    "2026-09-01",
 }
 
 PUBDATE_RE = re.compile(r"^pubDate:\s*(\S+)", re.MULTILINE)
