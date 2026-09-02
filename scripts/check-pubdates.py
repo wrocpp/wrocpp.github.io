@@ -55,6 +55,20 @@ KNOWN_PAST_COLLISIONS = {
     # both had already been sent. Before re-dating anything inside the Buffer
     # window, run scripts/check-buffer-status.py --slug <slug> --kind post.
     "2026-09-01",
+    # cpp29-mode-is-open + meetingcpp-2026-pusz. The SAME mistake as the entry
+    # above, one day later, from the same sweep.
+    #
+    # That sweep re-dated two posts: reflect-special-members (09-01 -> 10-28) and
+    # meetingcpp-2026-pusz (09-02 -> 10-29). When the first broke on 09-01 it was
+    # fixed in isolation, and the second, already queued and due the very next
+    # morning, was not checked. Its social posts fired at 08:01Z on 09-02 into a
+    # 404 and a reader hit it.
+    #
+    # The lesson is not "check Buffer before re-dating", which was already
+    # written down and did not help. It is that when one re-dated post turns out
+    # to have fired into a 404, EVERY other post re-dated in the same change is
+    # suspect and must be checked in the same sitting.
+    "2026-09-02",
 }
 
 PUBDATE_RE = re.compile(r"^pubDate:\s*(\S+)", re.MULTILINE)
