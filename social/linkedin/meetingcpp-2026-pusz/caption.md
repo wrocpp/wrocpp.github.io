@@ -18,5 +18,5 @@ Are you planning to be in Berlin in November, onsite or online?
 A cream wro.cpp social card reading "The mp-units author keynotes in Berlin", about Meeting C++ 2026 and Mateusz Pusz giving a keynote.
 
 ## Suggested post time
-Wednesday 2026-08-12, 10:00 CET
+Wednesday 2026-09-02, 10:00 CET
 Reason: Wednesday mid-morning CET, a solid midweek slot for community and event news.

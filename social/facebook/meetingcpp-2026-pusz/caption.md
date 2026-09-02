@@ -14,5 +14,5 @@ Worth a spot on the calendar: https://wrocpp.github.io/posts/meetingcpp-2026-pus
 A cream wro.cpp social card reading "The mp-units author keynotes in Berlin", about Meeting C++ 2026 and Mateusz Pusz.
 
 ## Suggested post time
-Wednesday 2026-08-12, 10:00 CET
+Wednesday 2026-09-02, 10:00 CET
 Reason: midweek mid-morning CET for community and event news.
