@@ -28,6 +28,27 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    # TypeScript 7 is the Go rewrite and is not a drop-in upgrade. It ships no
+    # lib/typescript.js and no tsserver: `exports["."]` resolves to
+    # lib/version.cjs, and the compiler API moved behind ./unstable/* subpaths
+    # with per-platform native binaries.
+    #
+    # astro check depends on that removed API through @astrojs/language-server
+    # and @volar/kit, which import 'typescript' and call ts.sys (15 call sites),
+    # ts.createSourceFile, ts.createLanguageServiceHost and
+    # ts.createLanguageServicePlugin. @astrojs/check therefore declares
+    # `typescript: "^5.0.0 || ^6.0.0"`, and every published version including
+    # latest (0.9.10) says the same, so there is no version to upgrade to.
+    #
+    # Forcing it with --legacy-peer-deps or an overrides entry would install but
+    # break `npm run check` at runtime, which CI runs as the Type & content
+    # check step. PR #96 sat red from 2026-06-24 to 2026-09-02 for this reason.
+    #
+    # Remove this ignore once Volar supports TS 7. Minor and patch bumps within
+    # TypeScript 6 still come through normally.
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(dev-deps)"
