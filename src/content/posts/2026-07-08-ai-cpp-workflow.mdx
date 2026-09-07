@@ -41,4 +41,37 @@ For a concrete worked example on this site, see <PostLink slug="fastest-jvm-is-c
 
 ---
 
+## Update, 7 September 2026: a worked example of the review going wrong
+
+Giovanni Dicanio published [a case study](https://isocpp.org/blog/2026/09/why-we-should-double-check-the-ai-output-a-bug-which-wasnt-giovanni-dicanio)
+on 4 September that is worth more than the general advice above, because it is
+specific.
+
+He asked an AI to review WinReg, his Windows registry wrapper. It came back with a
+crash report: zero-length `REG_SZ` and `REG_EXPAND_SZ` values would break
+`GetStringValue`, `GetExpandStringValue`, and their two `Try` variants. It even
+supplied the corroborating detail, that the binary getter `GetBinaryValue` guards
+against `dataSize == 0` while the string getters do not.
+
+The bug was not there. Dicanio checked and the code handled the case.
+
+What makes this worth reading is not that a tool was wrong. It is the shape of the
+wrongness. The report named real functions in a real file, drew a real distinction
+between two families of getters, and offered exactly the kind of asymmetry that a
+careful human reviewer would also find suspicious. Nothing about it looked like a
+hallucination. A reviewer who trusted it would have added guards that do nothing,
+and gone looking for the same omission everywhere else in the codebase.
+
+That is the cost model the section above understates. The expensive failure is not
+the obviously wrong answer, which you discard in seconds. It is the plausible one
+that survives a skim, because a plausible false positive spends your attention at
+exactly the rate a true positive would.
+
+Since this site is drafted with AI assistance and says so on every post, the
+honest version of the lesson is the one we apply to ourselves: every code claim
+here gets compiled before it ships, and the ones that cannot be compiled get
+labelled as unverified. Dicanio's case is what the alternative looks like.
+
+---
+
 **Sources**: C++ Weekly with Jason Turner, [Ep 531](https://www.youtube.com/watch?v=kRZWuyM46QY) / [Ep 535](https://www.youtube.com/watch?v=NtbQ-mF3iJE) / [Ep 539](https://www.youtube.com/watch?v=SJ9Jm-K9bYU). [CppCast Ep 408](https://cppcast.com/episodes/) with Tom Tesch. [Herb Sutter's AI-harm poll](https://herbsutter.com/).
