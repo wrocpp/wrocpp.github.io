@@ -56,6 +56,29 @@ What changed is the shape of the problem. A year ago the honest answer about Boo
 
 One caveat about evidence. Compiler Explorer does not yet carry Boost 1.92 (its newest is 1.90.0), so there is no clickable demonstration to attach here. Everything above is from the release notes and the library documentation rather than from a build I ran. When CE catches up, a working `import boost.type_index;` is worth a follow-up.
 
+## What else is in 1.92
+
+Modules are the headline but not the release. Nothing new joined the collection this
+time, and the changes that matter are inside libraries people already depend on.
+
+Container gained a `hub` container, and unchecked variants of `emplace_back` and
+`push_back` for vectors that skip the capacity test when you have already
+guaranteed it. Lockfree gained two queues, `mpsc_weak_queue` and
+`bounded_ticket_queue`. Asio picked up scheduler configuration parameters and
+`io_uring` tuning knobs. Unordered learned C++20 ranges, so `insert_range` and
+construction from a range now work. Graph added Louvain community detection and
+dropped its dependency on Boost.StaticAssert.
+
+Two deprecations are worth diarising. Filesystem's templated `initial_path()`
+overloads are deprecated and go away in v4. More consequentially, 1.92 is the last
+release in which Heap and Lockfree support C++14; both require C++17 from the next
+one. That is narrower than the C++14 sunset it is sometimes reported as, since it
+binds those two libraries rather than Boost as a whole, but if you are pinned to
+C++14 and use either, this release is your ceiling.
+
+The `hub` container deserves its own piece rather than a paragraph here, and it is
+blocked on the same missing Compiler Explorer version as everything else above.
+
 ---
 
-**Sources**: [Boost 1.92.0 release notes](https://www.boost.org/releases/1.92.0/) · [Boost.TypeIndex C++20 module documentation](https://www.boost.org/doc/libs/latest/doc/html/boost_typeindex/c_20_module.html) · Compiler Explorer library versions checked on 21 August 2026.
+**Sources**: [Boost 1.92.0 release notes](https://www.boost.org/releases/1.92.0/) · [Boost.TypeIndex C++20 module documentation](https://www.boost.org/doc/libs/latest/doc/html/boost_typeindex/c_20_module.html) · Compiler Explorer library versions checked on 7 September 2026 (newest Boost: 1.90.0).
