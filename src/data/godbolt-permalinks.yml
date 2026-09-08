@@ -661,3 +661,22 @@ hardened-stdlib-turn-it-on:
     id: 1sTa5dre5
     url: https://godbolt.org/z/1sTa5dre5
     expected_output: "v[1] = 20 (in bounds)\nv[5] = 0 (out of bounds, and we are still running)"
+boost-decimal:
+  decimal_vs_binary:
+    title: Decimal vs binary
+    id: 5ss3PdvdG
+    url: https://godbolt.org/z/5ss3PdvdG
+    expected_output: "0.1 added 1000 times\n  double : 99.999999999998593\n  exact  : 100\n  equal  : no\n  off by : -1.41e-12\n\
+      \n0.01 added 100 times\n  double : 1.0000000000000007\n  equal to 1.00 : no\n\ninteger cents: 100  (exact)\nprice 1.005\
+      \ stored as double : 1.0049999999999999\n  rounded to 2 places        : 1.00\n  rounded up to 1.01         : no\n\n\
+      nearest double to 0.1 : 0.10000000000000000555\nnearest double to 0.5 : 0.50000000000000000000  (exact, it is a power\
+      \ of two)"
+api-contract-guard:
+  contract_decides:
+    title: Contract decides
+    id: K3vhxqrMh
+    url: https://godbolt.org/z/K3vhxqrMh
+    expected_output: "empty stored value\n  contract A (query_raw) reports : 0 bytes\n  contract B (get_value) reports : 1\
+      \ bytes\n  reader under B: 0 characters, empty=yes\n  reader under A would ask for    : 18446744073709551615 characters\n\
+      \nstored value \"hello\"\n  contract A reports : 5 bytes\n  contract B reports : 6 bytes\n  reader under B     : \"\
+      hello\"\n\nstd::string(buf, 0) built fine, size 0"
