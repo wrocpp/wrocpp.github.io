@@ -1,0 +1,63 @@
+---
+title: "A missing guard is a property of the API you called"
+slug: "api-contract-guard"
+pubDate: 2026-10-29
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, api-contracts, windows, code-review, correctness, strings]
+summary: "RegGetValueW guarantees the string it returns is NUL-terminated and counts the terminator in the size it reports. RegQueryValueExW promises neither. The same buffer-reading code is correct against one and wrong against the other, and nothing at the call site distinguishes them."
+draft: true
+relatedPosts: [ai-cpp-workflow-2026, float-to-int-ub]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+Here are two ways to read a string out of the Windows registry. They take almost the same arguments and hand back almost the same thing.
+
+`RegQueryValueExW` copies the bytes that are stored and reports how many it copied. If the value was written without a terminator, you get no terminator. If the value is empty, you get zero bytes.
+
+`RegGetValueW` guarantees the result is NUL-terminated, adds the terminator itself when the stored bytes lack one, and includes it in the size it reports. An empty value therefore costs one `wchar_t`, and the size it reports is never zero.
+
+Now consider the code that consumes either one. Take the reported size, subtract the terminator, build a string:
+
+```cpp
+const std::size_t chars = size_in_bytes - 1;
+return std::wstring(buf, chars);
+```
+
+Against `RegGetValueW` that is correct for every input including the empty one, because 1 minus 1 is 0. Against `RegQueryValueExW` an empty value makes it compute 0 minus 1 in unsigned arithmetic, and ask for 18446744073709551615 characters.
+
+## Two contracts, one reader
+
+The registry API is not on Compiler Explorer, so the demo models the two contracts. `query_raw` copies what is stored and reports that. `get_value` appends a terminator and counts it. One unguarded reader consumes both:
+
+<GodboltEmbed id="K3vhxqrMh" title="One reader, two API contracts, two different answers" />
+
+```
+empty stored value
+  contract A (query_raw) reports : 0 bytes
+  contract B (get_value) reports : 1 bytes
+  reader under B: 0 characters, empty=yes
+  reader under A would ask for    : 18446744073709551615 characters
+```
+
+The program prints that last number rather than acting on it.
+
+One thing the demo also settles: constructing a zero-length string is not itself a hazard. `std::string(buf, 0)` is well defined, and the demo builds one. Length zero was never the problem. Computing a length of `0 - 1` was.
+
+## Where this came up
+
+Giovanni Dicanio hit this from the review side. An AI review of [WinReg](https://github.com/GiovanniDicanio/WinReg) reported that zero-length `REG_SZ` values would crash four of its string getters, and pointed at a real asymmetry to justify it: the binary getters check for a zero byte count and the string getters do not. The <PostLink slug="ai-cpp-workflow-2026">roundup in July</PostLink> covered that story and what it says about plausible false positives.
+
+The part worth adding is why the code was right. WinReg's string getters call `RegGetValueW`, so the zero case the review was worried about cannot occur on that path. The guard is not missing. It lives in the callee's documented contract, one layer down and in a different document.
+
+That is what makes this class of finding hard to settle by reading code. Both sibling functions compile, both look reasonable, and the asymmetry between them is genuinely suspicious until you know which callee promises what. A reviewer working from the diff alone has no way to reach that fact, so the honest answer to "why is there no check here" is often a link rather than a patch.
+
+The general shape is worth keeping: when two call sites that look alike disagree about a defensive check, the difference is usually not in the code you are reading. Look at what the function underneath it promised.
+
+---
+
+**Sources**: [RegGetValueW](https://learn.microsoft.com/en-us/windows/win32/api/winreg/nf-winreg-reggetvaluew) and [RegQueryValueExW](https://learn.microsoft.com/en-us/windows/win32/api/winreg/nf-winreg-regqueryvalueexw) reference · Giovanni Dicanio, ["Why We Should Double-Check the AI Output: A Bug Which Wasn't"](https://giodicanio.com/2026/07/28/why-we-should-double-check-the-ai-output-a-bug-which-wasnt/) (28 July 2026), [reposted on isocpp.org](https://isocpp.org/blog/2026/09/why-we-should-double-check-the-ai-output-a-bug-which-wasnt-giovanni-dicanio) 4 September 2026 · demo source in the [examples repo](https://github.com/wrocpp/cpp26-reflection-examples).
