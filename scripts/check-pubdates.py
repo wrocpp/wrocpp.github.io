@@ -71,7 +71,12 @@ KNOWN_PAST_COLLISIONS = {
     "2026-09-02",
 }
 
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from schedule_doubles import INTENTIONAL_DOUBLES  # noqa: E402
+
 PUBDATE_RE = re.compile(r"^pubDate:\s*(\S+)", re.MULTILINE)
+SLUG_RE = re.compile(r'^slug:\s*"?([a-z0-9-]+)"?', re.MULTILINE)
 FILENAME_DATE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-")
 
 
@@ -108,7 +113,8 @@ def main() -> int:
             missing.append(path.name)
             continue
         pub = m.group(1).strip().strip('"').strip("'")
-        by_date[pub].append(path.name)
+        sm = SLUG_RE.search(text)
+        by_date[pub].append((path.name, sm.group(1) if sm else ""))
 
         fm = FILENAME_DATE_RE.match(path.name)
         if fm and fm.group(1) != pub:
@@ -120,17 +126,50 @@ def main() -> int:
     for name in missing:
         errors.append(f"{red('ERROR')} {name}: no pubDate in frontmatter")
 
-    for date, names in sorted(by_date.items()):
-        if len(names) < 2:
+    for date, entries in sorted(by_date.items()):
+        names = [n for n, _ in entries]
+        slugs = [sl for _, sl in entries]
+        plan = INTENTIONAL_DOUBLES.get(date)
+
+        if plan and len(entries) < 2:
+            warnings.append(
+                f"{yellow('WARN')}  {date}: planned as a two-post day "
+                f"({plan['why']}) but only {len(entries)} post is written. "
+                f"Expecting slug '{plan['slug']}' at {plan['hour']:02d}:00Z."
+            )
+            continue
+        if len(entries) < 2:
+            continue
+        if plan:
+            if len(entries) > 2:
+                errors.append(
+                    f"{red('ERROR')} {date}: {len(entries)} posts share this date "
+                    f"({', '.join(names)}). This date is a planned double "
+                    f"({plan['why']}), which allows exactly two. A third has "
+                    f"nowhere to be advertised from."
+                )
+            elif plan["slug"] not in slugs:
+                errors.append(
+                    f"{red('ERROR')} {date}: planned second post is "
+                    f"'{plan['slug']}' but this date holds {slugs}. "
+                    f"auto-schedule-next.py advertises only the planned slug at "
+                    f"{plan['hour']:02d}:00Z, so the other post would collide at "
+                    f"08:00Z. Fix the slug or the plan in scripts/schedule_doubles.py."
+                )
+            else:
+                print(
+                    f"{green('DOUBLE')} {date}: {', '.join(names)} "
+                    f"-- planned, '{plan['slug']}' at {plan['hour']:02d}:00Z ({plan['why']})"
+                )
             continue
         if date in KNOWN_PAST_COLLISIONS:
             warnings.append(
-                f"{yellow('WARN')}  {date}: {len(names)} posts share this date "
+                f"{yellow('WARN')}  {date}: {len(entries)} posts share this date "
                 f"({', '.join(names)}); known past collision, already published"
             )
         else:
             errors.append(
-                f"{red('ERROR')} {date}: {len(names)} posts share this date "
+                f"{red('ERROR')} {date}: {len(entries)} posts share this date "
                 f"({', '.join(names)}). The daily cadence allows one post per day "
                 f"and Buffer fires one social slot per day, so one of these would "
                 f"publish with no social post. Move one to a free date."

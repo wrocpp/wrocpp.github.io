@@ -12,6 +12,7 @@ draft: false
 ---
 
 import PostLink from '../../components/PostLink.astro';
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
 Andreas Fertig's post **"[What reinterpret_cast doesn't do](https://isocpp.org/blog/2026/05/what-reinterpret-cast-doesnt-do-andreas-fertig)"** (re-shared on isocpp.org 2026-05-18) opens with the line C++ teachers have been waiting two decades to say cleanly: "This is not the cast you're looking for!" The punchline: `reinterpret_cast` and C++23's `std::start_lifetime_as` look interchangeable, but only if you don't read the abstract-machine fine print. They do different things; the difference is the gap between "undefined behaviour that happens to work on your compiler today" and "the standard guarantees this works."
 
@@ -62,6 +63,44 @@ This is a footnote we should ship across the safety cluster. I'm flagging it as 
 - His earlier "The correct way to do type punning in C++: The second act" introduces `start_lifetime_as` in depth.
 - [hardened-stdlib](/toolset/hardened-stdlib/): runtime catches for the UB class the `reinterpret_cast` pattern leaks; complement, not replacement, for `start_lifetime_as` at construction time.
 - [lifetime-safety-2026](/toolset/lifetime-safety-2026/): reflection-driven schema lint that operates one layer above the per-call analyzer where `start_lifetime_as` lives.
+
+---
+
+## Update, 7 September 2026: Fertig on implicit move, and what the compiler says
+
+Fertig published ["Move in C++ without a std::move"](https://andreasfertig.com/blog/2026/09/move-in-cpp-without-a-stdmove/)
+on 1 September. It was the most-upvoted C++ link of the week, and the argument is a
+good one: people reach for `std::move` in return statements where the language
+already moves for them, and writing it by hand can cost you copy elision.
+
+The article attaches the improvement to C++23. We checked, and that attribution is
+off by a standard for the case most people will hit.
+
+Three variations, one tracer type, GCC 16.1:
+
+| What the function does | C++17 | C++20 | C++23 |
+|---|---|---|---|
+| takes `Base&&`, returns `Base` by value | copy | move | move |
+| takes `Derived&&`, returns `Base` (conversion needed) | copy | move | move |
+| returns `Base&&`, with `return v;` | ill-formed | ill-formed | compiles |
+
+<GodboltEmbed id="Yxohzsvva" gccOnly={true} title="Both by-value cases already move in C++20" gcc_subtitle="x86-64 GCC 16.1 - -std=c++20 -O1 - runs live" />
+
+The first two rows are the ones the article is about, and they were fixed by
+[P1825](https://wg21.link/p1825) in C++20, which extended implicit move to returns
+that need a conversion. If your codebase is on C++20, you can already delete those
+`std::move` calls today.
+
+What C++23 adds is the third row. [P2266](https://wg21.link/p2266) dropped the
+two-phase overload resolution that let a failed move quietly fall back to a copy,
+and made the returned name an xvalue outright, so a function whose return type is
+an rvalue reference can finally `return v;`. That is a real change, and it is a
+narrower one than "switch to C++23 and your returns start moving".
+
+The practical advice survives intact, which is why this is a footnote and not a
+rebuttal: stop writing `std::move` on return statements. The correction is only to
+the version you need before you can act on it, and for most people that version
+already shipped.
 
 ---
 

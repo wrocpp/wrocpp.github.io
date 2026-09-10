@@ -22,6 +22,9 @@ import argparse, json, os, re, subprocess, sys, urllib.request, urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from schedule_doubles import second_post_hour  # noqa: E402
+
 REPO = Path(__file__).resolve().parent.parent
 BUFFER = "https://api.buffer.com"
 CAP = 10
@@ -116,12 +119,19 @@ def is_prepared(slug: str) -> bool:
     ])
 
 
-def due_at(date: str) -> datetime:
-    return datetime.strptime(date + "T08:00:00+0000", "%Y-%m-%dT%H:%M:%S%z")
+def due_at(date: str, slug: str) -> datetime:
+    """When this post is advertised.
+
+    08:00Z for everything, except the planned second post of a two-post day,
+    which goes out at its own hour so it does not land in the first post's
+    slot. See scripts/schedule_doubles.py.
+    """
+    hour = second_post_hour(date, slug)
+    return datetime.strptime(f"{date}T{hour:02d}:00:00+0000", "%Y-%m-%dT%H:%M:%S%z")
 
 
 def push(slug: str, date: str, dry: bool) -> bool:
-    at = f"{date}T08:00:00Z"
+    at = due_at(date, slug).strftime("%Y-%m-%dT%H:%M:%SZ")
     url = f"https://wrocpp.github.io/og/{slug}.png"
     cmd = ["python3", str(REPO / "scripts/push-to-buffer.py"),
            "--slug", slug, "--image-url", url, "--at", at]
@@ -167,7 +177,7 @@ def main() -> int:
     # dated today that already fired is gone from the queue but would still
     # match date>=today; scheduling it at a past dueAt makes Buffer reject it.
     ready = [(d, s, k) for (d, s, k) in candidates(today)
-             if s not in already and is_prepared(s) and due_at(d) > now]
+             if s not in already and is_prepared(s) and due_at(d, s) > now]
     if not ready:
         print("no prepared, unscheduled future post -- nothing to do")
         return 0
