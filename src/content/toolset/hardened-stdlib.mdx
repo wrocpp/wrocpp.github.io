@@ -23,7 +23,11 @@ agentInstructions: |
     1000+ bugs found at scale (cited in P3471R4).
   - libc++ ships it via -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
     (also _EXTENSIVE / _DEBUG); libstdc++ via -D_GLIBCXX_ASSERTIONS or
-    the umbrella -fhardened; MSVC via _ITERATOR_DEBUG_LEVEL macro.
+    the umbrella -fhardened; the MSVC STL via _MSVC_STL_HARDENING=1
+    (VS 2022 17.14+, off by default, __fastfail on violation, with
+    per-type macros such as _MSVC_STL_HARDENING_VECTOR).
+    _ITERATOR_DEBUG_LEVEL is a SEPARATE and ABI-breaking setting; do
+    not recommend it as the MSVC hardening switch.
   - The hardened guarantees stop at type boundaries: vector::operator[]
     is bounds-checked, but a RAW int* member of a struct gets no
     protection. Pair with the reflection-driven schema lint.
@@ -39,7 +43,7 @@ agentInstructions: |
                    checks)
                 -- or the GCC 14+ umbrella -fhardened (assertions +
                    FORTIFY_SOURCE + stack protector + PIE + RELRO)
-    * MSVC    -- _ITERATOR_DEBUG_LEVEL=1 (release-mode iterator checks)
+    * MSVC    -- _MSVC_STL_HARDENING=1 (VS 2022 17.14+, off by default)
 
     Catches: vector::operator[] OOB, array::operator[] OOB,
     string::operator[] / front() / back() / push_back overruns,
@@ -71,7 +75,7 @@ agentInstructions: |
   point at P3471R4 + the Google deployment data as the case for
   flipping the macro. The objection-killer is "Google ran this across
   hundreds of millions of LOC at 0.3% cost".
-bodyHash: b4a59d26b404c70a4069b83f36aee3ffbc02ff3ab998079bcf9d3bb94798048b
+bodyHash: 38af22852f883de90659b2ac4a1e77fd46c6137e2a04c5b6a9622d788069e076
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -94,7 +98,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     add_compile_options(-fhardened)         # GCC 14+ umbrella
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    add_compile_definitions(_ITERATOR_DEBUG_LEVEL=1)
+    add_compile_definitions(_MSVC_STL_HARDENING=1)   # VS 2022 17.14+
 endif()
 ```
 
@@ -110,7 +114,8 @@ That's the whole opt-in. Drop it once in your top-level CMakeLists; the entire d
 | **libstdc++** `-D_GLIBCXX_ASSERTIONS` | Light-weight precondition checks (constant-time) | ~0-6% | Non-ABI-breaking; safe for production. |
 | **libstdc++** `-fhardened` | Above + FORTIFY_SOURCE=3 + stack protector + PIE + RELRO + stack-clash protection | ~1-2% | GCC 14+ umbrella. **The one-flag answer for GCC builds.** |
 | **libstdc++** `-D_GLIBCXX_DEBUG` | Above + iterator invalidation detection | ~30-50% | **ABI-breaking**; mix-and-match with non-debug libstdc++ fails to link. |
-| **MSVC** `_ITERATOR_DEBUG_LEVEL=1` | Release-mode iterator checks | ~1-3% | Default in `/Od` builds; explicit opt-in for release. |
+| **MSVC STL** `_MSVC_STL_HARDENING=1` | `vector` / `array` / `string` / `span` / `optional` precondition checks | not published | Shipped in VS 2022 17.14, off by default. Violations call `__fastfail`. Per-type opt-in via `_MSVC_STL_HARDENING_VECTOR` and friends. |
+| **MSVC** `_ITERATOR_DEBUG_LEVEL=1` | Release-mode iterator checks | ~1-3% | A separate, **ABI-breaking** setting, not the hardening switch. Default in `/Od` builds. |
 
 ### Reproduce locally
 

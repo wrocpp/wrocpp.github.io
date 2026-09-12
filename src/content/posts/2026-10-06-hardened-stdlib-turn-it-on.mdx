@@ -7,7 +7,7 @@ language: en
 tags: [news, safety, stdlib, hardening, correctness, cpp26]
 kind: short
 audience: working-cpp
-summary: "One macro turns the undefined behavior of an out-of-bounds vector::operator[] into a defined, immediate stop. libstdc++ has -D_GLIBCXX_ASSERTIONS and libc++ has _LIBCPP_HARDENING_MODE; both add bounds checks to operator[], span, and string_view with negligible overhead. Google has reported this class of hardening cut its production segfault rate by about a third. It is one flag."
+summary: "GCC checks an out-of-bounds vector::operator[] at -O0 and stops checking at -O2, so the build you debug is guarded and the build you ship is not. One macro carries the check into the optimised build: -D_GLIBCXX_ASSERTIONS for libstdc++, _LIBCPP_HARDENING_MODE for libc++, _MSVC_STL_HARDENING for the MSVC STL. Google has reported this class of hardening cut its production segfault rate by about a third."
 draft: false
 relatedPosts: [sanitizers-on-ce]
 ---
@@ -33,14 +33,38 @@ The stop is a call to `std::abort`. The demo installs a signal handler purely so
 
 The instinct is to assume bounds checking is too slow for production. Measured, it usually is not. A predictable branch that the CPU's branch predictor learns immediately costs close to nothing on the paths that matter, and the compiler eliminates many checks outright when it can prove the index is in range. Google has reported that deploying this class of hardening cut its production segfault rate by roughly a third while leaving performance essentially unchanged, which is why hardening it on by default has become the mainstream advice rather than a paranoid option.
 
+## The debug build is checked and the release build is not
+
+GCC turns the libstdc++ assertions on by default at `-O0`, so the access above is already caught in a debug build without anyone asking for it. The same file at `-O2` is a different program:
+
+<GodboltEmbed id="1sTa5dre5" gccOnly title="The same out-of-bounds read at -O2 with no hardening macro" gcc_subtitle="x86-64 GCC 16.1 · -std=c++26 -O2 · runs live" />
+
+```
+v[1] = 20 (in bounds)
+v[5] = 0 (out of bounds, and we are still running)
+```
+
+It does not crash. It reads whatever sits past the end, prints it, and exits 0. A test suite running that binary records a pass.
+
+Measured on GCC 16.1 with that one file, changing nothing but the flags:
+
+| flags | exit | what happened |
+| --- | --- | --- |
+| `-O0` | 134 | assertion fires, naming `stl_vector.h:1253` |
+| `-O2` | 0 | no check, wrong value, clean exit |
+| `-O2 -D_GLIBCXX_ASSERTIONS` | 134 | assertion fires |
+| `-O2 -fhardened` | 134 | assertion fires |
+
+The build you debug in is checked. The build you ship is not, until you say so.
+
 ## How to turn it on
 
-- **libstdc++** (GCC, Clang with libstdc++): `-D_GLIBCXX_ASSERTIONS`. A lighter build-time-only set is on by default at `-O0` in recent releases; the macro turns the runtime checks on everywhere.
+- **libstdc++** (GCC, Clang with libstdc++): `-D_GLIBCXX_ASSERTIONS`. The assertions are already on at `-O0`, so the macro is what carries them into an optimised build. GCC 14 and later also accept `-fhardened`, an umbrella that adds this alongside `_FORTIFY_SOURCE=3`, the stack protector and PIE.
 - **libc++** (Clang): `-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST` for the production-grade level, with `EXTENSIVE` and `DEBUG` levels above it for testing.
-- **MSVC STL**: checked iterators and `_ITERATOR_DEBUG_LEVEL` play a similar role.
+- **MSVC STL**: `_MSVC_STL_HARDENING=1`, shipped in Visual Studio 2022 17.14 and off by default. A failed check calls `__fastfail`. Individual types can be opted in on their own with macros like `_MSVC_STL_HARDENING_VECTOR` and `_MSVC_STL_HARDENING_SPAN`. `_ITERATOR_DEBUG_LEVEL` is a separate and ABI-breaking setting, not the hardening switch.
 
 Set it in your release build, not just your debug build. The bugs it catches are the ones that reach production.
 
 ---
 
-**Sources**: [libstdc++ hardening / `_GLIBCXX_ASSERTIONS`](https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_macros.html) · [libc++ hardening modes](https://libcxx.llvm.org/Hardening.html). The production-impact figure was reported by Google and cited in the [March 2026 WG21 trip report](https://herbsutter.com/2026/03/29/c26-is-done-trip-report-march-2026-iso-c-standards-meeting-london-croydon-uk/).
+**Sources**: [libstdc++ hardening / `_GLIBCXX_ASSERTIONS`](https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_macros.html) · [libc++ hardening modes](https://libcxx.llvm.org/Hardening.html) · [MSVC STL hardening](https://github.com/microsoft/STL/wiki/STL-Hardening) for `_MSVC_STL_HARDENING` and the per-type macros. The production-impact figure was reported by Google and cited in the [March 2026 WG21 trip report](https://herbsutter.com/2026/03/29/c26-is-done-trip-report-march-2026-iso-c-standards-meeting-london-croydon-uk/). The flag matrix above was measured on Compiler Explorer with GCC 16.1, the same compiler both demos run on.
