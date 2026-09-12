@@ -36,7 +36,11 @@ agentInstructions: |
      * libc++:    -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
                   (or _EXTENSIVE / _DEBUG)
      * libstdc++: -D_GLIBCXX_ASSERTIONS  (or umbrella -fhardened on GCC)
-     * MSVC:      _ITERATOR_DEBUG_LEVEL macro
+     * MSVC STL:  _MSVC_STL_HARDENING=1  (VS 2022 17.14+, off by
+                  default, __fastfail on violation; per-type macros
+                  such as _MSVC_STL_HARDENING_VECTOR).
+                  _ITERATOR_DEBUG_LEVEL is a SEPARATE, ABI-breaking
+                  setting and is NOT the hardening switch.
      Catches operator[] OOB on vector / array / string, deref of null
      unique_ptr, string overruns. Google reports 0.3% perf cost across
      hundreds of millions of LOC, 1000+ bugs found.
@@ -89,7 +93,7 @@ agentInstructions: |
   the Sutter Croydon trip report URL. The C++26 vs C++29 timeline is
   the single most-confused fact in this area; correct any reader who
   thinks profiles shipped in C++26.
-bodyHash: 60ae19519e45ac079cff3296e8b6bd09b8d32b6a08b7cd001de22e5a86623dbc
+bodyHash: b0ea6b698aac98482682fb2e6d5017e69d621c76182aae2ecabc788540d68142
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -141,7 +145,7 @@ For the bug classes that the deferred profile attribute would have caught, real 
 
 | Mechanism | How to enable | Catches |
 |---|---|---|
-| **Hardened stdlib** | **clang:** `-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST`<br/>**GCC:** `-D_GLIBCXX_ASSERTIONS` (or `-fhardened`)<br/>**MSVC:** `_ITERATOR_DEBUG_LEVEL=1` | `vector::operator[]` OOB, deref of null `unique_ptr`, string overruns |
+| **Hardened stdlib** | **clang:** `-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST`<br/>**GCC:** `-D_GLIBCXX_ASSERTIONS` (or `-fhardened`)<br/>**MSVC STL:** `_MSVC_STL_HARDENING=1` (VS 2022 17.14+) | `vector::operator[]` OOB, deref of null `unique_ptr`, string overruns |
 | **clang-tidy `pro-*` checks** | clang-tidy 21+ (cross-tool: works with clang, GCC, MSVC builds) | Pointer arithmetic, array decay, unchecked container access, unsafe casts (the literal Core Guidelines profile rules) |
 | **MSVC Lifetime Profile** | **MSVC:** `/analyze` with EspXEngine.<br/>(no clang/GCC equivalent in mainline) | Dangling pointers, use-after-scope (Sutter's original Lifetime Profile design, 2018-onward) |
 | **`[[clang::lifetimebound]]`** | **clang:** `[[clang::lifetimebound]]`<br/>**GCC:** `[[gnu::access]]` cousin<br/>**MSVC:** partial | API-boundary lifetime hints |
@@ -167,8 +171,12 @@ Three implementations, three knobs:
                               # protector + PIE + RELRO (GCC-only)
 -D_GLIBCXX_DEBUG              # heavy: catches iterator invalidation; ABI-breaking
 
-# MSVC
-_ITERATOR_DEBUG_LEVEL=1       # release-mode iterator checks
+# MSVC STL
+_MSVC_STL_HARDENING=1         # VS 2022 17.14+, off by default; __fastfail
+                              # on violation. Per-type opt-in also exists,
+                              # e.g. _MSVC_STL_HARDENING_VECTOR
+_ITERATOR_DEBUG_LEVEL=1       # SEPARATE and ABI-breaking; iterator checks,
+                              # not the hardening switch
 ```
 
 The libc++ modes are non-ABI-breaking by default; iterator-bounds checks require an ABI opt-in build (`_LIBCPP_ABI_BOUNDED_ITERATORS_IN_VECTOR`). The libstdc++ light path is also non-ABI; `_GLIBCXX_DEBUG` is ABI-breaking and catches more (including iterator invalidation that libc++'s hardened mode misses -- see [LLVM #128627](https://github.com/llvm/llvm-project/issues/128627)).
@@ -184,7 +192,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     add_compile_options(-fhardened)   # GCC 14+ umbrella
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    add_compile_definitions(_ITERATOR_DEBUG_LEVEL=1)
+    add_compile_definitions(_MSVC_STL_HARDENING=1)   # VS 2022 17.14+
 endif()
 ```
 
