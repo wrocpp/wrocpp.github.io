@@ -1,0 +1,71 @@
+---
+title: "Boost 1.91 adds the decimal type C++ does not have"
+slug: "boost-decimal"
+pubDate: 2026-10-28
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, boost, decimal, floating-point, numerics, library]
+summary: "Add 0.1 to a double a thousand times and you get 99.999999999998593. Boost.Decimal, accepted after two reviews and first shipped in 1.91, implements the IEEE 754 decimal formats: decimal32_t, decimal64_t, decimal128_t. Compiler Explorer's Boost stops at 1.90, so the library half is cited rather than shown."
+draft: true
+relatedPosts: [float-to-int-ub, cpp14-shims-deleted]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+Add `0.1` to a `double` a thousand times and the answer is 99.999999999998593.
+
+That example is not mine. It is the one Boost.Decimal's own documentation opens with, and it is a fair choice, because it is the shortest program that shows what the library is for. The value `0.1` has no finite binary expansion. The nearest `double` to it is 0.10000000000000000555, and a thousand additions of a slightly-wrong number give a visibly wrong total.
+
+## What shipped
+
+**Boost.Decimal**, by Matt Borland and Chris Kormanyos, went through two Boost reviews before acceptance and first shipped in Boost 1.91. It implements IEEE 754 decimal floating point, the formats specified alongside the binary ones almost everybody actually uses.
+
+Three conforming types, one header:
+
+```cpp
+#include <boost/decimal.hpp>
+
+using boost::decimal::decimal32_t;
+using boost::decimal::decimal64_t;
+using boost::decimal::decimal128_t;
+```
+
+There are also `decimal_fast32_t`, `decimal_fast64_t` and `decimal_fast128_t`, which trade strict conformance for speed. The library is header-only, has no dependencies, and requires C++14, which is a deliberately low floor for a library aimed at code that has been running for a long time.
+
+Construction takes a coefficient and an exponent, or a string:
+
+```cpp
+constexpr decimal32_t hundred {10, 1};       // 10 x 10^1
+constexpr decimal32_t tenth   {"0.1"};
+```
+
+Run the library's loop with `decimal32_t` and the total is exactly 100.
+
+## The part you can run
+
+The library half of this post cannot be shown live: Compiler Explorer's Boost tops out at 1.90.0, which predates Decimal by one release. The same limitation applied to the <PostLink slug="cpp14-shims-deleted">Boost 1.92 shim removals</PostLink> in September.
+
+What runs without any library is the arithmetic that motivates the library:
+
+<GodboltEmbed id="5ss3PdvdG" title="What binary floating point does with decimal-exact values" />
+
+Three results from it are worth reading carefully.
+
+A thousand additions of `0.1` land 1.41e-12 below 100. A hundred additions of `0.01` land at 1.0000000000000007, which is above 1.00 rather than below it, so you cannot even predict the direction of the drift from the shape of the loop.
+
+The third is the one that survives the usual advice. "Store integer cents" fixes the total, and the demo confirms it: a hundred additions of `1` give exactly 100. It does not fix rounding. A price of 1.005 should go to 1.01 at two decimal places. The nearest `double` to 1.005 sits just below 1.005, so `std::round(price * 100.0) / 100.0` gives 1.00, and the half-cent goes the wrong way. Integer cents move the problem to wherever a rate or a division reintroduces a fraction.
+
+## Where this fits
+
+C++ has no standard decimal type. C23 has optional `_Decimal32` and friends, ISO/IEC TR 24733 specified a C++ binding that never landed in the standard, and in practice teams that need exact decimal arithmetic have reached for a fixed-point class of their own, or for a bignum, or for the database.
+
+Boost 1.92 followed up in August with CUDA support, so the three types can be used inside kernels, and a `decompose` function that returns the significand, exponent and sign without normalizing first.
+
+The trade is speed. Decimal arithmetic is not what the hardware does, so these types are emulated, and the `decimal_fast*` variants exist because the conforming ones are slow enough that the library authors thought a second tier was worth shipping. If your numbers came from a person, a price list, or a tax table, the exactness is what you were missing. If they came from a sensor, `double` was already the right answer.
+
+---
+
+**Sources**: [Boost.Decimal documentation](https://www.boost.org/library/latest/decimal/) and [repository](https://github.com/boostorg/decimal) · [Boost 1.92.0 release notes](https://www.boost.org/releases/1.92.0/) for the CUDA and `decompose` additions · demo source in the [examples repo](https://github.com/wrocpp/cpp26-reflection-examples).
