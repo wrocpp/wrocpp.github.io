@@ -640,3 +640,24 @@ p0963-bug-root-caused:
     title: Jakub Jelinek's reduction, no headers at all
     id: TfEzWcq94
     url: https://godbolt.org/z/TfEzWcq94
+
+# MANUAL MINTS. Both links need a plain -std=c++26 at a specific optimisation
+# level, one with a hardening macro and one deliberately without.
+# shorten-examples.py cannot express that (it hardcodes -std=c++26 -freflection)
+# and it defaults to clang_bb_p2996, where the libstdc++ hardening does not fire
+# at all: a regenerate repoints bounds_check at clang, captures "unreachable: 0"
+# as the expected output, and that directly contradicts what the post says the
+# demo prints. Both minted against x86-64 GCC 16.1 (g161) so the pair compares like
+# with like; verified 2026-09-12.
+# Do NOT regenerate with shorten-examples.py.
+hardened-stdlib-turn-it-on:
+  bounds_check:
+    title: Hardened operator[] stops the out-of-bounds access
+    id: 9a3KKcjcf
+    url: https://godbolt.org/z/9a3KKcjcf
+    expected_output: "v[1] = 20 (in bounds)\nhardened stdlib stopped the out-of-bounds access"
+  unhardened_release:
+    title: The same read at -O2 with no hardening macro
+    id: 1sTa5dre5
+    url: https://godbolt.org/z/1sTa5dre5
+    expected_output: "v[1] = 20 (in bounds)\nv[5] = 0 (out of bounds, and we are still running)"
