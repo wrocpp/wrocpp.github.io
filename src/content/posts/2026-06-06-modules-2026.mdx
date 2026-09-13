@@ -90,4 +90,14 @@ The honest assessment: modules are a solved problem in the compiler frontend and
 
 ---
 
+## Update, September 2026: the tables above describe May
+
+Two rows in the library table have moved. \{fmt\} 12.2.0 builds a module through its `FMT_MODULE` CMake option, and <PostLink slug="boost-modules-1-92">Boost 1.92</PostLink> added modules to six of its libraries.
+
+The compiler table needs a qualifier too. Clang and MSVC support `import std;` when the build system compiles the `std` module first, but neither does that for a single translation unit. On Compiler Explorer a one-file `import std;` builds only on GCC 16, and only with `--compile-std-module`.
+
+<PostLink slug="modules-tracker-228">The September follow-up</PostLink> has the measurements and the tracker's current count.
+
+---
+
 **Sources**: Ruben Perez Hidalgo's [Boost modules prototype](https://anarthal.github.io/cppblog/modules3) (Jan 2025), [deep dive benchmarks](https://anarthal.github.io/cppblog/modules2), [isocpp.org talk](https://isocpp.org/blog/2026/05/the-road-to-import-boost-a-library-developers-journey-into-cpp20-modules-ru) (May 20, 2026). Mathieu Ropert's ["Can we finally use C++ Modules in 2026?"](https://mropert.github.io/2026/04/13/modules_in_2026/) (April 2026). Vittorio Romeo's [reflection compile-time benchmarks](https://vittorioromeo.com/index/blog/refl_compiletime.html) (March 2026).
