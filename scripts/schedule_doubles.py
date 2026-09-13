@@ -37,6 +37,11 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
                    "why": "CppCon day 4 alongside the units series"},
     "2026-09-18": {"slug": "cppcon-2026-day-5", "hour": 16,
                    "why": "CppCon day 5 alongside the units series"},
+    # The modules tracker passed 228 projects on 8 September. A reactive short
+    # runs alongside the reflection series post instead of waiting for the
+    # first open date in November.
+    "2026-09-21": {"slug": "modules-tracker-228", "hour": 16,
+                   "why": "modules tracker news alongside the reflection series"},
 }
 
 
