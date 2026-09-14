@@ -23,7 +23,7 @@
     "check:volatile": "python3 scripts/check-volatile-claims.py --days 14"
   },
   "dependencies": {
-    "@astrojs/mdx": "^8.0.0",
+    "@astrojs/mdx": "^8.0.1",
     "@astrojs/rss": "^4.0.18",
     "@astrojs/sitemap": "^3.7.4",
     "astro": "^7.3.1",
