@@ -1,0 +1,68 @@
+---
+title: "228 of 2,613 tracked C++ projects now ship a module"
+slug: "modules-tracker-228"
+pubDate: 2026-09-21
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, modules, cpp20, import-std, cmake, tooling]
+summary: "The arewemodulesyet tracker lists 228 projects with a C++20 module, up from 62 in November 2025. That is 8.7% of the 2,613 it follows, and a tick means a module exists, not that it is on: two of three well-known entries keep it behind a build option that defaults to off. A single-file import std; builds on Compiler Explorer only with GCC 16 and one extra flag."
+draft: false
+relatedPosts: [modules-2026, leaner-standard-library]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+The [arewemodulesyet](https://arewemodulesyet.org/) tracker counted 228 projects shipping a C++20 module when its data was last refreshed on 8 September. The tracker keeps its own history, and the curve is steep: 2 projects in April 2024, 62 in November 2025.
+
+The number beside it is 2,613. That is how many projects the tracker follows, ranked by vcpkg and GitHub popularity, so 228 is 8.7% of them.
+
+## What a tick means
+
+A project is marked done when it appears in the tracker's curated data files with the name you import and the date its module landed. That records that a module exists. It says nothing about whether the module is built by default.
+
+Three well-known entries show why that distinction matters:
+
+| library | how you get the module | default |
+| --- | --- | --- |
+| \{fmt\} 12.2.0 | CMake option `FMT_MODULE` | on only with CMake 3.28+, a C++20 standard, and Ninja 1.11+ or Visual Studio |
+| FTXUI 7.0.3 | CMake option `FTXUI_BUILD_MODULES` | off |
+| nlohmann/json | build with `NLOHMANN_JSON_BUILD_MODULES` | off, and documented as experimental |
+
+The \{fmt\} condition is worth reading twice. Its CMake file turns the module on only when the generator can scan module dependencies, which rules out the default Unix Makefiles generator. Configure \{fmt\} the way most projects do and you get headers.
+
+nlohmann/json is candid about its state: the module has to be requested at build time, and its documentation says the exported symbols may still change.
+
+## One import, three compilers
+
+The libraries are one layer. Underneath them sits `import std;`, the whole standard library as a single module. Here it is in one file, run on Compiler Explorer:
+
+<GodboltEmbed id="zc41Ez3xE" gccOnly title="The whole standard library through one import" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -fmodules --compile-std-module · runs live" />
+
+```
+sorted: [1, 2, 3]
+{"modules": 228, "tracked": 2613}
+```
+
+The same file, measured on each of the three major compilers:
+
+| compiler | flags | result |
+| --- | --- | --- |
+| GCC 16.2 | `-std=c++26 -fmodules --compile-std-module` | builds and runs |
+| GCC 16.2 | `-std=c++26 -fmodules` | `failed to read compiled module` |
+| Clang 20.1 | `-std=c++23 -stdlib=libc++` | `module 'std' not found` |
+| MSVC 19.latest | `/std:c++latest` | `C2230: could not find module 'std'` |
+
+Clang and MSVC both support `import std;`, so the last two rows are not missing features. Each ships the source of the `std` module and expects the build system to compile it before your code. GCC 16's `--compile-std-module` moves that step into the compiler, which is why it is the only one of the three that handles a lone translation unit.
+
+## Where the June table stands
+
+In June, <PostLink slug="modules-2026">the modules roundup</PostLink> listed \{fmt\} as work in progress and said almost no libraries shipped a module. Boost has since added modules to six of its libraries in <PostLink slug="boost-modules-1-92">Boost 1.92</PostLink>, and that roundup now carries a dated note pointing here.
+
+The count went from 62 to 228 in ten months. For two of the three libraries above, the module is still an option that stays off until someone switches it on.
+
+---
+
+**Sources**: [arewemodulesyet.org](https://arewemodulesyet.org/) (data refreshed 8 September 2026) and its [recorded history](https://github.com/kelteseth/arewemodulesyet/blob/main/data/historical_stats.json) · \{fmt\} 12.2.0 [CMakeLists.txt](https://github.com/fmtlib/fmt/blob/12.2.0/CMakeLists.txt) · FTXUI [CMakeLists.txt](https://github.com/ArthurSonzogni/FTXUI/blob/main/CMakeLists.txt) · [nlohmann/json modules](https://json.nlohmann.me/features/modules/) · [Modules in libc++](https://libcxx.llvm.org/Modules.html). The compiler table was measured on Compiler Explorer on 13 September 2026.

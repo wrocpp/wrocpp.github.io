@@ -680,3 +680,15 @@ api-contract-guard:
       \ bytes\n  reader under B: 0 characters, empty=yes\n  reader under A would ask for    : 18446744073709551615 characters\n\
       \nstored value \"hello\"\n  contract A reports : 5 bytes\n  contract B reports : 6 bytes\n  reader under B     : \"\
       hello\"\n\nstd::string(buf, 0) built fine, size 0"
+
+# MANUAL MINT. import std in a single file needs -fmodules --compile-std-module
+# on GCC 16, which shorten-examples.py cannot express (it hardcodes
+# -std=c++26 -freflection and defaults to clang_bb_p2996, where a one-file
+# import std fails with "module 'std' not found"). Minted against x86-64 GCC
+# 16.2 (g162) on 2026-09-13. Do NOT regenerate with shorten-examples.py.
+modules-tracker-228:
+  import_std:
+    title: The whole standard library through one import
+    id: zc41Ez3xE
+    url: https://godbolt.org/z/zc41Ez3xE
+    expected_output: "sorted: [1, 2, 3]\n{\"modules\": 228, \"tracked\": 2613}"
