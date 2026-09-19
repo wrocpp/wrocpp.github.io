@@ -23,20 +23,12 @@ reality matches, and warns while the planned post is still unwritten.
 
 # date -> {slug of the SECOND post, UTC hour it is pushed at, why}
 INTENTIONAL_DOUBLES: dict[str, dict] = {
-    # CppCon 2026 runs Mon 14 to Fri 18 September in Aurora, CO. The daily
-    # conference shorts run ALONGSIDE the scheduled units-series episodes
-    # rather than displacing them: the series keeps 08:00Z, and the CppCon
-    # post of each day goes out at 16:00Z, after that day's sessions.
-    "2026-09-14": {"slug": "cppcon-2026-day-1", "hour": 16,
-                   "why": "CppCon day 1 alongside the units series"},
-    "2026-09-15": {"slug": "cppcon-2026-day-2", "hour": 16,
-                   "why": "CppCon day 2 alongside the units series"},
-    "2026-09-16": {"slug": "cppcon-2026-day-3", "hour": 16,
-                   "why": "CppCon day 3 alongside the units series"},
-    "2026-09-17": {"slug": "cppcon-2026-day-4", "hour": 16,
-                   "why": "CppCon day 4 alongside the units series"},
-    "2026-09-18": {"slug": "cppcon-2026-day-5", "hour": 16,
-                   "why": "CppCon day 5 alongside the units series"},
+    # 14 to 18 September 2026 each reserved a second slot for a CppCon daily
+    # short. None were written: the posts needed same-day reporting from the
+    # conference that never arrived, so five 16:00Z slots went out empty.
+    # The entries are removed because the dates have passed and a warning
+    # about a date in the past trains you to ignore the gate. A daily-post
+    # reservation only works if someone is committed to filing each day.
     # The modules tracker passed 228 projects on 8 September. A reactive short
     # runs alongside the reflection series post instead of waiting for the
     # first open date in November.
