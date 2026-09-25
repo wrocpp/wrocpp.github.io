@@ -18,5 +18,5 @@ All reproducible: https://wrocpp.github.io/posts/cuda-lock-in-is-not-the-languag
 A wro.cpp card about CUDA portability and lock-in.
 
 ## Suggested post time
-Monday 2026-10-19, 10:00 CET
+Saturday 2026-09-26, 18:00 CEST (16:00Z)
 Reason: weekday mid-morning CET suits the EU C++ audience.
