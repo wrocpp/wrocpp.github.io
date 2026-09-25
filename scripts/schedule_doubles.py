@@ -34,6 +34,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # first open date in November.
     "2026-09-21": {"slug": "modules-tracker-228", "hour": 16,
                    "why": "modules tracker news alongside the reflection series"},
+    # The CUDA piece is the technical companion to Neil Talap's article
+    # (issue #107). It moves up from 19 October so both go live the same day.
+    "2026-09-26": {"slug": "cuda-lock-in-is-not-the-language", "hour": 16,
+                   "why": "companion to a guest article publishing the same day"},
 }
 
 
