@@ -14,7 +14,7 @@ relatedPosts: [portable-simd, gcc-16-2-toolchain-status]
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
-*This is one half of a pair. Neil Talap's [Nvidia and the Price of Control](https://neiltalap.com/blog/nvidia-and-the-price-of-control) covers the history: the drivers, the firmware, the partner programs and the licence. This post covers the part a compiler can check.*
+*This is one half of a pair. Neil Talap's [Nvidia and the Price of Control](https://neiltalap.com/blog/nvidia-and-the-price-of-control) covers the history, from closed drivers and signed firmware to partner programs and licence terms. This post covers the part a compiler can check.*
 
 The standard argument about CUDA goes like this. You write kernels against Nvidia's warp primitives, `__shfl_sync` and cooperative groups, layered under template machinery like CUB and Thrust tuned for a particular warp width. That welds your source to Nvidia's execution model, so porting means rewriting rather than recompiling.
 
