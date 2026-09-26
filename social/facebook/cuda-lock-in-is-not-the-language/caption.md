@@ -9,7 +9,11 @@ Along the way: PTX and SASS are genuinely different programs, instruction select
 
 The lock-in is real. It is the toolchain, the headers and the licence, not the language.
 
-All reproducible: https://wrocpp.github.io/posts/cuda-lock-in-is-not-the-language/
+This is one half of a joint piece with Neil Talap, whose article covers the history behind the lock-in. Read them together.
+
+Neil's half: https://neiltalap.com/blog/nvidia-and-the-price-of-control
+
+Mine, all reproducible: https://wrocpp.github.io/posts/cuda-lock-in-is-not-the-language/
 
 ## Hashtags
 #cpp #cplusplus #cuda #gpu #programming
@@ -18,5 +22,5 @@ All reproducible: https://wrocpp.github.io/posts/cuda-lock-in-is-not-the-languag
 A wro.cpp card about CUDA portability and lock-in.
 
 ## Suggested post time
-Saturday 2026-09-26, 18:00 CEST (16:00Z)
+Saturday 2026-09-26, 18:15 CEST (16:15Z)
 Reason: weekday mid-morning CET suits the EU C++ audience.

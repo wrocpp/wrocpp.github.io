@@ -20,7 +20,11 @@ So the supposedly unportable primitive did not merely survive the port. It came 
 
 The lock-in is real and it is not in the language. It is the toolchain nobody else can implement from a specification, the headers that stop the file being C++ another compiler can read, and a 2024 licence clause aimed at translation layers.
 
-All of it reproducible: https://wrocpp.github.io/posts/cuda-lock-in-is-not-the-language/
+This is one half of a joint piece with Neil Talap. His article, Nvidia and the Price of Control, covers the history behind the lock-in, from closed drivers and signed firmware to partner programs and licence terms. Mine covers the part a compiler can check. They are written to be read together.
+
+Neil's half: https://neiltalap.com/blog/nvidia-and-the-price-of-control
+
+Mine, all of it reproducible: https://wrocpp.github.io/posts/cuda-lock-in-is-not-the-language/
 
 ## Hashtags
 #cpp #cplusplus #cuda #gpu #hpc #portability
@@ -29,5 +33,5 @@ All of it reproducible: https://wrocpp.github.io/posts/cuda-lock-in-is-not-the-l
 A wro.cpp card reading "The warp primitive ported fine", about CUDA portability and lock-in.
 
 ## Suggested post time
-Saturday 2026-09-26, 18:00 CEST (16:00Z)
+Saturday 2026-09-26, 18:15 CEST (16:15Z)
 Reason: weekday mid-morning CET suits the EU C++ audience.
