@@ -1,0 +1,88 @@
+---
+title: "When two enumerators share a value, the value carries both names"
+slug: "enum-aliases"
+pubDate: 2026-10-01
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, reflection, enums]
+summary: "With red = 1 and green = 1, a reflection-based enum_to_string(green) returns \"red\", because once the value is in a variable nothing distinguishes the two. C++26 reflection can list every name for a value, reject duplicates at compile time with std::meta::exception, prefer a canonical spelling through an annotation, and keep the exact name when you reflect the enumerator itself. The names come back as string_views over static storage, so none of this allocates."
+draft: false
+relatedPosts: [enum-to-string, annotations]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+[Bogusław Branicki left a comment on LinkedIn](https://lnkd.in/p/dRe3A8VP) under a reflection-based `enum_to_string` that is worth a full answer. His example:
+
+```cpp
+enum Color { red = 1, green = 1, blue = 2, some_long_name_enum };
+```
+
+`enum_to_string(Color::green)` returns `"red"`. He also pointed out that once the value sits in a variable, C++26 reflection cannot get the original enumerator back; only `^^` applied to the enumerator itself keeps it. And he suggested that checking for duplicates up front might be worth doing.
+
+He is right on all three. `Color::green` and `Color::red` are the same value: a `Color` equal to 1. There is nothing left in it that says which spelling the programmer typed, so a function taking `Color` receives both names or neither. The `to_string` from <PostLink slug="enum-to-string">the enum-to-string post</PostLink> walks `enumerators_of` and returns the first match, which is `red`.
+
+What reflection does offer is a way to be explicit about it. The demo below extends that `renum` library in four directions.
+
+## Four answers to one value
+
+**All the names.** `renum::names_of(v)` returns every enumerator equal to `v` as a `std::span<char const* const>`. The table behind it is built at compile time with `define_static_array`, holding pointers from `define_static_string`. A `string_view` would be the natural element, but it is not a structural type, so it cannot live in a static array produced that way. For `green` the answer is `red|green`.
+
+**Refuse the ambiguity.** `renum::unique_values<E>()` is `consteval` and throws a `std::meta::exception` naming both enumerators when two share a value. Put it in a `static_assert` on any enum that must not alias, and GCC 16.2 reports:
+
+```text
+error: non-constant condition for static assertion
+error: uncaught exception of type 'std::meta::exception'; 'what()': 'Color::green duplicates Color::red (= 1)'
+```
+
+**Mark the alias.** Some aliases are intentional, typically a renamed enumerator whose old spelling stays for source compatibility. [P3394R4](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3394r4.html) lists enumerators among the declarations an annotation may apply to, so the old name can say what it is:
+
+```cpp
+enum class Level {
+    debug,
+    info,
+    warn [[=renum::alias{}]],
+    warning = warn,
+    error,
+};
+```
+
+The alias-aware `to_string` skips enumerators that carry the tag (found with `annotations_of_with_type`) and returns `warning`; first match would return `warn`.
+
+**Keep the reflection.** `renum::name_of<^^green>()` returns `green`, because `^^green` reflects the enumerator, a declaration with its own identity. That identity survives only as long as you pass the reflection around. Converting it to a `Color` throws it away, which is exactly Bogusław's point.
+
+## The names cost no allocation
+
+His second remark was about the return type. An `enum_to_string` that returns `std::string` builds a new string on every call, and a name longer than the small-string buffer allocates. `std::meta::identifier_of` returns a `std::string_view`, and [meta.syn] in the C++26 draft says what it points at: the characters are null-terminated, and each one is an object with static storage duration that is usable in constant expressions. That is why a `static constexpr std::string_view` can hold the result, and why the demo can `static_assert` on the terminator.
+
+The demo counts heap allocations with a replaced `operator new`. `some_long_name_enum` is 19 characters, past libstdc++'s 15-character inline buffer. Viewing the name allocates nothing; copying it into a `std::string` allocates once.
+
+<GodboltEmbed id="xWPEMevPG" gccOnly title="Every name for a value, and the one a reflection keeps" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection · runs live" />
+
+```
+names_of(green) = red|green
+first match(green) = red
+name_of<^^green> = green
+names_of(Level::warning) = warn|warning
+first match(Level::warning) = warn
+to_string(Level::warning) = warning (alias-aware)
+some_long_name_enum (19 chars): string_view 0 allocations, std::string 1
+```
+
+## What existing libraries return for an alias
+
+| library | name returned for an aliased value |
+| --- | --- |
+| magic_enum | the first declared; its docs give `enum_name(ShapeKind::Box)` returning `"ConvexBegin"` |
+| Boost.Describe `enum_to_string` | the last declared: the loop assigns on every match and has no `break` |
+| Better Enums `_to_string` | documented as undefined which of the names it picks |
+| P2996R13 §3.6 example | the first declared, through an early `return` |
+
+None of them can do better than pick one, since they all start from the value. The choice between first, last and unspecified is a convention, and a `static_assert(renum::unique_values<E>())` is the way to find out at compile time that you depend on it.
+
+---
+
+**Sources**: [Bogusław Branicki's comment](https://lnkd.in/p/dRe3A8VP) · [P2996R13](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p2996r13.html) §3.6 · [P3394R4](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3394r4.html) · [magic_enum limitations](https://github.com/Neargye/magic_enum/blob/master/doc/limitations.md) · [Boost.Describe enum_to_string.hpp](https://www.boost.org/doc/libs/1_82_0/boost/describe/enum_to_string.hpp) · [Better Enums API reference](http://aantron.github.io/better-enums/ApiReference.html). The demo and the diagnostic were measured with GCC 16.2 on Compiler Explorer and locally on 30 September 2026.
