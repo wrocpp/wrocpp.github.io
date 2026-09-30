@@ -39,7 +39,7 @@ audit applies these rewrites in-memory before sending to GCC:
 | 14 | `dependency-injection` | `di_demo` | OK | ok | ran cleanly (no clang baseline) |
 | 15 | `auto-mocks` | `mock_demo` | OK | ok | ran cleanly (no clang baseline) |
 | 16 | `define-aggregate` | `pick` | OK | ok | ran cleanly (no clang baseline) |
-| 17 | `qt-moc-replacement` | `properties` | COMPILE_FAIL | api-name-diff | 'annotation_of_type' is not a member of 'std::meta'; did you mean 'annotations_of_with_type'? [-Wtem |
+| 17 | `qt-moc-replacement` | `properties` | OK on 16.2 | fixed | Updated by hand 2026-09-30: runs on g162 and clang-p2996; GCC 16.1 still rejects the inline lambdas (treated as consteval) |
 | 18 | `cross-language-comparison` | `main` | OK | ok | ran cleanly (no clang baseline) |
 | 19 | `reflect-llmschema` | `llmschema` | COMPILE_FAIL | api-name-diff | 'annotation_of_type' is not a member of 'std::meta'; did you mean 'annotations_of_with_type'? [-Wtem |
 | 20 | `reflect-arbitrary` | `arbitrary` | OK | ok | ran cleanly (no clang baseline) |
@@ -177,17 +177,11 @@ Category: **api-name-diff**
       |                       
 ```
 
-### 17 `qt-moc-replacement` / `properties` -- COMPILE_FAIL
+### 17 `qt-moc-replacement` / `properties` -- fixed 2026-09-30 (by hand)
 
-Category: **api-name-diff**
-
-```
-<source>: In function 'std::vector<rqt::property_info> rqt::properties_of()':
-<source>:37:34: error: 'annotation_of_type' is not a member of 'std::meta'; did you mean 'annotations_of_with_type'? [-Wtemplate-body]
-   37 |         if constexpr (std::meta::annotation_of_type<property>(m).has_value()) {
-      |                                  ^~~~~~~~~~~~~~~~~~
-      |                                
-```
+The example now uses a portable `has_annotation` shim over `annotations_of` and
+builds and runs on g162 and clang-p2996. GCC 16.1 still rejects it: it treats the
+getter and setter lambdas, which splice the template-for variable, as consteval.
 
 ### 19 `reflect-llmschema` / `llmschema` -- COMPILE_FAIL
 
@@ -245,12 +239,15 @@ Posts confirmed to run on **clang-p2996 + GCC 16.1**:
 - `reflect-optics`
 - `reflect-soa`
 
+Posts confirmed to run on **clang-p2996 + GCC 16.2** (not 16.1), updated by hand:
+
+- `qt-moc-replacement`
+
 Posts that currently ship as **clang-p2996 only**:
 
 - `annotations`
 - `clap-for-cpp`
 - `one-codegen-many-formats`
-- `qt-moc-replacement`
 - `reflect-llmschema`
 - `reflect-telemetry`
 - `reflect-tracing`
