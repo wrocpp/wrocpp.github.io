@@ -195,6 +195,8 @@ Could the framework find those dependencies by itself? Not through reflection. P
 - `Q_INVOKABLE` + reflection-from-script-engine: also ABI concerns. Same direction.
 - Signals/slots in their full generality: a reflection-built signal/slot system is feasible (`boost::signals2` already does much of it without MOC) but requires careful design around thread-affinity (Qt's killer feature).
 
+A follow-up is looking at how far a full moc port gets on GCC 16.2.
+
 So: the reflection-based approach replaces the *declarative* part of MOC: properties, metadata. The *runtime* parts (QML engine, scripting bridge) still want compiled stubs, which reflection can produce via a codegen step that's now a *library*, not an external tool.
 
 ## Comparison
