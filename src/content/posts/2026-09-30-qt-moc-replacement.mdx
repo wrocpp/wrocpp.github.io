@@ -187,7 +187,7 @@ user.changed.connect([&](std::string_view name) {
 
 The signal fires only when the write goes through the registry's setter. A plain `user.name = "Grace";` is invisible to it; in Qt that is the job of the property's setter or of a `QProperty` wrapper around the member.
 
-With [transparent compile-time dependency tracking](https://en.cppreference.com/w/cpp/experimental/observer) we could make this automatic. The getter lambda's body is reflectable (via `[:^^Getter:]`), so the framework can walk it, find every property access, and wire up the subscriptions. That's the direction KDAB and similar "replace Qt's MOC" projects have been exploring.
+Could the framework find those dependencies by itself? Not through reflection. P2996 reflects declarations (types, members, functions and their annotations), not function bodies, so nothing can walk the getter lambda and list the properties it reads. Automatic tracking has to happen at run time: while the getter runs, each property read registers itself with the binding being evaluated. That is how Qt's [bindable properties](https://doc.qt.io/qt-6/bindableproperties.html) work, and a reflection-based framework would do the same, with reflection generating the wrapper for each annotated member.
 
 ## What we *don't* replace
 
