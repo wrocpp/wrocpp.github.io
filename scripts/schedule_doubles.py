@@ -42,6 +42,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # thread is still active, beside the cross-language flagship.
     "2026-10-01": {"slug": "enum-aliases", "hour": 16,
                    "why": "reply to a reader comment alongside the flagship"},
+    # The Packt C++ book bundle on Humble ends on 12 October, so the short
+    # runs now beside the reflection series post rather than after the sale.
+    "2026-10-02": {"slug": "humble-cpp-masterclass", "hour": 16,
+                   "why": "time-limited book bundle alongside the reflection series"},
 }
 
 
