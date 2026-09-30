@@ -2,6 +2,7 @@
 title: "Replacing Qt's MOC with reflection"
 slug: "qt-moc-replacement"
 pubDate: 2026-09-30
+updatedDate: 2026-09-30
 author: filip-sajdak
 language: en
 kind: flagship
@@ -14,6 +15,8 @@ draft: false
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+*Updated 30 September: the first version of this post showed a sketch that did not compile. The code below is taken from the example that runs on GCC 16.2 and clang-p2996.*
 
 Qt's [Meta-Object Compiler (MOC)](https://doc.qt.io/qt-6/moc.html) is one of the oldest codegen tools in the C++ ecosystem. It parses headers looking for `Q_OBJECT`, `Q_PROPERTY`, `Q_INVOKABLE`, `signals:`, `slots:`, and emits glue code (.moc files) that adds runtime introspection, property binding, signal/slot dispatch, and QML integration.
 
@@ -36,57 +39,80 @@ We'll focus on (1) and (2). They're the most common pain points.
 ```cpp
 class User : public rqt::Object {
 public:
-    [[=rqt::property{}]] std::string name;
-    [[=rqt::property{}]] int age = 0;
-    [[=rqt::property{}, =rqt::read_only{}]] std::string id;
+    [[=rqt::property{}]] std::string name = "Ada";
+    [[=rqt::property{}]] int age = 36;
+    [[=rqt::property{}, =rqt::read_only{}]] std::string id = "u-0001";
+    int cache_hits = 0;  // not a property: no annotation
 };
 ```
 
-Three annotations, no macros. The framework's `Object` base class uses reflection to populate a runtime property registry.
+Three annotations, no macros. A function template, `rqt::properties_of<User>()`, uses reflection to fill a runtime property registry. The `Object` base carries only the change signal.
 
 ## Reflection walks the properties
 
 ```cpp
 namespace rqt {
 
+struct property  { bool operator==(property const&) const = default; };
+struct read_only { bool operator==(read_only const&) const = default; };
+
+template <typename Tag>
+consteval bool has_annotation(std::meta::info r) {
+    for (auto a : std::meta::annotations_of(r)) {
+        if (std::meta::remove_cvref(std::meta::type_of(a)) == ^^Tag) return true;
+    }
+    return false;
+}
+
+class signal {
+public:
+    void connect(std::function<void(std::string_view)> slot) {
+        slots_.push_back(std::move(slot));
+    }
+    void emit(std::string_view property_name) const {
+        for (auto const& slot : slots_) slot(property_name);
+    }
+private:
+    std::vector<std::function<void(std::string_view)>> slots_;
+};
+
 class Object {
 public:
-    struct property_meta {
-        std::string_view name;
-        std::string_view type;
-        std::function<std::any(Object const*)>              getter;
-        std::function<void(Object*, std::any const&)>       setter;
-        std::function<rqt::signal&(Object*)>                notify;
-    };
+    signal changed;
+};
 
-    virtual std::span<property_meta const> properties() const = 0;
+struct property_info {
+    std::string_view name;
+    std::string_view type;
+    bool             writable;
+    std::function<std::any(Object const&)>        getter;
+    std::function<void(Object&, std::any const&)> setter;  // no-op if read-only
 };
 
 template <typename T>
-consteval auto build_properties() {
-    std::vector<property_meta> out;
+std::vector<property_info> properties_of() {
+    std::vector<property_info> out;
     constexpr auto ctx = std::meta::access_context::unchecked();
     template for (constexpr auto m
                   : std::define_static_array(
                       std::meta::nonstatic_data_members_of(^^T, ctx))) {
-        if constexpr (!std::meta::annotation_of_type<property>(m).has_value()) continue;
-        using M = [: std::meta::type_of(m) :];
-        out.push_back({
-            .name   = std::meta::identifier_of(m),
-            .type   = std::meta::display_string_of(std::meta::type_of(m)),
-            .getter = [](Object const* o) -> std::any {
-                return std::any{static_cast<T const*>(o)->[: m :]};
-            },
-            .setter = [](Object* o, std::any const& v) {
-                if constexpr (!std::meta::annotation_of_type<read_only>(m).has_value()) {
-                    static_cast<T*>(o)->[: m :] = std::any_cast<M>(v);
-                    static_cast<T*>(o)->notify_changed(std::meta::identifier_of(m));
-                }
-            },
-            .notify = [](Object* o) -> rqt::signal& {
-                return static_cast<T*>(o)->signal_for(std::meta::identifier_of(m));
-            },
-        });
+        if constexpr (has_annotation<property>(m)) {
+            using M = [:std::meta::type_of(m):];
+            out.push_back({
+                .name     = std::meta::identifier_of(m),
+                .type     = std::meta::display_string_of(std::meta::type_of(m)),
+                .writable = !has_annotation<read_only>(m),
+                .getter   = [](Object const& o) -> std::any {
+                    return std::any{static_cast<T const&>(o).[:m:]};
+                },
+                .setter   = [](Object& o, std::any const& v) {
+                    if constexpr (!has_annotation<read_only>(m)) {
+                        static_cast<T&>(o).[:m:] = std::any_cast<M>(v);
+                        o.changed.emit(std::meta::identifier_of(m));
+                    }
+                },
+            });
+        }
     }
     return out;
 }
@@ -94,19 +120,52 @@ consteval auto build_properties() {
 }  // namespace rqt
 ```
 
-The lambdas capture `m` (the member reflection) via the enclosing `template for`. Each iteration's lambdas see a different `m`, so each `property_meta` is specialised for its field.
+`has_annotation` is a small shim. GCC 16.2 has P3394's `annotations_of_with_type(r, ^^Tag)`, and clang-p2996 has `annotation_of_type<Tag>(r)` instead, but both have `annotations_of`, so the shim walks the list and compares types.
 
-Subclasses opt in via CRTP or a registration macro:
+The getter and setter lambdas splice `m` without capturing it. `m` is a `constexpr` variable and a splice is not an odr-use, so each iteration's lambdas see their own member. Writing `[m]` would make a runtime copy, and GCC refuses to splice that copy because a splice needs a constant expression.
+
+GCC 16.1 is stricter than it should be here: it treats these lambdas as consteval because their bodies name `m`, and rejects them. GCC 16.2 and clang accept them. On 16.1, pass `&[:m:]` to a helper function template as a template argument and build the lambda inside the helper; that version builds on all three.
+
+The registry is filled at run time. Everything reflection does (listing the members, reading names, types and annotations) happens during compilation, but `std::function` cannot be used in a constant expression, so the vector of closures is built when `properties_of` runs.
+
+Using it:
 
 ```cpp
-class User : public rqt::Object {
-    static constexpr auto props_ = rqt::build_properties<User>();
-    std::span<rqt::property_meta const> properties() const override { return props_; }
-public:
-    [[=rqt::property{}]] std::string name;
-    // ...
-};
+int main() {
+    User u;
+    auto const props = rqt::properties_of<User>();
+
+    for (auto const& p : props) {
+        std::println("{} : {}{}", p.name, p.type,
+                     p.writable ? "" : " (read-only)");
+    }
+
+    u.changed.connect([](std::string_view name) {
+        std::println("changed: {}", name);
+    });
+
+    // Write through the registry. The id setter is a no-op: no signal fires.
+    for (auto const& p : props) {
+        if (p.name == "age") p.setter(u, std::any{37});
+        if (p.name == "id")  p.setter(u, std::any{std::string{"u-9999"}});
+    }
+    std::println("age = {}, id = {}", u.age, u.id);
+    std::println("age via getter = {}", std::any_cast<int>(props[1].getter(u)));
+}
 ```
+
+GCC 16.2 prints:
+
+```text
+name : std::__cxx11::basic_string<char>
+age : int
+id : std::__cxx11::basic_string<char> (read-only)
+changed: age
+age = 37, id = u-0001
+age via getter = 37
+```
+
+clang-p2996 prints the same, except that it spells the string type `basic_string<char, char_traits<char>, allocator<char>>`. The text of `display_string_of` is left to the implementation.
 
 ## Data binding without MOC
 
@@ -114,22 +173,19 @@ QML-like bindings (when any dependency of `label.text` changes, the label re-rea
 
 ```cpp
 struct Binding {
-    template <typename Getter>
-    Binding(Getter g) : compute_{std::move(g)} { recompute(); }
-
-    void recompute() { value_ = compute_(); notify_changed(); }
-
-    rqt::signal on_changed;
-private:
-    std::function<std::any()>  compute_;
-    std::any                   value_;
-    void notify_changed() { on_changed.emit(); }
+    std::function<std::string()> compute;
+    std::string value = compute();
+    void recompute() { value = compute(); }
 };
 
 // Usage:
-Binding greeting{ [&]{ return "Hello, " + user.name; } };
-user.on_changed_name.connect([&]{ greeting.recompute(); });
+Binding greeting{ [&] { return "Hello, " + user.name; } };
+user.changed.connect([&](std::string_view name) {
+    if (name == "name") greeting.recompute();
+});
 ```
+
+The signal fires only when the write goes through the registry's setter. A plain `user.name = "Grace";` is invisible to it; in Qt that is the job of the property's setter or of a `QProperty` wrapper around the member.
 
 With [transparent compile-time dependency tracking](https://en.cppreference.com/w/cpp/experimental/observer) we could make this automatic. The getter lambda's body is reflectable (via `[:^^Getter:]`), so the framework can walk it, find every property access, and wire up the subscriptions. That's the direction KDAB and similar "replace Qt's MOC" projects have been exploring.
 
@@ -150,7 +206,7 @@ So: the reflection-based approach replaces the *declarative* part of MOC: proper
 | External compiler | Yes (`moc`) | No |
 | IDE support | Requires MOC integration | Standard C++ |
 | Debug-step navigates into framework code | No (MOC output is opaque) | Yes (library templates) |
-| Signal/slot dispatch | Runtime table populated by MOC | Runtime table populated by reflection |
+| Change notification | One `NOTIFY` signal per property, generated by MOC | One `changed` signal, emitted by the reflection-built setter |
 | Per-class cost at class-define time | One MOC pass | One template instantiation |
 
 The daily ergonomic difference: your headers are regular C++. Your IDE navigates them. Your debugger steps through the binding mechanism. A new hire doesn't need to learn a Qt-specific parser quirk.
