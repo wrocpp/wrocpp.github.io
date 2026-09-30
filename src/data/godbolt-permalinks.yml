@@ -692,3 +692,14 @@ modules-tracker-228:
     id: zc41Ez3xE
     url: https://godbolt.org/z/zc41Ez3xE
     expected_output: "sorted: [1, 2, 3]\n{\"modules\": 228, \"tracked\": 2613}"
+
+# MANUAL MINT. The demo includes <meta> (GCC 16 spelling) and must run on GCC,
+# while shorten-examples.py defaults a new entry to clang_bb_p2996. Minted
+# against x86-64 GCC 16.2 (g162), -std=c++26 -freflection, on 2026-09-30.
+# Do NOT regenerate with shorten-examples.py.
+enum-aliases:
+  enum_aliases:
+    title: Every name for a value, and the one a reflection keeps
+    id: xWPEMevPG
+    url: https://godbolt.org/z/xWPEMevPG
+    expected_output: "names_of(green) = red|green\nfirst match(green) = red\nname_of<^^green> = green\nnames_of(Level::warning) = warn|warning\nfirst match(Level::warning) = warn\nto_string(Level::warning) = warning (alias-aware)\nsome_long_name_enum (19 chars): string_view 0 allocations, std::string 1"

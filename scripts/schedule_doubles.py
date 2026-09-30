@@ -38,6 +38,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # (issue #107). It moves up from 19 October so both go live the same day.
     "2026-09-26": {"slug": "cuda-lock-in-is-not-the-language", "hour": 16,
                    "why": "companion to a guest article publishing the same day"},
+    # A reader's LinkedIn comment on enum aliases gets its answer while the
+    # thread is still active, beside the cross-language flagship.
+    "2026-10-01": {"slug": "enum-aliases", "hour": 16,
+                   "why": "reply to a reader comment alongside the flagship"},
 }
 
 
