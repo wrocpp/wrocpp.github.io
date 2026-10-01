@@ -2,7 +2,7 @@
 title: "Replacing Qt's MOC with reflection"
 slug: "qt-moc-replacement"
 pubDate: 2026-09-30
-updatedDate: 2026-09-30
+updatedDate: 2026-10-06
 author: filip-sajdak
 language: en
 kind: flagship
@@ -15,6 +15,7 @@ draft: false
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
 
 *Updated 30 September: the first version of this post showed a sketch that did not compile. The code below is taken from the example that runs on GCC 16.2 and clang-p2996.*
 
@@ -195,7 +196,9 @@ Could the framework find those dependencies by itself? Not through reflection. P
 - `Q_INVOKABLE` + reflection-from-script-engine: also ABI concerns. Same direction.
 - Signals/slots in their full generality: a reflection-built signal/slot system is feasible (`boost::signals2` already does much of it without MOC) but requires careful design around thread-affinity (Qt's killer feature).
 
-A follow-up is looking at how far a full moc port gets on GCC 16.2.
+Update, 6 October: the first two bullets are answered in the series. QML bindings work against a reflected meta-object, and signals are covered in a later episode.
+
+Update, 6 October: the follow-up is a series. It starts with <PostLink slug="qt-metaobject-from-reflection">a QMetaObject that stock Qt accepts</PostLink>, and the `rqt::Object` registry in this post is a sketch, not that library.
 
 So: the reflection-based approach replaces the *declarative* part of MOC: properties, metadata. The *runtime* parts (QML engine, scripting bridge) still want compiled stubs, which reflection can produce via a codegen step that's now a *library*, not an external tool.
 
