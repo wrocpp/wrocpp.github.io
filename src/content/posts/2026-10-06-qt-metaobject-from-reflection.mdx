@@ -1,0 +1,176 @@
+---
+title: "Qt accepts a QMetaObject that C++26 reflection built"
+slug: "qt-metaobject-from-reflection"
+pubDate: 2026-10-06
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 26
+audience: working-cpp
+tags: [reflection, cpp26, qt, moc, metaobject]
+summary: "Qt 6.10 builds its meta-objects from constexpr tables, so a table made by C++26 reflection goes in the same place. Stock Qt connects, invokes, reads properties of, casts to and binds in QML a class that moc never saw, and a differential test finds its QMetaObject identical to the one moc generates. Four things had to be worked around, and a signal's declaration had to change."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+*Correction to <PostLink slug="qt-moc-replacement">post 17</PostLink>. That post said that replacing the parts of moc that QML relies on would be a bigger engineering project than a blog post. It was smaller than the sentence suggests: the first working version is one file of 516 lines. The `rqt::Object` registry in post 17 is a sketch and not a library. This series is about the library that replaced it, reflect-moc, which is not published yet. The link will be added here when it is.*
+
+This is what Qt reports about a class that moc never saw (output of a Docker run with GCC 16.2.0 and Qt 6.10.3, not of Compiler Explorer):
+
+```text
+  method 0: valueChanged(int) type=1 params=value
+  method 1: reset() type=2 params=
+  method 2: setValue(int) type=2 params=v
+  method 3: add(int) type=0 params=n
+```
+
+The lines come from `QMetaObject::method(i)`, Qt's own reflection API. `type=1` is a signal, `2` a slot and `0` a plain method. The class has no `Q_OBJECT`, no `signals:` or `slots:` section, and the build does not run moc:
+
+```cpp
+struct Counter : rqt::QObjectBase<Counter> {
+    [[= rqt::property{.notify = true}]] int value = 0;
+
+    [[= rqt::signal]] void valueChanged(int value) { rqt::emit{this}(value); }
+
+    [[= rqt::slot]] void reset() { setValue(0); }
+    [[= rqt::slot]] void setValue(int v) {
+        if (v == value) return;
+        value = v;
+        valueChanged(v);
+    }
+
+    [[= rqt::invokable]] int add(int n) {
+        setValue(value + n);
+        return value;
+    }
+};
+```
+
+`QObject::connect` with `SIGNAL` and `SLOT`, `QMetaObject::invokeMethod`, `QMetaProperty`, a pointer-to-member connect, `qobject_cast` and a QML `Connections` handler all work on it. The base class here is a CRTP template, the first design. Later posts replace it with a plain `: public QObject`; this one is about why Qt accepts the table at all.
+
+## What moc 6.10 writes
+
+The file moc 6.10 generates is not a blob of numbers. In its output format (revision 69), `qt_create_metaobjectdata<Tag>()` returns one call:
+
+```cpp
+QtMocHelpers::metaObjectData<Class, Tag>(
+    flags,
+    QtMocHelpers::StringRefStorage{ /* every name */ },
+    QtMocHelpers::UintData{ SignalData<void(int)>(/* name, params */), SlotData<...>(...), MethodData<...>(...) },
+    QtMocHelpers::UintData{ PropertyData<int>(/* name, type, flags, notify */) },
+    QtMocHelpers::UintData{} /* enums */);
+```
+
+Qt's own helper lays out the `uint` tables and the string data. Whatever can produce the same arguments can call it, and the arguments are names, types, flags and indexes: the things reflection reads from a class.
+
+I checked this against the generated code of a small header, then wrote the same tables by hand (`handwritten.cpp`, which passed the connect, invoke, property and cast checks listed below) before replacing the hand-written part with reflection.
+
+## Where each argument comes from
+
+| what moc reads | what the reflected version reads |
+|---|---|
+| class name (string 0) | `identifier_of(^^D)` |
+| signals, slots, invokables, in Qt's order (signals first) | `members_of` plus the `[[=rqt::signal]]`, `[[=rqt::slot]]`, `[[=rqt::invokable]]` annotations |
+| the signature type for `SignalData<F>` | `type_of(fn)`, const included |
+| return and parameter types | `return_type_of`, `type_of(parameters_of(fn)[i])` |
+| parameter names (QML reads them) | `identifier_of(param)` |
+| public, protected, private | `is_private`, `is_protected` |
+| properties and each NOTIFY index | annotated data members and the signal named `<name>Changed` |
+
+The assembly is a fold over `std::index_sequence`, with the splice operand taken from `methods_of(^^D)[I]`:
+
+```cpp
+template <class D>
+constexpr auto meta_content = [] {
+    auto methods = []<std::size_t... I>(std::index_sequence<I...>) {
+        return QtMocHelpers::UintData{method_data<D, I>()...};
+    }(std::make_index_sequence<methods_of(^^D).size()>{});
+    auto properties = []<std::size_t... I>(std::index_sequence<I...>) {
+        return QtMocHelpers::UintData{property_data<D, I>()...};
+    }(std::make_index_sequence<properties_of(^^D).size()>{});
+    QtMocHelpers::UintData enums{};
+    return QtMocHelpers::metaObjectData<D, meta_tag<D>>(
+        QtMocConstants::MetaObjectFlag{}, string_table<D>{}, methods, properties, enums);
+}();
+```
+
+## Four things that did not work the first time
+
+1. **The string table.** `StringRefStorage` takes character arrays with a known extent, and `define_static_string` returns plain pointers. `metaObjectData` only uses `StringCount`, `StringSize` and `writeTo`, so a table of my own with those three members takes its place.
+2. **Parameter arrays.** Each `SignalData<F>`, `SlotData<F>` and `MethodData<F>` nests its own `FunctionParameter`, so an array built for `MethodData` cannot be passed to `SignalData`:
+
+   ```text
+   error: no matching function for call to 'QtMocHelpers::SignalData<void(int)>::SignalData(const uint&, const uint&, uint, uint, const Params&)'
+   ```
+
+   The fix is to build the array from `typename Data::ParametersArray` for the type actually constructed.
+3. **Qt's own checks.** `qobject_cast` and the pointer-to-member `connect` static-assert that `qt_metacall` is a member of the class itself, and an override in a base class does not count:
+
+   ```text
+   qobject.h:250: static assertion failed: No Q_OBJECT in the class with the signal
+   qobjectdefs.h:748: static assertion failed: qobject_cast requires the type to have a Q_OBJECT macro
+   ```
+
+   The spike specializes `QtPrivate::HasQ_OBJECT_Macro` for its base. That is a private Qt trait, so it is a dependency on Qt's internals and I count it as a cost.
+4. **Keywords.** Qt's `emit` macro expands to nothing, so `struct emit` became `struct {` (`error: template class without a name`), and the spike needed `QT_NO_KEYWORDS`. The library has since renamed it `rqt::activate`, and `QT_NO_KEYWORDS` is optional.
+
+The same single file builds against the Qt 6.9.0, 6.10.0 and 6.11.0 headers on Compiler Explorer (GCC 16.2). Compiler Explorer cannot run it: its Qt 6 build needs `libpcre2-16.so.0`, which is missing there, and the link fails with `undefined reference to 'pcre2_compile_16'`. So the embed below only compiles, and the runs quoted here are from Docker with GCC 16.2.0 and Qt 6.10.3.
+
+<GodboltEmbed id="7cTKqWh9v" gccOnly gccLabel="GCC 16.2" title="The spike on Compiler Explorer (compile only)" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -fPIC · Qt 6.10.0 library · compiles, cannot link here" />
+
+## What stock Qt did with it
+
+Everything in this section and the next comes from Docker runs (GCC 16.2.0, Qt 6.10.3, `-Wall -Wextra`). Both the hand-written file and the reflected file build with 0 warnings and exit 0. The reflected spike checked:
+
+- string-based `connect(SIGNAL(valueChanged(int)), SLOT(setValue(int)))` between two `Counter`s;
+- `invokeMethod` by name, with and without `Q_RETURN_ARG` (`add` returns an `int`);
+- `QMetaProperty` read, write, `hasNotifySignal()` and `notifySignal().name()`;
+- a pointer-to-member connect of `&Counter::valueChanged` to a lambda;
+- `qobject_cast<Counter*>`, `inherits("Counter")`, `superClass()`;
+- a QML `QtObject` bound to `counter.value`, a `Connections` handler `function onValueChanged(value)` that receives the argument by its reflected name, a write from QML (`counter.value = 99`) that lands in the C++ member, and a call from QML to the invokable.
+
+QML binds signal arguments by name, and a function type carries no names. The names come from `identifier_of` on the parameters. They survive only while every declaration of the function spells them the same way: with `setValue(int v)` declared and `setValue(int newValue)` defined, `has_identifier` turned false for that parameter in my test. Signals defined in the class body have one declaration, which is why the spike writes them that way.
+
+## Is it the same QMetaObject moc makes?
+
+A hand check of four methods proves little, so the library has an oracle test. The same set of classes is built twice, once with the real moc and once with reflect-moc. The set has properties with flags, enums, a `QFlags`, class info, signals with parameter names, slots with default arguments, invokables, a pointer-typed argument, a private slot, a two-level inheritance chain and a base with a `Q_DECLARE_INTERFACE` id. The reflected side looks like this (the macros are the subject of a later post):
+
+```cpp
+class Base : public QObject {
+  RQT_OBJECT
+  RQT_CLASSINFO("author", "me")
+  RQT_PROPERTY(int value READ value WRITE setValue NOTIFY valueChanged RESET reset FINAL)
+  RQT_PROPERTY(QString label MEMBER label_ NOTIFY labelChanged)
+  // ...
+};
+```
+
+For every class level, the test dumps what Qt exposes through its API and compares the two dumps line by line: each method's signature, access, type, attributes, return type, parameter types and names, tag and revision; each property's type, fourteen flags and notify index; each enum with its keys and values; each class info entry. They are equal for every class in the set. The moc-built classes sit in one namespace and the reflected ones in another, and the dump strips the two namespace names before comparing. The test does not compare the bytes of the string and `uint` tables, only what the API shows.
+
+A second test guards the other half of the claim. `capability_no_moc_in_build` rebuilds a class from scratch and fails if the verbose log shows moc or an autogen step. For the four Qt examples of a later post, the same kind of script has a positive control: run on the unmodified originals it fires, so the check can fail.
+
+A third check does not read build logs at all. `examples/qt/check_moc_trapped.sh` replaces every `moc` in a throwaway container with a trap that records the caller and fails, then builds the four ported examples, the two demos and the library tests. Only the differential test, which runs moc on purpose as its oracle, is allowed to need it, and its failing to build is the positive control. In the Docker run (GCC 16.2.0, Qt 6.10.3, aarch64) the ported examples built with no moc call and printed the same output as the originals, the demos built with plain `g++`, and the differential test was the only target that failed. CMake's configure step asks moc once for `--version` because that one target has `AUTOMOC` on.
+
+## What the Qt developers said, and where this differs
+
+The Qt wiki page "C++ reflection (P2996) and moc" (last edited 20 January 2026) says at the top that it was written against a very early revision of P2996 and needs re-evaluating. Its summary says reflection in C++26 "might be insufficient for replacing moc". On signals it says that they are ordinary member functions, so a definition cannot be injected, and that token-sequence injection (P3294, "C++29 material at this point") would be needed. It also floats another design, signals declared as something other than member functions (it guesses "a static data member"), and calls that widely incompatible with Qt's history and possibly not worth it. The notes of the QtCS 2024 session (last edited 8 September 2024) say C++26 "is not good enough, because we cannot detect signals and slots with reflections". Volker Hilsheimer's `QRangeModel` post (19 January 2026) ends on moc: he had not compared the meta-object data feature by feature, but it seems to him the compiler can do much of moc's work, and he says the biggest challenge might be the `signals:` and `slots:` blocks, where every function might need its own annotation.
+
+P2996R13 is explicit about the limit. Section 2.1 says the struct and union synthesis it adds is not nearly as powerful as generalized code injection, and section 4.4.19 mentions extending `define_aggregate` for member functions as work it does not do. The `QMetaObject` itself turned out to be the easier part, because Qt had already turned its data into a constexpr function call. Signals are where this approach pays a price: C++26 can add data members to a class and cannot add a function body, so in reflect-moc a signal is a data member. By default it is a non-static one (`rqt::signal<void(int)> valueChanged;`), which costs 8 bytes per signal in the object. The wiki's guess of a static data member also works, as an opt-in (`static inline rqt::static_signal<void(int)> valueChanged{};`): it takes no space in the object, but emitting it needs the owner, which the `emit` macro supplies, and one misuse of that macro is silent. Either way, that is a visible change to how a Qt class is written. Slots and invokables carry an annotation each, which is the per-function marking Hilsheimer anticipates. The next post is about how the signal design was made to work.
+
+Verdigris from Woboq builds a constexpr `QMetaObject` with macros (`W_OBJECT`, `W_SIGNAL`); its README says it is tested with Qt 5.9 and later and needs a C++14 compiler, and that the project is no longer actively maintained. reflect-moc replaces the macro lists with reflection and keeps the text of `Q_PROPERTY` as it is.
+
+## What this has not been tested on
+
+- GCC 16.2 only. The library uses `std::meta::current_function`, `current_class`, `offset_of` and `std::meta::exception`; clang-p2996 has none of them.
+- Run on Qt 6.10.3, Linux aarch64 in Docker, with the offscreen platform plugin. Not run on x86_64, on other Qt versions, with clang or with MSVC. The 6.9.0 and 6.11.0 results above are compile-only.
+- It specializes `QtPrivate::HasQ_OBJECT_Macro` and, later in the series, `QtPrivate::FunctionPointer`. `QtPrivate` is Qt's internal namespace and can change in any release.
+- `Q_PLUGIN_METADATA` and `BINDABLE` properties are not supported.
+
+---
+
+**Sources** (checked 2 October 2026): [Qt wiki, C++ reflection (P2996) and moc](https://wiki.qt.io/C++_reflection_(P2996)_and_moc), last edited 20 January 2026 · [QtCS 2024, C++26 Reflection](https://wiki.qt.io/QtCS2024_C++26_Reflection) · [Volker Hilsheimer, C++26 Reflection and QRangeModel](https://www.qt.io/blog/c26-reflection-qrangemodel) · [Verdigris](https://github.com/woboq/verdigris) · [P2996R13](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p2996r13.html) sections 2.1 and 4.4.19. The runs were made with GCC 16.2.0 and Qt 6.10.3 in Docker on 1 October 2026, and the compile checks on Compiler Explorer (GCC 16.2, `qt` library 6.9.0, 6.10.0 and 6.11.0) on 2 October 2026.
+
+The next post in the series covers why a Qt signal became a data member.
