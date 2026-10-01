@@ -46,6 +46,11 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # runs now beside the reflection series post rather than after the sale.
     "2026-10-02": {"slug": "humble-cpp-masterclass", "hour": 16,
                    "why": "time-limited book bundle alongside the reflection series"},
+    # First episode of the reflect-moc series (Qt meta-objects from C++26
+    # reflection). The topic is current now, so it runs beside the evergreen
+    # post of the day instead of waiting for the first open date.
+    "2026-10-06": {"slug": "qt-metaobject-from-reflection", "hour": 16,
+                   "why": "reflect-moc series episode 1 alongside the evergreen post"},
 }
 
 
