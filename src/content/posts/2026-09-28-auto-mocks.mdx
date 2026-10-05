@@ -2,6 +2,7 @@
 title: "Auto-generated mocks from interfaces"
 slug: "auto-mocks"
 pubDate: 2026-09-28
+updatedDate: 2026-10-05
 author: filip-sajdak
 language: en
 kind: flagship
@@ -9,12 +10,14 @@ series: cpp26-reflection
 series_order: 15
 audience: working-cpp
 tags: [reflection, cpp26, mocking, testing]
-summary: "Mockito and Moq in C++: point a library at an abstract base class and get a mock that records calls and lets you program return values. No per-method MOCK_METHOD boilerplate."
+summary: "Corrected on 5 October 2026: reflection cannot generate the mock class this post describes, because define_aggregate adds data members and no functions. The correction at the top has the GCC errors; the rest is kept as published."
 draft: false
 discussion: https://github.com/wrocpp/wrocpp.github.io/discussions/61
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+*Correction, 5 October 2026. This post says that reflection with `define_aggregate` can generate a mock class that overrides an interface's virtual functions. It cannot. `define_aggregate` adds non-static data members and nothing else; P2996R13 section 4.4.19 mentions extending it to member functions as work it does not do. I checked this on GCC 16.2.0. A base-class option does not exist (`could not convert '{"base", true}' from '<brace-enclosed initializer list>' to 'std::meta::data_member_options'`), and a member function is refused (`'what()': 'reflection does not represent a type'`). The Compiler Explorer demo at the end does not show a generated mock either: its `MockClock` is written by hand, and reflection only supplies the keys used to count calls. The rows of the comparison table that rely on a generated virtual mock, and the claim that this is a real class with a real vtable, do not hold. The fallback with a struct of lambdas is not an `IClock`, so it fits only code that is generic over the interface. That generic case does work today, with callable data members, and a later post shows it. Generating the overrides for a virtual interface needs token injection (P3294), which is C++29 work and is not in any compiler yet. The text below is left as published, so you can read it against this note.*
 
 GoogleTest's `gmock`:
 
