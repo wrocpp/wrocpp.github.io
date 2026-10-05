@@ -1,0 +1,72 @@
+---
+title: "EDG's C++ front end is open source, and Compiler Explorer builds it with reflection"
+slug: "edg-front-end-open-source"
+pubDate: 2026-10-08
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, reflection, compilers]
+summary: "The EDG C++ front end went open source on 30 September under the Apache 2.0 licence with LLVM exceptions, with the C++ Alliance as fiscal sponsor. Compiler Explorer added EDG 7.0 and trunk builds with P2996 reflection switched on the same day. One struct-walking snippet gives the same output on EDG, GCC 16.2 and clang-p2996 apart from one type spelling, and EDG rejects template for."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+On 30 September the source of the EDG C++ front end went public at [github.com/edgcpp/compiler](https://github.com/edgcpp/compiler). [John Spicer's note](https://edgcpp.org/announcement) says the C++ Alliance will be the project's nonprofit home under a fiscal sponsorship, the way Boost operates, and that he will chair the committee overseeing it. The same page says EDG as a corporation is going away while the front end continues. GCC, clang and EDG are now all C++ front ends whose source you can read.
+
+The same day, Compiler Explorer merged [pull request 9204](https://github.com/compiler-explorer/compiler-explorer/pull/9204), which adds `edg-7_0-reflection` and `edg-trunk-reflection`. Both run EDG in GNU mode for GCC 16 with `--c++26 --set_flag reflection`, and use the current P2996 `access_context` API. An older `edg-experimental-reflection`, based on EDG 6.8 with the earlier API, stays in the list.
+
+## What the licence file says
+
+The announcement FAQ says the code is available "under the LLVM license". The `LICENSE.txt` at the top of the repository is the LLVM project's file: Apache License 2.0 followed by the LLVM exceptions. The first exception lets you redistribute parts of the software embedded in object code without the Apache attribution conditions (sections 4(a), 4(b) and 4(d)). The second covers linking with GPLv2 software. GitHub does not recognise the file as a standard licence and lists it as "Other". I am not a lawyer, and anything beyond what those two documents say is outside this post.
+
+## One snippet on four builds
+
+The snippet lists the data members of a struct and their types. It uses `nonstatic_data_members_of`, `identifier_of` and `display_string_of`, and prints with `define_static_string`.
+
+```cpp
+struct Point { int x; double y; char const* label; };
+
+template <class T>
+void print_members() {
+    static constexpr auto members = std::define_static_array(
+        std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()));
+    [&]<std::size_t... I>(std::index_sequence<I...>) {
+        (std::printf("%s : %s\n",
+                     std::define_static_string(std::meta::identifier_of(members[I])),
+                     std::define_static_string(std::meta::display_string_of(
+                         std::meta::type_of(members[I])))), ...);
+    }(std::make_index_sequence<members.size()>{});
+}
+```
+
+<GodboltEmbed id="rsvTGbWz7" compilerLabel="GCC 16.2, EDG 7.0, EDG trunk, clang-p2996" title="One struct walked by four reflection builds" gcc_subtitle="four executor panes · EDG with its default --c++26 --set_flag reflection · runs live" />
+
+All four build it and run it, and EDG 7.0 and EDG trunk print the same thing as each other. The output differs in one place:
+
+| build | `label` line |
+| --- | --- |
+| GCC 16.2 | `label : const char*` |
+| EDG 7.0, EDG trunk, clang-p2996 | `label : const char *` |
+
+`display_string_of` returns an implementation-defined string, so a test that compares it to a literal will not move between compilers.
+
+The first draft used `template for`. EDG 7.0 and trunk do not define `__cpp_expansion_statements`, and both reject it:
+
+```text
+"<source>", line 13: error: explicit instantiation is not allowed in the current scope
+      template for (constexpr auto m : std::define_static_array(
+```
+
+GCC 16.2 and clang-p2996 accept that version. The `index_sequence` form above is what runs everywhere. Compiler Explorer's compile-only pane for EDG also reported success on a source with a syntax error inside a template body, which the build step then rejected, so read the executor pane when you test on EDG.
+
+## What it changes, and what is not known
+
+For reflection code there is now a third implementation to run the same snippet against, which finds the cases where one compiler's reading differs from the others. [cppreference's C++26 table](https://en.cppreference.com/w/cpp/compiler_support/26) lists reflection as supported from GCC 16 and shows no support for Clang or MSVC. Its EDG column is empty for reflection, so the page has not caught up with these builds.
+
+I ran one snippet. That says nothing about how complete EDG's P2996 support is. The announcement says roadmap details "will be shared as they're finalized", so the release schedule is unknown, and so is what happens to products built on EDG. The FAQ says organisations with existing agreements can continue under their terms.
+
+---
+
+**Sources**, all read on 5 October 2026: [EDG announcement and FAQ](https://edgcpp.org/announcement) (read in full) · [edgcpp/compiler](https://github.com/edgcpp/compiler) (README and `LICENSE.txt` read, last commit listed 2 October) · [Compiler Explorer PR 9204](https://github.com/compiler-explorer/compiler-explorer/pull/9204) (description and merge date via the GitHub API) · [cppreference C++26 support](https://en.cppreference.com/w/cpp/compiler_support/26) (Reflection row). The snippet was compiled and run on Compiler Explorer on 5 October with `g162`, `edg-7_0-reflection`, `edg-trunk-reflection` and `clang_bb_p2996`; the `template for` variant is [a second link](https://godbolt.org/z/M93qjjTcq).
