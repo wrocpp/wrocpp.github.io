@@ -1,0 +1,54 @@
+---
+title: "C++26 removes the initializer_list constructor of std::span"
+slug: "span-initializer-list-removed"
+pubDate: 2026-10-16
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, cpp26, stdlib]
+summary: "With the initializer_list constructor that C++26 had added, std::span<const bool> s{ptr, n} builds a two-element span of bools, and GCC 15 compiles it with a warning. P4144R1 removes the constructor, the 2026-03 LWG motion put that into the C++ working draft, and libstdc++ 16 and libc++ 23 no longer have it. Compiler Explorer runs show each library side by side."
+draft: false
+relatedPosts: [function-ref, optional-ref]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+```cpp
+bool data[4] = {true, false, true, false};
+const bool* ptr = data;
+std::size_t n = 4;
+std::span<const bool> s{ptr, n};   // how many elements?
+```
+
+In C++23 this calls the pointer and count constructor and `s.size()` is 4. The C++26 draft once also had `span(initializer_list<value_type>)`, added by P2447, and braces prefer an `initializer_list` constructor when one is viable. Here it is: a pointer converts to `bool`, and so does a count, so `{ptr, n}` is a list of two `bool`s. The standard calls the conversion narrowing and therefore ill-formed. GCC accepts it with a warning for non-constant values, and then `s.size()` is 2.
+
+## What the demo prints on each library
+
+The demo prints the size of `s{ptr, n}` and `s(ptr, n)` over a real three-element array, and whether `__cpp_lib_span_initializer_list` is defined. I ran it on Compiler Explorer on 6 October 2026 with `-std=c++26`, and for clang with `-stdlib=libc++`:
+
+| compiler | library | `__cpp_lib_span_initializer_list` | `span<const bool> s{ptr, n}` |
+| --- | --- | --- | --- |
+| GCC 15.1, 15.2, 15.3 | libstdc++ 15 | 202311 | compiles with `-Wnarrowing` warnings, size 2 |
+| GCC 16.1, 16.2 | libstdc++ 16 | not defined | size 3 |
+| clang 19.1, 20.1, 21.1, 22.1 | libc++ 19 to 22 | | error: `const bool *` cannot be narrowed to `bool` |
+| clang 23.1.0 | libc++ 23.1.0 | not defined | size 3 |
+| clang trunk | libc++ 24.0.0git | not defined | size 3 |
+
+The clang 19 to 22 builds stop at the error, so there the library version comes from a separate `_LIBCPP_VERSION` probe. With the narrowing error disabled (`-Wno-c++11-narrowing`), clang 21.1 prints the macro as 202311 and size 2. The `span<const int>` line gives 3 everywhere, because a pointer does not convert to `int` and the list is not viable.
+
+<GodboltEmbed id="6o7vsW7xM" compilerLabel="GCC 15.2, GCC 16.2, clang 22.1, clang 23.1" gcc_subtitle="-std=c++26 -O2 · clang with -stdlib=libc++ · runs live" title="The same span line on four standard libraries" />
+
+## How the removal got into the draft
+
+[LWG issue 4520](https://cplusplus.github.io/LWG/issue4520) came from a bug report against NVIDIA's libcu++, which had implemented the specification correctly. [P4144R1](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4144r1.html) is dated 2026-03-26. Its first revision proposed a narrower fix for `span<const bool>`, and on 2026-03-25 LEWG polled 16/14/2/0/0 to remove the constructor entirely. The issue records that "P4144R1 was approved in Croydon" on 2026-03-31 and changes its status to Resolved. In the [draft repository](https://github.com/cplusplus/draft) the commit "P4144R1 Remove `span`'s `initializer_list` constructor for C++26" is part of "Merge 2026-03 LWG Motion 24", dated 2026-04-19.
+
+The paper's wording removes the constructor and the `__cpp_lib_span_initializer_list` macro. As of 6 October 2026 the [views.span] page at eel.is has no `initializer_list` constructor, and cppreference's constructor list for `std::span` and its feature-test table have no entry for it. The libc++ 23 release notes list P4144R1 among the implemented papers.
+
+The paper also links a post by one of P2447's authors, Arthur O'Dwyer, about using the constructor in Chromium, as input if the feature comes back in a later standard. I have not read that post.
+
+If you wrote `span<const bool>{ptr, n}` on a GCC 15 toolchain, the warning is the only sign. Moving to libstdc++ 16 changes the result from 2 to 4 in the example at the top, and `-Wnarrowing` will not say so.
+
+---
+
+**Sources**, all read on 6 October 2026: [P4144R1](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4144r1.html) (full text, including the LEWG poll and the wording) · [LWG 4520](https://cplusplus.github.io/LWG/issue4520) (status and the Croydon note) · [cplusplus/draft](https://github.com/cplusplus/draft) (commit log through the GitHub API, `source/containers.tex` and `source/support.tex` on main, which contain no `span_initializer_list`) · [eel.is [views.span]](https://eel.is/c++draft/views.span) and [[version.syn]](https://eel.is/c++draft/version.syn) (searched for `initializer_list` and the macro) · [cppreference: std::span::span](https://en.cppreference.com/w/cpp/container/span/span) and [feature-test macros](https://en.cppreference.com/w/cpp/feature_test) · [libc++ 23 release notes](https://libcxx.llvm.org/ReleaseNotes/23.html) (the page was still headed "In-Progress"). The compiler results were produced on Compiler Explorer (GCC 15.1 to 16.2, clang 19.1 to trunk) and checked locally with GCC 16.2.0 and clang 23.1.1.
