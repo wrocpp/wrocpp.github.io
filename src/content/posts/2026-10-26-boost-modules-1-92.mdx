@@ -54,7 +54,7 @@ Nowhere dramatic yet, and it would be dishonest to pretend otherwise. Six librar
 
 What changed is the shape of the problem. A year ago the honest answer about Boost and modules was that the work had not started in a form you could try. Now there is a flag, a documented module name, and a migration story that does not require touching source. The next question is whether the remaining libraries follow the same pattern, because six libraries each inventing their own module naming and their own opt-in macro would be considerably worse than none.
 
-One caveat about evidence. Compiler Explorer does not yet carry Boost 1.92 (its newest is 1.90.0), so there is no clickable demonstration to attach here. Everything above is from the release notes and the library documentation rather than from a build I ran. When CE catches up, a working `import boost.type_index;` is worth a follow-up.
+One caveat about evidence. As of 6 October 2026 Compiler Explorer carries Boost 1.92, but this post has no clickable demonstration attached. Everything above is from the release notes and the library documentation rather than from a build I ran. A working `import boost.type_index;` is worth a follow-up.
 
 ## What else is in 1.92
 
@@ -76,9 +76,9 @@ one. That is narrower than the C++14 sunset it is sometimes reported as, since i
 binds those two libraries rather than Boost as a whole, but if you are pinned to
 C++14 and use either, this release is your ceiling.
 
-The `hub` container deserves its own piece rather than a paragraph here, and it is
-blocked on the same missing Compiler Explorer version as everything else above.
+The `hub` container deserves its own piece rather than a paragraph here. As of 6
+October 2026 Compiler Explorer carries Boost 1.92, so it can be built and run there.
 
 ---
 
-**Sources**: [Boost 1.92.0 release notes](https://www.boost.org/releases/1.92.0/) · [Boost.TypeIndex C++20 module documentation](https://www.boost.org/doc/libs/latest/doc/html/boost_typeindex/c_20_module.html) · Compiler Explorer library versions checked on 7 September 2026 (newest Boost: 1.90.0).
+**Sources**: [Boost 1.92.0 release notes](https://www.boost.org/releases/1.92.0/) · [Boost.TypeIndex C++20 module documentation](https://www.boost.org/doc/libs/latest/doc/html/boost_typeindex/c_20_module.html) · Compiler Explorer library versions checked on 6 October 2026 (newest Boost: 1.92.0).
