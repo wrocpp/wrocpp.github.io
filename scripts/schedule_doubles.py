@@ -69,6 +69,11 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # beside the evergreen memory-safety post.
     "2026-10-16": {"slug": "span-initializer-list-removed", "hour": 16,
                    "why": "C++26 stdlib news short alongside the evergreen post"},
+    # The pre-Buzios mailing closes on 23 October, so the calendar short
+    # runs beside the evergreen post (reflection-on-released-gcc) on the
+    # 20th while a paper author can still act on the date.
+    "2026-10-20": {"slug": "dates-to-watch-buzios-gcc17", "hour": 16,
+                   "why": "calendar short ahead of the Buzios meeting and GCC 17 stage 3"},
 }
 
 
