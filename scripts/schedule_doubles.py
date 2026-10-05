@@ -56,6 +56,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # beside the evergreen post (pmr-allocator-aware) rather than waiting.
     "2026-10-08": {"slug": "edg-front-end-open-source", "hour": 16,
                    "why": "EDG open-source news alongside the evergreen post"},
+    # Second episode of the reflect-moc series (why a Qt signal is a data member
+    # and what it costs). It runs beside the evergreen post of the day.
+    "2026-10-09": {"slug": "qt-signals-as-data-members", "hour": 16,
+                   "why": "reflect-moc series episode 2 alongside the evergreen post"},
 }
 
 
