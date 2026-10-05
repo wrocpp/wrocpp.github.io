@@ -60,6 +60,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # and what it costs). It runs beside the evergreen post of the day.
     "2026-10-09": {"slug": "qt-signals-as-data-members", "hour": 16,
                    "why": "reflect-moc series episode 2 alongside the evergreen post"},
+    # A short on the September mailing's three contracts papers, written while
+    # the mailing is current, beside the evergreen ctre-costs post.
+    "2026-10-10": {"slug": "dis-ballot-contracts-papers", "hour": 16,
+                   "why": "mailing news short alongside the evergreen post"},
     # Third episode of the reflect-moc series (how RQT_OBJECT finds its class and
     # how RQT_PROPERTY parses the Q_PROPERTY text). It runs beside the evergreen
     # post of the day.
