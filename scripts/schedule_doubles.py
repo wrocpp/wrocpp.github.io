@@ -60,6 +60,11 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # and what it costs). It runs beside the evergreen post of the day.
     "2026-10-09": {"slug": "qt-signals-as-data-members", "hour": 16,
                    "why": "reflect-moc series episode 2 alongside the evergreen post"},
+    # Third episode of the reflect-moc series (how RQT_OBJECT finds its class and
+    # how RQT_PROPERTY parses the Q_PROPERTY text). It runs beside the evergreen
+    # post of the day.
+    "2026-10-12": {"slug": "qt-object-that-never-names-its-class", "hour": 16,
+                   "why": "reflect-moc series episode 3 alongside the evergreen post"},
 }
 
 
