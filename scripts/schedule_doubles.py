@@ -51,6 +51,11 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # post of the day instead of waiting for the first open date.
     "2026-10-06": {"slug": "qt-metaobject-from-reflection", "hour": 16,
                    "why": "reflect-moc series episode 1 alongside the evergreen post"},
+    # EDG's C++ front end was open-sourced on 30 September and Compiler
+    # Explorer added reflection builds the same day, so the short runs
+    # beside the evergreen post (pmr-allocator-aware) rather than waiting.
+    "2026-10-08": {"slug": "edg-front-end-open-source", "hour": 16,
+                   "why": "EDG open-source news alongside the evergreen post"},
 }
 
 
