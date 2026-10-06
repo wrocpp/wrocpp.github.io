@@ -20,11 +20,11 @@ import PostLink from '../../components/PostLink.astro';
 error: uncaught exception of type 'std::meta::exception'; 'what()': 'unknown property keyword'
 ```
 
-That is GCC 16.2 rejecting a property line with a made-up keyword, while compiling a macro that has no idea which class it sits in. The line comes from a Qt-free reduction of two macros in reflect-moc, `RQT_OBJECT` and `RQT_PROPERTY`, and this post is about how they work. It follows <PostLink slug="qt-signals-as-data-members">the post on signals</PostLink>, and the library is not published yet.
+That is GCC 16.2 rejecting a property line with a made-up keyword, while compiling a macro that has no idea which class it sits in. The line comes from a Qt-free reduction of two macros in reflect-moc, `RQT_OBJECT` and `RQT_PROPERTY`, and this post is about how they work. It follows <PostLink slug="qt-signals-as-data-members">the post on signals</PostLink>, and the library is published at [github.com/wrocpp/reflect-moc](https://github.com/wrocpp/reflect-moc) (experimental: GCC 16.2, Qt 6.10.3, aarch64 Docker only).
 
 ## What the class looks like
 
-This is the top of `Counter` in the library's `README.md`:
+This is the top of `Counter` in the library's [`README.md`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/README.md):
 
 ```cpp
 class Counter : public QObject {
@@ -33,11 +33,11 @@ class Counter : public QObject {
   RQT_PROPERTY(QString label READ label WRITE setLabel NOTIFY labelChanged)
 ```
 
-There is no class name in the macro, no template base and no `bind()` call in the constructor. The earlier designs in the project's `spikes/SPIKES.md` needed some of those: a CRTP base that takes the class as a template argument (spike 06), then a non-template base using deducing `this` (spike 07), which needed `bind()` in the constructor and two lines after the class before `qobject_cast`, pointer-to-member `connect` and `qmlRegisterType` worked. `RQT_OBJECT` replaced both.
+There is no class name in the macro, no template base and no `bind()` call in the constructor. The earlier designs in the project's [`spikes/SPIKES.md`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/spikes/SPIKES.md) needed some of those: a CRTP base that takes the class as a template argument (spike 06), then a non-template base using deducing `this` (spike 07), which needed `bind()` in the constructor and two lines after the class before `qobject_cast`, pointer-to-member `connect` and `qmlRegisterType` worked. `RQT_OBJECT` replaced both.
 
 ## How a macro finds the class it is in
 
-`include/reflect_moc/qt/macros.hpp` defines the class as a function of where the code is:
+[`include/reflect_moc/qt/macros.hpp`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/include/reflect_moc/qt/macros.hpp) defines the class as a function of where the code is:
 
 ```cpp
 #define RQT_SELF (::std::meta::parent_of(::std::meta::current_function()))
@@ -45,7 +45,7 @@ There is no class name in the macro, no template base and no `bind()` call in th
 
 `RQT_OBJECT` expands to member functions defined in the class body, and they pass `RQT_SELF` to templates, for example `static ::QMetaObject const& rqt_meta_() { return ::rqt::meta_of_class<RQT_SELF>(); }`. Inside such a function, `std::meta::current_function()` is that function and its parent is the class. A function body is a complete-class context, so reflection there sees every member, including the ones declared after the macro. The reduction checks this: `property_count()` is defined by the object macro, and it counts the properties declared on the lines below it.
 
-The macro also declares what `Q_OBJECT` declares: `staticMetaObject`, `metaObject()`, `qt_metacast`, `qt_metacall` and `tr`. That is why Qt's own checks pass with no opt-in. `tests/qt/capability_qt_like_syntax.cpp` runs `qobject_cast` in every direction, a pointer-to-member connect and a functor connect against classes that only wrote `RQT_OBJECT`. `std::meta::current_function` exists only on GCC 16.2 (the README lists it among the things clang-p2996 lacks), so this is a GCC-only technique today.
+The macro also declares what `Q_OBJECT` declares: `staticMetaObject`, `metaObject()`, `qt_metacast`, `qt_metacall` and `tr`. That is why Qt's own checks pass with no opt-in. [`tests/qt/capability_qt_like_syntax.cpp`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/tests/qt/capability_qt_like_syntax.cpp) runs `qobject_cast` in every direction, a pointer-to-member connect and a functor connect against classes that only wrote `RQT_OBJECT`. `std::meta::current_function` exists only on GCC 16.2 (the README lists it among the things clang-p2996 lacks), so this is a GCC-only technique today.
 
 <GodboltEmbed id="ccjczd7cY" gccOnly gccLabel="GCC 16.2" title="A class that finds its own name, and property text parsed at compile time (Qt-free)" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -Wall -Wextra -O1 · runs live" />
 
@@ -66,16 +66,16 @@ class Lamp, property_count() from inside the class: 1
   property on : bool  read=on write=setOn notify=
 ```
 
-The reduction parses three keywords. The real parser in `include/reflect_moc/qt/annotations.hpp` also handles `MEMBER`, `RESET`, `REVISION`, `DESIGNABLE`, `SCRIPTABLE`, `STORED`, `USER`, `CONSTANT`, `FINAL` and `REQUIRED`. Anything else throws a `std::meta::exception`, which GCC prints as a compile error at the macro. Reading the source, `FLAVOUR` would come out as `RQT_PROPERTY: FLAVOUR is not supported`; I ran only the reduction's message, shown at the top. Adding `-DBAD` to the options on Compiler Explorer reproduces it in [a compile-only session](https://godbolt.org/z/53W8z7qba).
+The reduction parses three keywords. The real parser in [`include/reflect_moc/qt/annotations.hpp`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/include/reflect_moc/qt/annotations.hpp) also handles `MEMBER`, `RESET`, `REVISION`, `DESIGNABLE`, `SCRIPTABLE`, `STORED`, `USER`, `CONSTANT`, `FINAL` and `REQUIRED`. Anything else throws a `std::meta::exception`, which GCC prints as a compile error at the macro. Reading the source, `FLAVOUR` would come out as `RQT_PROPERTY: FLAVOUR is not supported`; I ran only the reduction's message, shown at the top. Adding `-DBAD` to the options on Compiler Explorer reproduces it in [a compile-only session](https://godbolt.org/z/53W8z7qba).
 
-The reason to parse the text instead of inventing a new syntax is that existing code does not change. In the library's differential test, `tests/qt/differential_moc.h` (processed by real moc) and `tests/qt/differential_rqt.hpp` (reflect-moc) declare the same classes, and I diffed their property lines: the eight `Q_PROPERTY` arguments are identical character for character. The README says that test compares the two `QMetaObject`s; I did not re-run it for this post.
+The reason to parse the text instead of inventing a new syntax is that existing code does not change. In the library's differential test, [`tests/qt/differential_moc.h`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/tests/qt/differential_moc.h) (processed by real moc) and [`tests/qt/differential_rqt.hpp`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/tests/qt/differential_rqt.hpp) (reflect-moc) declare the same classes, and I diffed their property lines: the eight `Q_PROPERTY` arguments are identical character for character. The README says that test compares the two `QMetaObject`s; I did not re-run it for this post.
 
 ## What this has not been tested on
 
 - GCC 16.2 only. The reduction ran on Compiler Explorer's GCC 16.2 and on Homebrew GCC 16.2.0. `current_function` is not in clang-p2996.
-- The reduction has no Qt in it. The real macros ran only in the project's Docker image (GCC 16.2.0, Qt 6.10.3, aarch64), as the library's README records, not on x86_64, other Qt versions, clang or MSVC. I did not run them myself for this post, and the real parser's error text is read from its source.
+- The reduction has no Qt in it. The real macros ran only in the project's Docker image (GCC 16.2.0, Qt 6.10.3, aarch64), as the library's README records, not on other Qt versions, clang or MSVC. CI on a GitHub x86_64 runner passed the core and Qt tests, the tool tests, the four ported Qt examples (built with no moc, output identical to the baseline) and the moc trap ([run 37466622213 on main on 6 October 2026](https://github.com/wrocpp/reflect-moc/actions/runs/37466622213)); the series' sizes, timings and ThreadSanitizer results were measured on aarch64 only, and a pass on x86_64 does not show that they carry over. I did not run them myself for this post, and the real parser's error text is read from its source.
 - `BINDABLE` and function-valued `DESIGNABLE`, `SCRIPTABLE`, `STORED` and `USER` are rejected. `Q_GADGET`, `Q_NAMESPACE`, `Q_PLUGIN_METADATA` and `QML_ELEMENT` are not supported (README, Limits).
 
 ---
 
-**Sources** (checked 6 October 2026): reflect-moc, not published yet, read at commit `f6827b1` of the local public clone: `README.md`, `include/reflect_moc/qt/README.md`, `include/reflect_moc/qt/macros.hpp`, `include/reflect_moc/qt/annotations.hpp`, `tests/qt/capability_qt_like_syntax.cpp`, `tests/qt/differential_moc.h`, `tests/qt/differential_rqt.hpp` and `spikes/SPIKES.md` (the verdict table and spike 07). The reduction was compiled and run on Compiler Explorer (g162, GCC 16.2) twice for the normal build and once with `-DBAD`, and with Homebrew GCC 16.2.0, all on 6 October 2026.
+**Sources** (checked 6 October 2026): reflect-moc ([github.com/wrocpp/reflect-moc](https://github.com/wrocpp/reflect-moc)), read at commit `f6827b1` of the local clone before it was published. The links point at the published commit `4fe8523`, which differs from `f6827b1` in one file, the Qt README, where it only adds a note on clang-p2996: [`README.md`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/README.md), [`include/reflect_moc/qt/README.md`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/include/reflect_moc/qt/README.md), [`include/reflect_moc/qt/macros.hpp`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/include/reflect_moc/qt/macros.hpp), [`include/reflect_moc/qt/annotations.hpp`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/include/reflect_moc/qt/annotations.hpp), [`tests/qt/capability_qt_like_syntax.cpp`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/tests/qt/capability_qt_like_syntax.cpp), [`tests/qt/differential_moc.h`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/tests/qt/differential_moc.h), [`tests/qt/differential_rqt.hpp`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/tests/qt/differential_rqt.hpp) and [`spikes/SPIKES.md`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/spikes/SPIKES.md) (the verdict table and spike 07). The reduction was compiled and run on Compiler Explorer (g162, GCC 16.2) twice for the normal build and once with `-DBAD`, and with Homebrew GCC 16.2.0, all on 6 October 2026.

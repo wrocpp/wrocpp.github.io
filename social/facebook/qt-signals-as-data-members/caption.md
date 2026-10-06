@@ -5,7 +5,7 @@ A Qt signal is a function whose body moc writes, and C++26 reflection can only a
 
 The post shows three designs that failed, the one that held (8 bytes per signal, 8 per class) and a static form that costs 0 bytes per signal and has one silent pitfall: emit other->s(v) fires on this.
 
-It is GCC 16.2 only, measured with Qt 6.10.3 on aarch64 in Docker, and the library is not published yet. The previous episode is at https://wrocpp.github.io/posts/qt-metaobject-from-reflection/
+It is GCC 16.2 only, measured with Qt 6.10.3 on aarch64 in Docker. The library is published at https://github.com/wrocpp/reflect-moc (experimental; GCC 16.2, Qt 6.10.3, aarch64 Docker only). The previous episode is at https://wrocpp.github.io/posts/qt-metaobject-from-reflection/
 
 https://wrocpp.github.io/posts/qt-signals-as-data-members/
 
