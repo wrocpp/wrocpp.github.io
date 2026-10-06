@@ -9,7 +9,7 @@ Connections are not stored by signal index. Each sender holds a mutex-guarded ve
 
 Under ThreadSanitizer the 18 core tests passed in the recorded run. One test, which waits on a std::latch, reported two data races in 27 of 11000 repeats. A 12-line program with only a std::latch reports in 132 of 11000, and a mutex with a condition variable, or a binary semaphore, gives 0 of 11000. I read that as a ThreadSanitizer limitation with std::latch in libstdc++, not a race in the library. That reading comes from the header. I did not read the library's wait function or run the experiment that would confirm it.
 
-The limits are in the post. GCC 16.2 only, ThreadSanitizer on aarch64 in Docker only, and the library is not published yet.
+The limits are in the post. GCC 16.2 only, ThreadSanitizer on aarch64 in Docker only. The library is published at https://github.com/wrocpp/reflect-moc (experimental; GCC 16.2, Qt 6.10.3, aarch64 Docker only).
 
 https://wrocpp.github.io/posts/signals-slots-threads-without-qt/
 

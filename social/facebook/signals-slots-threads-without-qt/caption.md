@@ -5,7 +5,7 @@ The core of reflect-moc, signals, slots, queued and blocking connections and thr
 
 Under ThreadSanitizer one test reports in 27 of 11000 repeats. A 12-line std::latch program with no library code reports in 132 of 11000, and a mutex with a condition variable gives 0 of 11000. I read it as a ThreadSanitizer limitation with std::latch, not a race in the library, from the header only.
 
-GCC 16.2 only, ThreadSanitizer on aarch64 in Docker, and the library is not published yet.
+GCC 16.2 only, ThreadSanitizer on aarch64 in Docker. The library is published at https://github.com/wrocpp/reflect-moc (experimental; GCC 16.2, Qt 6.10.3, aarch64 Docker only).
 
 https://wrocpp.github.io/posts/signals-slots-threads-without-qt/
 
