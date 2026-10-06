@@ -9,12 +9,15 @@ series: cpp26-reflection
 series_order: 16
 audience: working-cpp
 tags: [reflection, cpp26, type-synthesis, define_aggregate]
+updatedDate: 2026-10-06
 summary: "TypeScript's Pick, Omit, and Partial have direct C++26 equivalents. define_aggregate lets you construct a new type from a list of member specs — opening up type-level programming that was previously pure metaprogramming wizardry."
 draft: false
 discussion: https://github.com/wrocpp/wrocpp.github.io/discussions/62
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+*Correction, 6 October 2026. The `Pick`, `Partial` and the other utilities in this post do not compile as published, and two statements about GCC support were wrong in opposite directions. I compiled every block on g++-16 (Homebrew GCC 16.2.0, `-std=c++26 -freflection -Wall -Wextra`) and changed only what that run showed. First, `using Pick = [: build_pick<...>() :]` with `define_aggregate` called inside `build_pick` fails with `'define_aggregate' not evaluated from 'consteval' block`, and the forward-declared `impl<T>` pattern fails the same way. The Compiler Explorer demo's header says this for an older compiler; it holds on GCC 16.2.0 too. Second, the claim that an alias cannot splice a synthesised type is only partly true. `using Partial = [: build_partial<T>() :];` compiled and ran when `build_partial` only returned `^^partial_impl<T>` and a `consteval { define_aggregate(...) }` block at namespace scope had already defined `partial_impl<User>`, but that block has to be written once per instantiation. A generic splice of `^^holder<T>::type` inside an alias template failed with `'h<int>::type' is not usable in a splice type`, and a helper class that defines `impl<T>` failed with `'def<char>' intervenes between 'consteval' block 'define_aggregate' is evaluated from and 'impl<char>' scope`. The form that works generically is a class template that declares a nested `type` and defines it in its own `consteval` block; `using Pick = pick_holder<T, Fields...>::type;` then compiled and ran, and the blocks below now use it. Third, three smaller slips are fixed. `struct UserPublicView = Omit<...>;` is invalid (`expected unqualified-id before '='`) and is now `using`. `ctx` in `Readonly` was never declared (`'ctx' was not declared in this scope`). And `data_member_spec(t, {/* ... */})` throws `neither name nor bit_width specified`, so the name must be passed. `fixed_string` and `is_optional` were also never defined, and now are. Fourth, the layout claim holds: for `Pick<User, "name", "age", "admin">` and a hand-written struct with the same members, `static_assert` confirmed equal `sizeof`, `alignof` and `offsetof`, and that the synthesised type is standard-layout and an aggregate. The claim that `Required<UserPatch>` recovers a `User`-like type "modulo ordering" is corrected: members keep the order of the source type, so the result had the same names, types and order and `sizeof(User)`, but it is a different type from `User`. `Pick` also ignores the order of the field list. Fifth, the caveats paragraph is replaced. `define_aggregate` adds data members only: in earlier tests on the same compiler a base class (`.is_base`) was rejected, a base given as a member produced a field, and a member function could not be added. The flag named there is not needed on GCC 16.2.0; plain `-freflection` was enough. The embedded demo does not synthesise anything: it computes and prints the list of fields that `Pick<User, "name", "age", "admin">` would contain, and calls neither `define_aggregate` nor the alias. The claims about serialising, ORM and MessagePack use of synthesised types refer to libraries I did not build or test here; I only confirmed that `nonstatic_data_members_of` works on a synthesised type. The text below is otherwise left as published, so you can read it against this note.*
 
 TypeScript:
 
@@ -43,52 +46,65 @@ consteval auto data_member_spec(info type, data_member_options opts) -> info;
 
 `define_aggregate` takes a target (an incomplete class template specialisation) and a list of `data_member_spec`s. It finishes the target with those members. The returned `info` reflects the now-defined type.
 
-Usage pattern:
+Usage pattern. The target is a nested type of a class template, and the class defines it in its own `consteval` block (tested on GCC 16.2.0):
 
 ```cpp
 template <typename T>
-struct impl;   // forward-declared, never defined by hand
-
-template <typename T>
-using Picked = [: build_picked<T>() :];
-
-template <typename T>
-consteval auto build_picked() {
+consteval std::vector<std::meta::info> picked_specs() {
     std::vector<std::meta::info> specs;
     // ... collect data_member_specs ...
-    return std::meta::define_aggregate(^^impl<T>, specs);
+    return specs;
 }
+
+template <typename T>
+struct picked_holder {
+    struct type;   // declared here, completed just below
+    consteval { std::meta::define_aggregate(^^type, picked_specs<T>()); }
+};
+
+template <typename T>
+using Picked = picked_holder<T>::type;
 
 Picked<User> u;   // real, instantiable type
 ```
 
-The splicer `[: ... :]` pulls the synthesised type back into C++ source.
+Calling `define_aggregate` from a function that an alias splices (`using Picked = [: build_picked<T>() :]`) does not compile on GCC 16.2.0: `'define_aggregate' not evaluated from 'consteval' block`. Splicing works when the function only returns the reflection of a type that a `consteval` block has already defined, which is why the type is completed inside the class.
 
 ## `Pick<T, Fields...>`
 
-Keep only named members:
+Keep only named members. `fixed_string` is a small structural wrapper that lets a string literal be a template argument:
 
 ```cpp
-template <typename T, fixed_string... Fields>
-struct pick_impl;
+template <std::size_t N>
+struct fixed_string {
+    char data[N]{};
+    consteval fixed_string(char const (&s)[N]) { std::copy_n(s, N, data); }
+};
 
 template <typename T, fixed_string... Fields>
-using Pick = [: build_pick<T, Fields...>() :];
-
-template <typename T, fixed_string... Fields>
-consteval auto build_pick() {
+consteval std::vector<std::meta::info> pick_specs(bool omit = false) {
     constexpr auto ctx = std::meta::access_context::unchecked();
     std::vector<std::meta::info> specs;
     for (auto m : std::meta::nonstatic_data_members_of(^^T, ctx)) {
         auto name = std::meta::identifier_of(m);
-        if (((name == std::string_view{Fields.data}) || ...)) {
+        bool listed = ((name == std::string_view{Fields.data}) || ...);
+        if (listed != omit) {
             specs.push_back(std::meta::data_member_spec(
                 std::meta::type_of(m),
                 { .name = std::define_static_string(name) }));
         }
     }
-    return std::meta::define_aggregate(^^pick_impl<T, Fields...>, specs);
+    return specs;
 }
+
+template <typename T, fixed_string... Fields>
+struct pick_holder {
+    struct type;
+    consteval { std::meta::define_aggregate(^^type, pick_specs<T, Fields...>()); }
+};
+
+template <typename T, fixed_string... Fields>
+using Pick = pick_holder<T, Fields...>::type;
 ```
 
 Usage:
@@ -100,17 +116,23 @@ using PublicUser = Pick<User, "name", "age", "admin">;
 // struct { std::string name; int age; bool admin; };
 ```
 
+Members keep the order they have in `User`, whatever the order of the field list.
+
 `PublicUser` is a real type. You can construct it, name its fields (`pu.name`), pass it across ABIs, hash it, serialise it with [`rjson`](/posts/json-naive/). It's indistinguishable from a hand-written struct.
 
 ## `Omit<T, Fields...>`
 
-Inverse of `Pick`:
+Inverse of `Pick`. The same specs function with the filter flipped (the `omit` flag above), in its own holder:
 
 ```cpp
 template <typename T, fixed_string... Fields>
-consteval auto build_omit() {
-    /* same as Pick, but skip members whose name is in Fields */
-}
+struct omit_holder {
+    struct type;
+    consteval { std::meta::define_aggregate(^^type, pick_specs<T, Fields...>(/*omit=*/true)); }
+};
+
+template <typename T, fixed_string... Fields>
+using Omit = omit_holder<T, Fields...>::type;
 
 using PublicUser = Omit<User, "password_hash">;
 ```
@@ -119,7 +141,7 @@ using PublicUser = Omit<User, "password_hash">;
 
 ```cpp
 template <typename T>
-consteval auto build_partial() {
+consteval std::vector<std::meta::info> partial_specs() {
     constexpr auto ctx = std::meta::access_context::unchecked();
     std::vector<std::meta::info> specs;
     for (auto m : std::meta::nonstatic_data_members_of(^^T, ctx)) {
@@ -127,8 +149,17 @@ consteval auto build_partial() {
             std::meta::substitute(^^std::optional, {std::meta::type_of(m)}),
             { .name = std::define_static_string(std::meta::identifier_of(m)) }));
     }
-    return std::meta::define_aggregate(^^partial_impl<T>, specs);
+    return specs;
 }
+
+template <typename T>
+struct partial_holder {
+    struct type;
+    consteval { std::meta::define_aggregate(^^type, partial_specs<T>()); }
+};
+
+template <typename T>
+using Partial = partial_holder<T>::type;
 
 using UserPatch = Partial<User>;
 // struct { optional<string> name; optional<int> age; ... };
@@ -141,10 +172,14 @@ using UserPatch = Partial<User>;
 Strip `std::optional` from every field:
 
 ```cpp
+consteval bool is_optional(std::meta::info t) {
+    return std::meta::has_template_arguments(t) && std::meta::template_of(t) == ^^std::optional;
+}
+
 template <typename T>
-consteval auto build_required() {
-    std::vector<std::meta::info> specs;
+consteval std::vector<std::meta::info> required_specs() {
     constexpr auto ctx = std::meta::access_context::unchecked();
+    std::vector<std::meta::info> specs;
     for (auto m : std::meta::nonstatic_data_members_of(^^T, ctx)) {
         auto t = std::meta::type_of(m);
         if (is_optional(t)) {
@@ -154,24 +189,29 @@ consteval auto build_required() {
         specs.push_back(std::meta::data_member_spec(
             t, { .name = std::define_static_string(std::meta::identifier_of(m)) }));
     }
-    return std::meta::define_aggregate(^^required_impl<T>, specs);
+    return specs;
 }
+
+// required_holder and Required follow the same pattern as partial_holder and Partial.
 ```
 
-`Required<UserPatch>` recovers a `User`-like type (modulo ordering).
+`Required<UserPatch>` has the same member names, types and order as `User` and the same size, but it is a different type from `User`.
 
 ## `Readonly<T>`: make every field `const`
 
 ```cpp
 template <typename T>
-consteval auto build_readonly() {
+consteval std::vector<std::meta::info> readonly_specs() {
+    constexpr auto ctx = std::meta::access_context::unchecked();
     std::vector<std::meta::info> specs;
     for (auto m : std::meta::nonstatic_data_members_of(^^T, ctx)) {
         auto t = std::meta::add_const(std::meta::type_of(m));
-        specs.push_back(std::meta::data_member_spec(t, {/* ... */}));
+        specs.push_back(std::meta::data_member_spec(
+            t, { .name = std::define_static_string(std::meta::identifier_of(m)) }));
     }
-    return std::meta::define_aggregate(^^readonly_impl<T>, specs);
+    return specs;
 }
+// readonly_holder and Readonly follow the same pattern again.
 ```
 
 ## Beyond TypeScript
@@ -191,28 +231,41 @@ A common enterprise pattern:
 
 ```cpp
 struct User { /* 30 fields, including sensitive ones */ };
-struct UserPublicView   = Omit<User, "password_hash", "internal_id", "created_at_for_audit">;
-struct UserAdminView    = Pick<User, "id", "name", "email", "role", "last_login">;
-struct UserRegistration = Pick<User, "name", "email", "password">;
+// Sketch: assumes the full 30-field User; the small User above has no "id" or "email".
+using UserPublicView   = Omit<User, "password_hash", "internal_id", "created_at_for_audit">;
+using UserAdminView    = Pick<User, "id", "name", "email", "role", "last_login">;
+using UserRegistration = Pick<User, "name", "email", "password">;
 ```
 
 Each is a proper type you can return from API handlers, serialise, validate. You write the field list once; every variant falls out.
 
 ## Cost model
 
-`define_aggregate` runs at compile time. The synthesised type has no runtime marker. It's a genuine C++ type with a proper layout, alignment, size, and `std::is_standard_layout_v`-ness (when applicable). Zero runtime overhead.
+`define_aggregate` runs at compile time. The synthesised type has no runtime marker. It's a genuine C++ type. For `Pick<User, "name", "age", "admin">`, these `static_assert`s held on GCC 16.2.0 against a hand-written struct with the same members:
+
+```cpp
+struct HandPublic { std::string name; int age; bool admin; };
+using PublicUser = Pick<User, "name", "age", "admin">;
+static_assert(sizeof(PublicUser) == sizeof(HandPublic));
+static_assert(alignof(PublicUser) == alignof(HandPublic));
+static_assert(offsetof(PublicUser, age) == offsetof(HandPublic, age));
+static_assert(std::is_standard_layout_v<PublicUser>);
+static_assert(std::is_aggregate_v<PublicUser>);
+```
+
+The type is a plain data type with no extra runtime state.
 
 Compile-time cost scales with the number of `data_member_spec`s, linear in field count. For types with a few dozen fields, the overhead is negligible. For types with hundreds, measure; but it's still cheaper than the equivalent tuple-based TMP.
 
-## Caveats (again, implementation-dependent)
+## Caveats
 
-`define_aggregate` is newer and less settled than the other P2996 primitives. clang-p2996 implements it behind the `-freflection-latest` flag, but some edge cases (inheritance, virtual functions, member templates) may not round-trip cleanly. The simpler uses above (flat aggregates) are reliable.
+`define_aggregate` adds data members and nothing else. On GCC 16.2.0 it cannot add a base class or a member function: a base passed through `data_member_spec` becomes a field, and `.is_base` is not an option of `data_member_options`. It also needs the `consteval`-block arrangement shown above, and an older clang-p2996 snapshot needed a different flag; GCC 16.2.0 needed only `-freflection`. The simpler uses above (flat aggregates) are what I tested.
 
 ## What this enables long-term
 
 Combined with the serialization, CLI, ORM, DI, and mocking machinery from earlier posts, `define_aggregate` closes the loop. You can describe data **shapes** declaratively (by filtering, transforming, or combining existing types), and every surface (wire formats, database columns, help text, test doubles) follows. That's the programming model TypeScript has offered since 2016. C++ has it now, at compile time, zero-cost.
 
-<GodboltEmbed id="3o8T5h1od" title="Pick / Omit / Partial in C++26" />
+<GodboltEmbed id="3o8T5h1od" title="Pick building blocks: the field list a Pick would contain (no synthesis)" />
 
 ## Retiring MOC, then crossing languages
 
