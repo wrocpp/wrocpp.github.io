@@ -9,13 +9,16 @@ series: cpp26-reflection
 series_order: 21
 audience: working-cpp
 tags: [reflection, cpp26, optics, lens, haskell, reflect_optics]
-summary: "Haskell's lens library has been the gold standard for nested data access for fifteen years. Ports to C++ needed macro hell and never felt right. Reflection makes the pattern genuinely tractable. field<\"address.city\">(person) is now a first-class, zero-overhead, type-safe, composable lens."
+updatedDate: 2026-10-06
+summary: "Corrected on 6 October 2026: reflect_optics is not a published library (its repository holds only a README), the embedded demo is a reduced stand-in with no pipe operator, and several code claims did not hold as written. The correction at the top has the details and the GCC results; the rest is kept as published."
 draft: false
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
-> **Library repo:** [github.com/wrocpp/reflect_optics](https://github.com/wrocpp/reflect_optics) · v0.1.0 · MIT.
+*Correction, 6 October 2026. This post presents `reflect_optics` as a published library (v0.1.0, MIT), and it is not one. The repository linked below holds a README and nothing else: it has no code, release, tag or licence. What the post shows is a design sketch. The Compiler Explorer demo is a reduced stand-in: a struct `optics::field_lens<^^Member>` with static functions `view`, `set` and `over`, used once each on a field of `Address`. It prints `view: Wroclaw`, `set:  Warsaw` and `over: 50002`. It has no pipe operator, no `at`, no prisms and no traversals, and it checks no lens laws. I checked the other code claims on GCC 16.2.0 (`-std=c++26 -freflection`). First, `optics::field<&Team::members> | ...` does not compile as written: `field` is a function template that takes a `std::meta::info`, so it is not a value, and `field<^^Team::members> | field<^^Member::address>` is refused as invalid operands to `operator|` even when an `operator|` for any two types is declared. Second, a `Lens` with a `std::function<Whole(Whole, auto&&)>` member is refused (`'auto' parameter not permitted in this context`), so `over` is now a free function. Third, a `constexpr` variable whose type is `std::function` is refused (`is not literal`), so the constexpr lenses depend on the `std::function`-free version that the post describes and that was not built. The `field<M>()` function itself compiles when called as `field<^^Address::postal_code>()`. Fourth, "compiles to the same machine code as the hand-written access" had no listing behind it. I checked one `field_lens` access only: at `-O2` GCC 16.2.0 on AArch64 emits the same two instructions as a hand-written member access (listing below), and I did not build or measure a composed chain. Fifth, "the library ships compile-time proofs of the lens laws" is removed: there is no `lens_laws_hold`. I wrote the three laws by hand as `static_assert`s on one sample value for the stand-in `field_lens`, and they hold on GCC 16.2.0, which is a test on one value and not a proof. I also marked the dependency on `reflect_dx` as an untested idea, and the comparison row for this library is now a sketch. I did not re-check the comparison rows for other languages or the attributions in the text. The rest is left as published, so you can read it against this note.*
+
+> **No published library.** [github.com/wrocpp/reflect_optics](https://github.com/wrocpp/reflect_optics) is a placeholder repository with a README only. This post describes a design sketch.
 
 The pitch: you have a `Company` with departments which have teams which have members which have addresses. You want to update *one member's postal code*. In plain C++:
 
@@ -37,8 +40,10 @@ C++ has tried: Boost.Fusion, graninas/cpp_lenses, Scelta, various macro-heavy at
 ## Targeted API
 
 ```cpp
-#include <reflect_optics/optics.hpp>
+#include <reflect_optics/optics.hpp>  // sketch: there is no such header
 
+// Sketch, does not compile as written: field, at, |, view, set and over are not
+// defined in this form (field is a function template, so it is not a value).
 struct Address { std::string city; int postal_code; };
 struct Member  { std::string name; Address address; };
 struct Team    { std::vector<Member> members; };
@@ -62,7 +67,21 @@ Team team2 = optics::set(team, fifth_member_postal, 54321);
 Team team3 = optics::over(team, fifth_member_postal, [](int p) { return p + 1; });
 ```
 
-Each `optics::field<...>` is a small value type (pointer-to-member plus reflection metadata). `|` is a constexpr composition that produces a new lens type. The whole chain compiles to the same machine code as the hand-written access, genuinely zero-overhead.
+In the design, each `optics::field<...>` would be a small value type and `|` a constexpr composition that produces a new lens type. Neither exists. What I checked is one access through the stand-in `field_lens` (the type the embedded demo uses) against a hand-written one, with `g++-16 -std=c++26 -freflection -O2 -S` (Homebrew GCC 16.2.0, AArch64):
+
+```cpp
+int via_lens(Address const& a) { return optics::field_lens<^^Address::postal_code>::view(a); }
+int by_hand(Address const& a)  { return a.postal_code; }
+```
+
+```
+via_lens:  ldr  w0, [x0, 32]
+           ret
+by_hand:   ldr  w0, [x0, 32]
+           ret
+```
+
+Both are the same two instructions. I did not build a composed chain, so the claim that a whole chain costs nothing is untested.
 
 ## The shape of a lens
 
@@ -71,11 +90,18 @@ template <typename Whole, typename Part>
 struct Lens {
     std::function<Part(Whole const&)>         view;
     std::function<Whole(Whole, Part)>         set;
-    std::function<Whole(Whole, auto&&)>       over;   // over(f) = set(f(view()))
 };
+
+template <typename Whole, typename Part, typename F>
+Whole over(Lens<Whole, Part> const& l, Whole w, F&& f) {   // over(f) = set(f(view()))
+    Part p = f(l.view(w));
+    return l.set(std::move(w), std::move(p));
+}
 ```
 
-In our real library the `std::function` goes away. We template on function-pointer-like non-type template parameters so the whole thing is stamped out by the compiler per lens. No runtime allocation; no virtual dispatch. `constexpr auto` all the way down.
+As first published, `over` was a `std::function<Whole(Whole, auto&&)>` member, which GCC 16.2.0 refuses. The free function above compiled and ran there. A `std::function` member also keeps a `Lens` from being `constexpr`.
+
+A library could drop the `std::function` and template on function-pointer-like non-type template parameters, so that the compiler stamps out each lens. That version was not built, and the claims of no runtime allocation, no virtual dispatch and `constexpr auto` all the way down are about a design.
 
 ## Reflection's job
 
@@ -97,22 +123,22 @@ No macros. No code generation. The member access `w.[:M:]` is a splicer consumed
 
 ## Lens laws (static_assert)
 
-The library ships compile-time proofs that every synthesised lens satisfies the lens laws:
+A library could check the lens laws at compile time. `lens_laws_hold` is an idea and is not implemented:
 
 ```cpp
 static_assert(lens_laws_hold<optics::field<&Address::postal_code>>);
 
 // Which expands to:
-//   set(view(w)) == w                (Get-Put)
+//   set(w, view(w)) == w             (Get-Put)
 //   view(set(w, p)) == p             (Put-Get)
 //   set(set(w, p1), p2) == set(w, p2) (Put-Put)
 ```
 
-These assertions run at compile time against a few sample values. If you synthesise a "lens" that doesn't obey the laws, the build fails. (Mostly affects custom lenses; the reflection-derived ones always pass.)
+Such assertions would run at compile time against a few sample values, which is a test and not a proof. I wrote the three laws by hand as `static_assert`s for the stand-in `field_lens<^^Pt::x>` on one sample value (`Pt{1, 2}`), and they hold on GCC 16.2.0. The first law as first published was missing the `w` argument of `set`; it is fixed in the comment above.
 
 ## Prisms and traversals
 
-Lenses handle "always-present" parts (a struct's field). Prisms handle "maybe-present" (a variant case, `std::optional` content):
+Neither prisms nor traversals exist: the demo and the repository have neither, and the code below is a sketch. Lenses handle "always-present" parts (a struct's field). Prisms handle "maybe-present" (a variant case, `std::optional` content):
 
 ```cpp
 constexpr auto just_some = optics::prism<std::optional<int>>(
@@ -146,17 +172,17 @@ A traversal is "zero or more" access. The composition of a traversal with a lens
 | TypeScript `monocle-ts` | Yes | Partial | Yes |
 | Python `lenses` library | Yes | Runtime reflection | Yes |
 | Pre-reflect C++ (Boost.Fusion) | Awkward | Only with macros | Limited |
-| **C++26 `reflect_optics`** | **Yes** | **Yes (reflection)** | **Yes** |
+| C++26 (the sketch in this post) | Designed, not built | Designed, not built | Designed, not built |
 
-<GodboltEmbed id="jcTn618TT" title="reflect_optics — lens composition with |" />
+<GodboltEmbed id="jcTn618TT" title="reflect_optics sketch: view, set and over for one field (reduced stand-in)" />
 
 ## Why this is now tractable
 
 Barry Revzin pointed out in his 2025 CppCon talk that the splicer + expansion statement combination finally makes structural types viable as non-type template parameters. Lenses need exactly that: a way to "name" a member inside a type at compile time. `std::meta::info` is the NTTP you always needed.
 
-## What the library ships
+## What a library could ship (not built)
 
-Under [github.com/wrocpp/reflect_optics](https://github.com/wrocpp/reflect_optics):
+None of this exists, apart from the reduced `field_lens<^^T::member>` in the demo. It is the shape the sketch above points to:
 
 - `optics::field<&T::member>`: field lens.
 - `optics::at(index)`: index lens (for `std::vector`, `std::array`).
@@ -168,9 +194,8 @@ Under [github.com/wrocpp/reflect_optics](https://github.com/wrocpp/reflect_optic
 - Static laws checker.
 - `|` composition.
 
-Depends on `reflect_dx` (next post) for the compile-time ADL-fu that makes `|` find the right combinators.
+The `|` composition might depend on `reflect_dx` (next post) for the compile-time ADL that finds the right combinators. That is a design idea and I did not test it.
 
 ## Next in the series
 
 - **[Post 22: reflect_dx](/posts/reflect-dx/)**: pretty-printers + documentation generator.
-- Companion Monday short: *"A Haskell lens primer for C++ developers"*.
