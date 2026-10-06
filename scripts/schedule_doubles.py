@@ -74,6 +74,11 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # 20th while a paper author can still act on the date.
     "2026-10-20": {"slug": "dates-to-watch-buzios-gcc17", "hour": 16,
                    "why": "calendar short ahead of the Buzios meeting and GCC 17 stage 3"},
+    # An analysis of the meta-objects Qt Bridges' Rust layer builds at run time,
+    # replayed in C++ and diffed against moc. It runs beside the evergreen post
+    # (gcc-expansion-named-range) on the 21st.
+    "2026-10-21": {"slug": "replay-qt-bridges-meta-objects-against-moc", "hour": 16,
+                   "why": "Qt Bridges meta-object analysis alongside the evergreen post"},
 }
 
 
