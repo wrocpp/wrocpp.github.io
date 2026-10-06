@@ -2,6 +2,7 @@
 title: "reflect_telemetry: compile-time Prometheus metrics from annotated fields"
 slug: "reflect-telemetry"
 pubDate: 2026-06-27
+updatedDate: 2026-10-06
 author: filip-sajdak
 language: en
 kind: flagship
@@ -9,13 +10,15 @@ series: cpp26-reflection
 series_order: 23
 audience: working-cpp
 tags: [reflection, cpp26, telemetry, prometheus, opentelemetry, observability, reflect_telemetry]
-summary: "Every microservice has hand-registered counter() lines that drift from the variable they count. Annotate a field [[=metric(counter)]] and let reflection emit the Prometheus exposition + OpenTelemetry OTLP exporter, keeping names in lockstep with code. Genuinely novel — nobody is doing this yet."
+summary: "Corrected on 6 October 2026: the library this post describes has not been published, and its benchmark numbers were never measured. The note at the top says what the repository holds, what the embedded demo does and which code was fixed. The rest is kept as published."
 draft: false
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
-> Library repo: [github.com/wrocpp/reflect_telemetry](https://github.com/wrocpp/reflect_telemetry) · v0.1.0 · MIT.
+> Status: [github.com/wrocpp/reflect_telemetry](https://github.com/wrocpp/reflect_telemetry) is a placeholder repository: a README with no code, licence or release. This post is a design sketch.
+
+*Correction, 6 October 2026. This post said the library was published as v0.1.0 under the MIT licence, and listed what it ships. The repository holds a README and one commit, with no code, licence, tag or release, so there is no library, and the "What the library ships" list included things that do not exist: `otlp::exporter` and `labeled_counter`, as well as histograms. The most substantive stand-in is the embedded Compiler Explorer demo: about 90 lines in one file that walk a struct and print Prometheus text for counters and gauges, with a namespace prefix and HELP and TYPE lines taken from annotations. It has no histograms, labels, OTLP export or fault injection, and nothing registers a metrics object: `main` builds one and passes it to `expose_prometheus`, so the "auto-registered on first scrape" comment had no mechanism behind it. The benchmark line (about 15 ns per increment, 5 ns per gauge read, 250 ns per exposition walk over 50 metrics) was never measured and is removed, as is "tens of microseconds" for building a runtime registry, which is now marked as not measured. The claims of zero startup cost and zero metadata heap describe the design; the demo builds each metric name as a `std::string` at scrape time. The chaos example had two problems. `fault_point("db_read", .probability = 0.01)` does not compile: GCC 16.2.0 reports `expected primary-expression before '.' token`, because a designated initializer needs braces, and the line now reads `fault_point("db_read", {.probability = 0.01})`, which compiles and reads back the value through `annotations_of`. And the sentence saying that every access to `conn` goes through a fault injector is removed: reflection can read an annotation, but it cannot change what an access to a member does. The text below is left as published, apart from those corrections, so you can read it against this note.*
 
 Prometheus is the observability default. Every production C++ service you run has code like this, once per metric:
 
@@ -49,7 +52,7 @@ struct [[=metrics::namespace_("http")]] HttpStats {
         metrics::histogram_value request_duration_ms;
 };
 
-HttpStats stats{};   // default-constructed, auto-registered on first scrape
+HttpStats stats{};   // default-constructed; the scrape code passes it to expose_prometheus
 
 // In the handler:
 stats.requests_total.fetch_add(1);
@@ -126,11 +129,11 @@ The HELP text, metric type, and even the metric name all derive from compile-tim
 
 Runtime registration (what the Prometheus C++ client library does today) has three costs you may not notice until they bite:
 
-1. **Startup overhead.** Building the registry costs tens of microseconds and grows with metric count. For serverless workloads with cold-start SLOs, that matters.
+1. **Startup overhead.** Building the registry costs time that grows with metric count (not measured here). For serverless workloads with cold-start SLOs, that matters.
 2. **Memory overhead.** Each metric carries its metadata (name + help + label-set) in heap. Hundreds of metrics is nontrivial.
 3. **Divergence.** The name lives in a string literal next to the code; reflection ties it to the identifier.
 
-`reflect_telemetry` has zero startup cost (registration is compile time; exposition is a walk), zero metadata heap (all strings are `define_static_string` literals in `.rodata`), and zero divergence (rename the field, rename the metric).
+The design has no startup registration step (registration is compile time; exposition is a walk), keeps metric names in `.rodata` as `define_static_string` literals, and has zero divergence (rename the field, rename the metric). None of this was measured.
 
 ## OpenTelemetry OTLP export
 
@@ -180,23 +183,16 @@ A companion annotation vocabulary:
 
 ```cpp
 struct Database {
-    [[=chaos::fault_point("db_read", .probability = 0.01)]]
+    [[=chaos::fault_point("db_read", {.probability = 0.01})]]
     connection conn;
 };
 ```
 
-When compiled with `-DCHAOS_ENABLED=1`, every access to `conn` goes through a probabilistic fault injector that returns an error 1% of the time. Off by default, on in staging chaos runs. Reflection walks the struct, wraps annotated fields. Ship as `reflect_telemetry`'s `chaos` sub-namespace in v0.2.
+Reflection can read this annotation, for example to list the fault points of a struct. It cannot change what an access to `conn` does: injecting faults would need a wrapper type around the field or explicit calls at each use.
 
-## What the library ships
+## What exists today
 
-Under [github.com/wrocpp/reflect_telemetry](https://github.com/wrocpp/reflect_telemetry):
-
-- `metrics::counter`, `metrics::gauge`, `metrics::histogram` annotations.
-- `metrics::help`, `metrics::namespace_`, `metrics::labels` modifiers.
-- `expose_prometheus(obj)` for text exposition on the `/metrics` endpoint.
-- `otlp::exporter` for OTLP over HTTP/gRPC.
-- `labeled_counter<Labels...>` for multi-dimensional counters.
-- Benchmark: ~15 ns per increment on modern x86, ~5 ns per gauge read, ~250 ns per exposition walk over 50 metrics.
+[github.com/wrocpp/reflect_telemetry](https://github.com/wrocpp/reflect_telemetry) is a placeholder: a README with no code, licence or release. The embedded demo above is the most substantive stand-in. It has the `counter` and `gauge` annotations, `help` and `namespace_`, and an `expose_prometheus(obj)` walk that prints the text exposition. It does not have histograms, `labels`, `otlp::exporter`, `labeled_counter`, the chaos annotations, or any measured timing.
 
 ## Coming up: reflect_tracing and a chaos short
 
