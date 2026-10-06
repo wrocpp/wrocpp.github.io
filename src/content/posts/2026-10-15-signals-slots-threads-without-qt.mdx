@@ -151,7 +151,7 @@ Qt is not instrumented, and without that option ThreadSanitizer reports Qt's han
 
 ## What this has not been tested on
 
-- GCC 16.2 only (`std::meta::current_function` and `std::meta::exception` are missing from clang-p2996). The demos ran on Compiler Explorer's x86-64 GCC 16.2, the ThreadSanitizer runs on aarch64 Linux in Docker. No ThreadSanitizer run on x86_64, and the repository's CMake preset says Homebrew GCC on macOS ships no libtsan (read, not run).
+- GCC 16.2 only (`std::meta::current_function` and `std::meta::exception` are missing from clang-p2996). The demos ran on Compiler Explorer's x86-64 GCC 16.2, the ThreadSanitizer runs on aarch64 Linux in Docker. CI on a GitHub x86_64 runner passed the core and Qt tests, the tool tests, the four ported Qt examples (built with no moc, output identical to the baseline) and the moc trap ([run 37466622213 on main on 6 October 2026](https://github.com/wrocpp/reflect-moc/actions/runs/37466622213)); that run has no ThreadSanitizer step, so every ThreadSanitizer statement in this post is for aarch64 Docker only, and the repository's CMake preset says Homebrew GCC on macOS ships no libtsan (read, not run).
 - ThreadSanitizer sees only the interleavings that happen. The tests are short and ran in an 8-core Docker VM, so the result is evidence, not a proof.
 - A function-form signal checks the argument types of `rqt::emit{this}(...)` at run time and aborts on a mismatch (`limit_function_form_argument_types_checked_at_run_time`). The descriptor and by-name forms check at compile time.
 - The latch explanation rests on the header and the counts above. The latch variants were run on copies of the sources, and the mutex and semaphore gates are not in the repository.
