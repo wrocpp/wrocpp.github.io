@@ -9,14 +9,16 @@ series: cpp26-reflection
 series_order: 22
 audience: working-cpp
 tags: [reflection, cpp26, debugger, lldb, gdb, natvis, docs, reflect_dx]
-summary: "Every C++ shop writes .natvis files by hand and they go stale. Every C++ shop wishes their headers were documented but can't face Doxygen XML. reflect_dx ships as a build-step tool: walk your headers with reflection, emit LLDB / GDB / Visual Studio pretty-printers + markdown docs. Your struct is your documentation and its debugger visualisation."
+updatedDate: 2026-10-06
+summary: "Corrected on 6 October 2026: reflect_dx is not a published library (its repository holds only a README), the two tools in this post do not exist, and reflection cannot read comments. The one working piece is a natvis snippet walk, which the embedded demo runs. The correction at the top has the details; the rest is kept as published."
 draft: false
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
-> **Library repo:** [github.com/wrocpp/reflect_dx](https://github.com/wrocpp/reflect_dx) · v0.1.0 · MIT.
-> **Two tools in one repo:** `reflect-pretty` (debugger visualisation) + `reflect-docs` (documentation).
+*Correction, 6 October 2026. This post presents `reflect_dx` as a published library with two command-line tools, and it is not one. The repository linked below holds a README and one "Initial commit" from 22 June 2026: no code, release, tag or licence. `reflect-pretty`, `reflect-docs`, `libreflect_dx_core.a` and the CMake function `reflect_dx_generate()` do not exist, so the terminal output and the generated files shown below came from no tool. The Compiler Explorer demo covers one thing: the natvis walk from the sketch near the end. It prints a `<Type>` element with a `DisplayString` and an `Expand` block for two structs, and nothing else (no CLI, no LLDB or GDB formatter, no documentation generator). I ran it on Compiler Explorer (clang-p2996) and on GCC 16.2.0, and both print the same text. Three claims do not work as written. First, reflection cannot read comments: the C++26 reflection API has no comment query (the `<meta>` synopsis in [eel.is/c++draft/meta.syn](https://eel.is/c++draft/meta.syn) lists `annotations_of` and `source_location_of`, which gives a file and a line, and nothing for comments), so a documentation generator can use identifiers and annotations only. Second, an external binary cannot run `std::meta` functions over a header it parses: reflection runs inside the compiler while it compiles the program that uses it, and `std::meta::namespace_members_of` is not a function (GCC 16.2.0: `'namespace_members_of' is not a member of 'std::meta'`). What does work is a small generator program that includes the header and walks `std::meta::members_of(^^ns, ctx)`. On GCC 16.2.0 that program listed the fields of two structs in a namespace. It sees the namespace as that one translation unit declares it. Third, `natvis_snippet` returns `std::string` from a `consteval` function: on GCC 16.2.0 a call whose result is used at run time is refused (`is not a constant expression`), and a `constexpr std::string` variable holding a longer string is refused too (`refers to a result of 'operator new'`). The embedded demo returns `char const*` through `std::define_static_string`, and that form compiles and runs. I also removed the "share 80%" figure, which was never measured, and the promise of a companion short that was never published. The text below is otherwise left as published, so you can read it against this note.*
+
+> **No published library.** [github.com/wrocpp/reflect_dx](https://github.com/wrocpp/reflect_dx) is a placeholder repository with a README only. This post describes a design sketch.
 
 Two universal C++ papercuts this post closes.
 
@@ -42,7 +44,7 @@ The default LLDB / GDB / Visual Studio debugger view of a nested struct is a tre
 
 You can make this nicer by writing a pretty-printer: a `.natvis` XML blob for Visual Studio, a Python formatter for LLDB, a Python formatter for GDB. Every team I've worked with writes one for their critical types and then watches it go stale as the types evolve.
 
-`reflect-pretty` emits the formatter at build time from your reflected types:
+A tool named `reflect-pretty` could emit the formatter at build time from your reflected types. It does not exist; this is the command line the sketch imagines:
 
 ```sh
 $ reflect-pretty include/models.hpp \
@@ -51,14 +53,14 @@ $ reflect-pretty include/models.hpp \
     --out-gdb     debug/models.gdb.py
 ```
 
-Now:
+Output a tool like that would aim for (illustrative, produced by no tool):
 
 ```
 (lldb) p user
 (User) { name="Filip" age=40 admin=true home=Address{city="Warsaw" postal=12345} }
 ```
 
-Change a struct, re-run the tool, the formatter follows.
+With such a tool, you would change a struct, re-run it, and the formatter would follow.
 
 ## Papercut #2: documentation
 
@@ -66,13 +68,13 @@ Doxygen is 30 years old and still the standard. Its output looks 30 years old to
 
 The real problem: Doxygen doesn't know about your *annotations*, the `[[=json_name("id")]]` that names the JSON wire field, the `[[=gen::range(0, 150)]]` that constrains property test inputs. Those are where the actual semantic information lives in a reflection-driven codebase, and Doxygen can't see them.
 
-`reflect-docs` walks your headers with reflection, extracts identifiers + annotations + comments, and emits modern markdown / HTML:
+A tool named `reflect-docs` could walk your types with reflection, extract identifiers and annotations (reflection cannot see comments), and emit modern markdown / HTML. It does not exist; this is the command line the sketch imagines:
 
 ```sh
 $ reflect-docs include/models.hpp --out docs/api/
 ```
 
-Produces `docs/api/user.md`:
+It would produce `docs/api/user.md`, shown here as an illustration of the target (produced by no tool):
 
 ```markdown
 # `struct User`
@@ -97,28 +99,33 @@ Creates a new user account. (from `[[=description("...")]]`)
 }
 ```
 
-(generated from `reflect_json` schema, shows cross-format renames if any)
+(would be generated from a JSON serializer's schema; there is no `reflect_json` repository)
 ```
 
 Your `struct` declaration is your documentation source of truth.
 
 ## How the build step works
 
-`reflect-pretty` and `reflect-docs` are thin binaries built on top of the clang-p2996 compiler frontend as a library. When you run `reflect-pretty models.hpp`, it:
+> **Not possible as described.** `std::meta` functions run inside the compiler, while it compiles the program that calls them. A separate binary cannot use a compiler frontend as a library to evaluate them over a header, and `namespace_members_of` is not a `std::meta` function. The working shape is a generator program that includes the header and walks `std::meta::members_of(^^ns, ctx)`, as the correction at the top says. The list below is the design as first written.
+
+`reflect-pretty` and `reflect-docs` were meant to be thin binaries built on top of the clang-p2996 compiler frontend as a library. When you run `reflect-pretty models.hpp`, it would:
 
 1. Invokes clang-p2996 frontend to parse `models.hpp`.
-2. Walks every top-level struct/class reflection (`namespace_members_of(^^your_namespace)`, a P3547-ish capability via namespace reflection).
+2. Walks every top-level struct/class reflection (`namespace_members_of(^^your_namespace)`, which is not a real function; see the note above).
 3. For each type, generates an emitter snippet in the target format:
    - natvis: XML with `<DisplayString>` + `<Expand>` blocks.
    - LLDB: Python class subclassing `lldb.SBSyntheticValueProvider`.
    - GDB: Python class subclassing `gdb.printing.PrettyPrinter`.
 4. Writes the output file.
 
-The generated Python/XML files are small, so you can check them in, review diffs, rerun in CI.
+The generated Python/XML files would be small, so you could check them in, review diffs, rerun in CI.
 
 ## Walking for pretty-printers (sketch)
 
 ```cpp
+// Sketch, refused by GCC 16.2.0 when the result is used at run time: a
+// consteval function cannot return std::string out of constant evaluation.
+// The embedded demo returns char const* through std::define_static_string.
 template <typename T>
 consteval std::string natvis_snippet() {
     std::string out;
@@ -152,7 +159,7 @@ consteval std::string natvis_snippet() {
 }
 ```
 
-One function walks the fields, emits the visualisation. `reflect-pretty` composes this over every struct it finds in the header, producing a `.natvis` file.
+One function walks the fields and emits the visualisation. A tool could compose this over each struct in a header to produce a `.natvis` file; that tool does not exist.
 
 ## Comparison
 
@@ -162,27 +169,18 @@ One function walks the fields, emits the visualisation. `reflect-pretty` compose
 | Visual Studio native | debug info | No | Partial (works for primitives) |
 | LLDB / GDB pythons | .py files | Yes | No |
 | Rust `#[derive(Debug)]` | The struct | No (auto) | Yes |
-| **reflect_dx** | **The struct** | **No (reflection)** | **Yes (re-run on change)** |
+| **reflect_dx (the sketch in this post, not built)** | **The struct** | **No (reflection)** | **Yes (re-run on change)** |
 
-<GodboltEmbed id="75fzcaoTv" title="reflect_dx — natvis emission from a reflection walk" />
+<GodboltEmbed id="75fzcaoTv" title="reflect_dx sketch: natvis snippet for two structs (the only code that runs)" />
 
 ## Why both tools in one repo
 
-`reflect-pretty` and `reflect-docs` share 80% of their plumbing: a frontend wrapper around clang-p2996 that exposes reflection to a host program as a C++ library. Splitting them would duplicate that infrastructure. Keeping them together lets teams opt into one or both without adding a second dependency.
+The design assumed that `reflect-pretty` and `reflect-docs` would share their plumbing, a frontend wrapper around clang-p2996 that exposes reflection to a host program. That wrapper is the part that does not work as described, and neither tool is built, so no share of shared code was measured. The idea of a third tool, `reflect-bindings`, which would emit Python / Lua / WASM bindings from a C++ header, is also only an idea.
 
-Future sibling tool in the same repo: `reflect-bindings`, which emits Python / Lua / WASM bindings from a C++ header. Follow-up post.
+## What exists today
 
-## What the library ships
-
-Under [github.com/wrocpp/reflect_dx](https://github.com/wrocpp/reflect_dx):
-
-- `reflect-pretty` CLI, emits .natvis / .lldb.py / .gdb.py.
-- `reflect-docs` CLI, emits markdown / HTML / JSON Schema.
-- `libreflect_dx_core.a`, the shared clang-p2996-frontend wrapper.
-- CMake integration: `reflect_dx_generate()` CMake function drops the outputs into your build tree automatically.
-- Sample `.natvis` / LLDB output for common STL types.
+[github.com/wrocpp/reflect_dx](https://github.com/wrocpp/reflect_dx) is a placeholder: a README with no code, licence or release. The embedded demo is the only code. It walks the data members of `Address` and `User` and prints a `.natvis` `<Type>` element for each, with a `DisplayString` and an `Expand` block. It has no command-line tool, no LLDB or GDB formatter, no documentation generator, no CMake integration and no output for STL types. The `.natvis` text it prints was not loaded into Visual Studio here.
 
 ## Next in the reflection arc
 
 - [Post 23: reflect_telemetry](/posts/reflect-telemetry/), compile-time metrics for production.
-- Companion Monday short: *"How LLDB summary providers actually work"*.
