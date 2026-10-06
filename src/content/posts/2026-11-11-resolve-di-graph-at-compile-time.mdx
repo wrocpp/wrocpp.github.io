@@ -1,0 +1,192 @@
+---
+title: "C++26 reflection resolves a dependency-injection graph at compile time"
+slug: "resolve-di-graph-at-compile-time"
+pubDate: 2026-11-11
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 32
+audience: working-cpp
+tags: [reflection, cpp26, di, dependency-injection, gcc]
+summary: "A 231-line header reads constructor parameters with parameters_of, plans the whole object graph in one consteval function and stores it in a struct made by define_aggregate. Cycles, missing bindings and ambiguous bindings stop the build with a sentence naming the path. With exceptions off, GCC 16.2 compiles the result to the same calls as hand wiring. A 300-type graph needs a raised constexpr limit, and by-value parameters are refused."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+*Correction to <PostLink slug="dependency-injection">the earlier dependency-injection post</PostLink> (27 September). Its container looked services up in a hash map at run time, and its runnable example never called `parameters_of`, so the title's claim was never demonstrated. Three details were also wrong. The circular-dependency snippet wrote `"circular dependency at " + typeid(T).name()`, which adds two `const char*` pointers and does not compile. It cited P2988 for namespace reflection, but that paper is about `std::optional<T&>` (the 6 October audit of the series found this; I did not re-read the paper). And it called namespace reflection "still in flight", while `members_of(^^ns)` works on GCC 16.2, with the limit that a listing sees only the declarations of its own translation unit. This post is the version that does what that one described.*
+
+This is what GCC 16.2 prints when the graph has a cycle:
+
+```text
+error: static assertion failed: dependency cycle: A -> B -> C -> A
+```
+
+Nothing in the code spells out the graph. The classes are:
+
+```cpp
+struct B; struct C;
+struct A { explicit A(B&); };
+struct B { explicit B(C&); };
+struct C { explicit C(A&); };
+struct Top { explicit Top(A&); };
+int main() { auto g = di::make<Top>(); (void)g; }
+```
+
+The header behind `di::make` reads each constructor's parameter list, follows the types, and stops with that sentence when it meets a type it is already building. The same header wires a 12-type application with no registration calls, and the generated code matches hand wiring under one condition that I come to below.
+
+## What the application looks like
+
+The application is plain C++. DI appears as two annotations and one list of bindings:
+
+```cpp
+struct [[=di::singleton]] Config { int port = 8080; };
+struct ILogger { virtual ~ILogger() = default; virtual void log(std::string_view) = 0; };
+struct [[=di::singleton]] ConsoleLogger final : ILogger {
+  Config const& cfg; explicit ConsoleLogger(Config const& c) : cfg(c) {}
+  // log(...) elided
+};
+struct IClock { /* ... */ };
+struct [[=di::singleton]] SystemClock final : IClock { /* now() returns 1700000000 */ };
+struct [[=di::singleton]] FixedClock final : IClock { /* now() returns 42 */ };
+
+struct Billing {
+  Repo& repo; IClock& clock; ILogger* log; std::unique_ptr<Validator> v;
+  Billing(Repo& r, [[=di::named("fixed")]] IClock& c, ILogger* l, std::unique_ptr<Validator> val);
+};
+
+auto g = di::make<Api, di::bind<ILogger, ConsoleLogger>, di::bind<IClock, SystemClock>,
+                  di::bind<IClock, FixedClock>.named("fixed")>();
+Api& a = g.root();
+```
+
+`[[=di::named("fixed")]]` sits on a constructor parameter, next to the name it qualifies. That works on GCC 16.2: `annotations_of` accepts a function parameter, and `extract<name_t>` reads the string back. Singletons are one instance per graph, and everything else is transient.
+
+## How constructors become a graph
+
+The planner is one `consteval` function, and the part that matters is short. For a concrete type it picks the constructor (the one annotated `[[=di::inject]]`, otherwise the only public user-declared one), asks for `parameters_of`, and resolves each parameter by its type:
+
+```cpp
+auto ps = parameters_of(ctor);
+for (std::size_t i = 0; i < ps.size() && err.empty(); ++i)
+  n.args.push_back(resolve(c, ps[i], i));
+```
+
+`resolve` reads the parameter's type and decides how the graph hands the object over:
+
+| parameter | what the graph passes |
+|---|---|
+| `T&`, `T const&` | the graph-owned instance |
+| `T*` | the address of the graph-owned instance |
+| `std::unique_ptr<T>` | a fresh heap instance (a compile error if `T` is a singleton) |
+| `std::shared_ptr<T>` | `make_shared` for a transient; for a singleton a non-owning alias, because the graph owns it |
+| `T` by value, `T&&` | refused: `unsupported parameter form Config in Svc` |
+
+Interfaces go through the binding list, and a qualifier selects among bindings of the same interface. The graph never splices a parameter, only the parameter's type, which matters because GCC 16.2 rejects a splice of a parameter reflection (`cannot use 'x' function parameter reflection in a splice expression`).
+
+## Where the objects live
+
+The graph owns its instances in one struct that `define_aggregate` completes, with one member per stored instance:
+
+```cpp
+template <class Root, auto... Bs>
+class graph {
+  static constexpr detail::plan_t P = detail::compute(^^Root, {Bs...});
+  static_assert(P.error.empty(), P.error);
+  struct slots;
+  consteval { define_aggregate(^^slots, detail::slot_specs(P)); }
+  slots s;
+  // ...
+};
+```
+
+Each member is a `slot<T>` union, so the struct supplies raw storage and the graph's constructor builds the objects in dependency order and destroys them in reverse. The plan is a constexpr string, which the demo prints:
+
+```text
+plan:
+  n0 [0] Config()
+  n1 [1] ConsoleLogger(n0)
+  n2 [2] Cache(n1)
+  n3 [3] Repo(n1, n2)
+  n4 [4] FixedClock()
+  n5 [heap] Validator()
+  n6 [5] Billing(n3, n4, n1, n5)
+  n7 [6] Cache(n1)
+  n8 [7] Repo(n1, n7)
+  n9 [8] SystemClock()
+  n10 [9] Orders(n8, n9)
+  n11 [10] Api(n6, n10)
+```
+
+Twelve nodes, eleven slots, and `Validator` on the heap because `Billing` takes it by `unique_ptr`. `Cache` appears twice: a transient injected by reference gets one instance per injection site, so the program prints `same repo cache: 0` while `same logger: 1`. `Billing` received `FixedClock` (its clock reads 42) and `Orders` received `SystemClock` (1700000000).
+
+## Errors that name the path
+
+Each failure is recorded as a string during planning, and `static_assert(P.error.empty(), P.error)` prints it. These are the `error:` lines from GCC 16.2.0 in Docker:
+
+```text
+static assertion failed: missing binding: ILogger is an interface with no di::bind; required by parameter 'logger' of Repo's constructor (path: Service -> Repo)
+static assertion failed: ambiguous binding: 2 bindings for ILogger serve parameter 'logger' of Service's constructor (path: Service)
+static assertion failed: Service has 2 public constructors and none is annotated [[=di::inject]] (path: Service)
+static assertion failed: qualifier has no binding: parameter 'clock' of Service's constructor asks for IClock named "fixed", but no di::bind<IClock, ...>.named("fixed") exists
+```
+
+GCC adds a trailing line saying the `empty()` expression evaluated to false, and the "In instantiation of" context spells out every binding as a full `di::binding{...}` literal, which grows with the binding list. The message line itself has no template noise. Parameter names appear only while every declaration of the constructor spells them the same way; otherwise the message says `#1` for the index. A `-DDI_THROW` build throws `std::meta::exception` from the planner instead, and the text is the same inside an "uncaught exception" wrapper whose single quotes collide with the quoted parameter names, so the `static_assert` form reads better.
+
+## Does it equal hand wiring?
+
+Only with exceptions off. I compiled `build_graph()` twice at `-O2 -S`, once through the graph and once as hand-written locals, and compared the function bodies. On GCC 16.2.0 aarch64 in Docker:
+
+| flags | graph instructions | hand instructions | calls (graph / hand) | same call list |
+|---|---|---|---|---|
+| default | 241 | 207 | 15 / 13 | no |
+| `-ftrivial-auto-var-init=uninitialized` | 241 | 204 | 14 / 13 | no |
+| `-fno-exceptions` | 181 | 182 | 9 / 8 | no |
+| both flags | 181 | 182 | 8 / 8 | yes |
+
+Two things separate the rows. First, `-fno-exceptions` removes about 60 instructions of landing pads from the graph, and the same flag alone is not enough, because the graph makes one call more than the hand version in the third row. I did not inspect that call. My guess is a zero fill: Homebrew GCC 16.2 initialises automatic storage with zeros unless `-ftrivial-auto-var-init=uninitialized` is passed, so the graph's raw `slots` aggregate would pay a fill that hand-written locals mostly avoid. Second, an early version built zero-argument nodes with `std::construct_at`, which value-initialises, and GCC emitted a 552-byte `memset` for one of them. The header now default-initialises (`::new (p) T;`) for nodes without arguments.
+
+With both flags the two builds make the same calls in the same order (two `operator new` for the two `unique_ptr<Validator>`, the sink, the deletes), and the instruction counts differ by one. With exceptions on, the graph has more cleanup code than the hand version: 34 more instructions in the Docker run, about 24 in my first run on Homebrew GCC 16.2. I did not find the cause. It is not extra semantics, because the graph does not destroy the slots built before a throwing constructor, while the hand version unwinds its locals. That is a gap, not a saving, and it is listed below.
+
+## What 300 types cost
+
+At the default settings a 300-type graph fails:
+
+```text
+'constexpr' evaluation operation count exceeds limit of 33554432 (use '-fconstexpr-ops-limit=' to increase the limit)
+```
+
+With `-fconstexpr-ops-limit=4000000000` it compiles. The synthetic graph is layered, ten types per layer, each type taking three references to the next layer, all singletons. Timings from Homebrew GCC 16.2 on an Apple M2 Max (`-c`, three runs, minimum to maximum):
+
+| graph | `-O0` wall s | `-O2` wall s | peak RSS at `-O0` |
+|---|---|---|---|
+| the 31-type application | 0.81-0.84 | 0.74-0.77 | 219 MB |
+| 100 types | 1.61-1.65 | 1.32-1.35 | 330 MB |
+| 300 types | 5.07-5.09 | 4.25-4.26 | 500 MB |
+
+The cost grows roughly linearly with the number of types and hardly depends on `-O`. The same 300-type file took 9.3 to 10.7 seconds of wall time in the aarch64 Docker container, so treat the absolute numbers as machine-specific. I do not know what makes 300 types hit the limit: making the error strings lazy, so they are built only on failure, did not remove it.
+
+## Against Boost.DI
+
+Boost.DI is the baseline, and it has what this header lacks. The README describes a C++14 library, its latest release in the changelog is 1.3.0 (2023-05-23), and it documents scopes, annotations for several bindings of one type, an "Error Messages" section, and tables of compile times and binary sizes. It runs on every compiler that supports C++14, and this header needs GCC 16 with `-freflection`. I did not build or benchmark Boost.DI, so the post makes no speed or error-quality comparison.
+
+What I can say about the design difference is limited to how a constructor is read. As I understand Boost.DI, it deduces constructor arity by trial, with a configurable limit, and uses `BOOST_DI_INJECT` or a traits specialisation where that is ambiguous; I did not verify this against its source. Here `parameters_of` returns the actual parameter list, with types and names, so there is no arity limit and a qualifier is an attribute on the parameter. What the graph lacks next to Boost.DI is long: years of production use, scopes beyond singleton and transient, runtime-swappable bindings (a test binding here is a different `di::graph<...>` type), factories injected as `std::function`, and by-value parameters.
+
+<GodboltEmbed id="Erff5o8Pj" gccOnly gccLabel="GCC 16.2" title="The DI graph, single file" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -Wall -Wextra -Werror · compiles and runs" />
+
+## What this has not been tested on
+
+- GCC 16.2 only. clang-p2996 and GCC trunk were not tried.
+- The assembly comparison covers one function, on aarch64 only (Docker and Homebrew). No x86-64 assembly was compared, and not at `-O3`.
+- Exception safety: when a constructor throws part-way, the singletons already built are not destroyed.
+- Not handled: by-value and `T&&` parameters, `std::function` factories, constructor templates, inherited constructors, default arguments, run-time rebinding.
+- Two types with the same name in different namespaces print the same name in messages, because they use `identifier_of`.
+- A qualifier name is limited to 23 characters. The graph is neither copyable nor movable.
+- 300 types are synthetic and use singletons only. I have no measurement on a real application of that size, and the memory figures are one machine's `-l` output.
+- Boost.DI was not built or measured.
+
+---
+
+**Sources** (checked 6 October 2026): [boost-ext/di README and changelog](https://github.com/boost-ext/di) · the spike's `s3/RESULTS_s3.md` and `RESULTS.md` (GCC 16.2.0, Homebrew, aarch64 macOS, 5 October) · the Docker re-run of the demo, error cases, assembly comparison and 300-type compile with `gcc:16.2` (aarch64 Linux). The example is `posts/85-di-graph/examples/di_graph_single_file.cpp` in the examples repository.
