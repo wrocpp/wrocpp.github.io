@@ -1,0 +1,196 @@
+---
+title: "Generating an RPC client and a mock as callable data members"
+slug: "generate-rpc-client-and-mock-with-data-members"
+pubDate: 2026-11-10
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 32
+audience: working-cpp
+tags: [reflection, cpp26, define_aggregate, rpc, mocking]
+summary: "define_aggregate adds data members and no member functions, but a data member with an operator() is called like a function. One empty member per method of an interface gives an RPC client with no IDL and a mock for code that is generic over its clock. Both build and run on GCC 16.2, the client is the size of its transport (32 bytes against 40 without the attribute), and each member finds its owner as this minus offset_of. Overloaded methods, const methods and a virtual reference slot do not work, and the errors are quoted."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+```cpp
+rpc::client<Api> client{.rpc_transport = {send_to_server}};
+int sum = client.add(2, 3);
+```
+
+`Api` declares `add` and never defines it. `rpc::client<Api>` has no member function called `add` either. It has a data member called `add`, and that member has an `operator()`. The call serializes `2` and `3`, sends them through the transport, and reads an `int` back. This post builds that client and a mock out of the same primitive, on GCC 16.2, and lists what the primitive cannot do. It is the replacement that the correction at the top of <PostLink slug="auto-mocks">the auto-mocks post</PostLink> promised for code that is generic over its interface.
+
+## Why a data member
+
+<PostLink slug="define-aggregate">`define_aggregate`</PostLink> completes a class by giving it non-static data members. It cannot add a member function, and it cannot add a base class: GCC 16.2 refuses `.is_base`, and a data member of an abstract type is an error (the exact messages are in the auto-mocks correction). So a class generated from an interface cannot be an implementation of that interface.
+
+A data member of class type can still be called. If its type has an `operator()`, `c.add(2, 3)` is `c.add.operator()(2, 3)`, and the name `add` comes from `identifier_of` on the method it stands for. The type of each member is a template instantiated with the reflection of its method, so one template, `method<Owner, ^^Api::add>`, becomes a different class for every method and carries the method's signature.
+
+## The RPC client
+
+This is the member type from [`rpc_client_single_file.cpp`](https://github.com/wrocpp/cpp26-reflection-examples/blob/6964dd0/posts/84-callable-members/examples/rpc_client_single_file.cpp). It is an empty class whose call operator serializes its arguments:
+
+```cpp
+template <info Owner, info M, class Sig = typename [:std::meta::type_of(M):]> struct method;
+template <info Owner, info M, class R, class... A> struct method<Owner, M, R(A...)> {
+  R operator()(A... a) {
+    using O = typename [:Owner:];
+    constexpr std::size_t off = std::meta::offset_of(member_of_type(Owner, ^^method)).bytes;
+    O& self = *reinterpret_cast<O*>(reinterpret_cast<char*>(this) - off);  // owner recovery
+    std::string bytes;
+    (put(bytes, a), ...);
+    std::string reply = self.rpc_transport.send(std::meta::identifier_of(M), bytes);
+    if constexpr (!std::is_void_v<R>) { reader r{reply}; return get<std::remove_cvref_t<R>>(r); }
+  }
+};
+```
+
+The generator declares the class and fills it in a `consteval` block, one transport member and then one member per method of `Api`:
+
+```cpp
+template <class Api> struct client_gen {
+  struct type;
+  consteval {
+    std::vector<info> specs;
+    specs.push_back(std::meta::data_member_spec(^^transport, {.name = "rpc_transport"}));
+    for (info m : methods_of(^^Api))
+      specs.push_back(std::meta::data_member_spec(
+          std::meta::substitute(^^method, {std::meta::reflect_constant(^^type),
+                                           std::meta::reflect_constant(m)}),
+          {.name = std::meta::identifier_of(m), .no_unique_address = RPC_NUA}));
+    std::meta::define_aggregate(^^type, specs);
+  }
+};
+template <class Api> using client = typename client_gen<Api>::type;
+```
+
+The demo also has a server. It reflects `Api`, finds the method whose name arrives on the wire, decodes the arguments and calls a real `ApiImpl`, so the whole round trip is in one file. The wire format is a toy: integers as text and strings with a length prefix. Here is the run on Compiler Explorer (g162, x86-64):
+
+<GodboltEmbed id="v4TTrdbss" gccOnly gccLabel="GCC 16.2" title="An RPC client with no IDL: one callable data member per method" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -Wall -Wextra · runs live" />
+
+```text
+add=5 greet=hello wro pings=2 sizeof(client)=32 sizeof(transport)=32
+```
+
+Adding a method to `Api` adds a member to the client and a case to the server, with no other edit. Removing `greet` from `ApiImpl` while `Api` still declares it stops the build with `uncaught exception of type 'std::meta::exception'; 'what()': 'rpc: Impl lacks a method of Api'`.
+
+## How a member finds the object it belongs to
+
+The call operator needs the transport, which lives in the client, and a member object does not know its owner. The code above recovers it. `member_of_type` walks `nonstatic_data_members_of` the owner and returns the member whose type is `method<Owner, M>`. `offset_of` of that member is a constant expression, and the owner is `this` minus that offset. It is a `reinterpret_cast` from a member subobject to the enclosing object, with no pointer stored in the member. `Owner` is `^^type`, passed as a template argument while the class is still incomplete, which is why the lookup is deferred into the call operator.
+
+The lookup is by type, so every member of a class needs a type of its own. Here the type carries `^^Api::add`, so it is unique. Two members of one type cannot be told apart from `this`. A probe on GCC 16.2.0, not part of the demo, made that concrete with two empty members of one type: they were at offsets 0 and 1, and a lookup by type returned 0 for both. The same shape with two different types, `cell<0>` and `cell<1>`, found the right one.
+
+Because the members are empty, they can share an address. With `[[no_unique_address]]`, `client<Api>` is 32 bytes, the size of its `std::function` transport, and all four members sit at offset 0. Without the attribute it is 40 bytes with the methods at 32, 33 and 34. [`member_offsets_single_file.cpp`](https://github.com/wrocpp/cpp26-reflection-examples/blob/6964dd0/posts/84-callable-members/examples/member_offsets_single_file.cpp) generates the client both ways and calls through each:
+
+<GodboltEmbed id="zv69ea14K" gccOnly gccLabel="GCC 16.2" title="Where the callable members sit, with and without no_unique_address" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -Wall -Wextra · runs live" />
+
+```text
+with [[no_unique_address]]   : sizeof=32  rpc_transport@0  add@0  greet@0  ping@0  add=5 pings=1
+without [[no_unique_address]]: sizeof=40  rpc_transport@0  add@32  greet@33  ping@34  add=5 pings=1
+```
+
+The same recovery works at both layouts, because the arithmetic goes through `offset_of` and does not assume offset 0. The same attribute is what made signals unusable in Qt's `connect`, a trap described in <PostLink slug="qt-signals-as-data-members">the post on signals as data members</PostLink>. There the members must have distinct addresses, because Qt compares the raw pointer-to-member bytes. Nothing here compares them.
+
+## A mock for code that is generic over its clock
+
+The second use needs no owner. Each member of `Mock<IClock>` holds its own state: a programmed return value, a call counter and the recorded arguments. `IClock` is only read for names and signatures:
+
+```cpp
+template <info M, class R, class... A> struct method<M, R(A...)> {
+  using args_t = std::tuple<std::remove_cvref_t<A>...>;
+  using value_t = std::conditional_t<std::is_void_v<R>, std::monostate, std::remove_cvref_t<R>>;
+  std::optional<value_t> ret{};
+  int calls = 0;
+  std::vector<args_t> recorded{};
+
+  template <class V> method& returns(V&& v) requires(!std::is_void_v<R>) { ret = std::forward<V>(v); return *this; }
+  R operator()(A... a) {
+    ++calls;
+    recorded.emplace_back(a...);
+    if constexpr (!std::is_void_v<R>) return ret ? *ret : value_t{};
+  }
+  void verify_called(int n) const { /* prints the method name and aborts on a mismatch */ }
+};
+```
+
+The code under test is a template over its clock, and the real clock and the mock are two types for the same `Sut`:
+
+```cpp
+template <class Clock> struct Sut {
+  Clock& c;
+  int twice() { return 2 * c.now(); }
+  std::string tag() { c.sleep_for(10); return c.label(7, true); }
+};
+
+Sut<RealClock> s1{real};
+mock::Mock<IClock> m;
+m.now.returns(21);
+m.label.returns(std::string("MOCK"));
+Sut<mock::Mock<IClock>> s2{m};
+```
+
+[`mock_single_file.cpp`](https://github.com/wrocpp/cpp26-reflection-examples/blob/6964dd0/posts/84-callable-members/examples/mock_single_file.cpp) runs both, checks the call counts with `verify_called` and checks the recorded argument tuples (`sleep_for` got `10`, `label` got `true` as its second argument):
+
+<GodboltEmbed id="jTeq8erGx" gccOnly gccLabel="GCC 16.2" title="Mock<IClock> next to a real clock in the same generic Sut" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -Wall -Wextra · runs live" />
+
+```text
+real=84 mock=42 tag=MOCK now.calls=1 sleep.calls=1 sizeof(Mock<IClock>)=144
+```
+
+The mock is not an `IClock`. It has no base class and no vtable, so a function that takes `IClock&` cannot take it. That limit is the price of the whole approach, and it excludes a large part of the code that people want to mock. A test of a class that holds an `IClock&` still needs gmock or a hand-written subclass.
+
+## What the compiler says when the call is wrong
+
+Each row is one misuse, compiled with the macro named in the demo's source (for example `-DV_ARITY`). The text is the first error line from GCC 16.2.0:
+
+| Misuse | First error line |
+|---|---|
+| `client.add("x", 3)` | `no match for call to '(rpc::method<^^rpc::detail::client_gen<Api>::type, ^^Api::add(int, int)>) (const char [2], int)'` |
+| `client.add(2)` | `no match for call to '(rpc::method<^^rpc::detail::client_gen<Api>::type, ^^Api::add(int, int)>) (int)'` |
+| `client.sub(2, 3)` | `'rpc::client<Api>' {aka 'struct rpc::detail::client_gen<Api>::type'} has no member named 'sub'` |
+| `c.nowish()` in the `Sut` | `'struct mock::detail::gen<IClock>::type' has no member named 'nowish'` |
+| `c.now(5)` | `no match for call to '(mock::method<^^IClock::now()>) (int)'` |
+| `c.sleep_for("soon")` | `no match for call to '(mock::method<^^IClock::sleep_for(int)>) (const char [5])'` |
+
+Because the member's type is named through its reflection, the first line carries the method, its expected signature and the arguments that were given. The cost is the synthesized owner name. `rpc::client<Api>` appears only as `{aka ...}`, and the type you see is `rpc::detail::client_gen<Api>::type`.
+
+## What does not work
+
+- **Overloaded methods.** A class cannot have two data members with one name. For an `Api` with `add(int, int)` and `add(int, int, int)`, GCC 16.2 stops with `name 'add' used in multiple data member descriptions`. A renaming scheme would be needed, and I did not try one.
+- **A virtual reference slot.** `int use_interface(IClock& c)` called with the mock fails with `invalid initialization of reference of type 'IClock&' from expression of type 'mock::Mock<IClock>'`.
+- **`const` and `noexcept` methods.** The `method` specialization matches `R(A...)` only. In a probe on GCC 16.2.0, `int get() const;` and `int get() noexcept;` in the interface both end in `'define_aggregate' argument data member description without complete type`, and the message names neither method nor cause.
+- **Two members of one type.** The owner lookup is by type, as above.
+
+The first two are properties of the technique. The third is a gap in my demo that more specializations would close, and I have not written them.
+
+## Compile time and memory
+
+The spike measured compile cost with `-c -O0`, three runs each, on one Apple machine with Homebrew GCC 16.2.0, and the spread between runs was large (one 2.11 s outlier among three runs at 100 methods). I did not repeat these for this post, so read them as orders of magnitude. The "server" is the reflection-driven dispatch in the demo.
+
+| translation unit | real seconds | peak RSS |
+|---|---|---|
+| headers only, empty `main` | 0.41 to 0.55 | 118 MB |
+| client, 20 methods | 0.44 to 0.46 | 129 MB |
+| client, 100 methods | 0.81 to 2.11 | 137 MB |
+| client and server, 20 methods | 1.91 to 2.92 | 148 MB |
+| client and server, 100 methods | 5.59 to 6.17 | 266 to 280 MB |
+
+The client costs little. The server's `template for` instantiates a decode path for every method, and that is where the time goes. With a precompiled header for `<meta>` and the standard headers the same rows were lower (client and server at 100 methods: 4.65 to 5.81 s), and the client alone at 100 methods took 0.59 to 0.79 s.
+
+A two-translation-unit build of the same `client<Api>` with `-O2 -flto -Wodr -Wlto-type-mismatch -Werror` linked and ran with no warning, which is the usual worry for a type that exists only because a `consteval` block defined it.
+
+## What this has not been tested on
+
+- GCC 16.2 only: the Homebrew build on aarch64 macOS (the spike and its timings), the `gcc:16.2` Docker image on aarch64 Linux, and Compiler Explorer's g162 on x86-64 (the three demos here, which I re-ran for this post). Not clang-p2996, which I did not try for this primitive, and not GCC trunk or another 16.x.
+- Argument and return types are `int`, `std::string` and `std::string_view`, in a toy text format. Nothing with ownership, nesting or a variable layout went through the wire.
+- No `const`, `noexcept` or ref-qualified methods (shown above), no `Api` that inherits from another, and no overloads.
+- No optimized (`-O2`) compile times, and no measurement of the alternative of storing an owner pointer in each member, which this design avoids.
+- The mock is a recorder with one programmed return value per method. It has no matchers, no sequences and no per-call returns, and it replaces nothing that needs an `IClock&`.
+- The owner recovery is a `reinterpret_cast` from a member to its enclosing object. It is right for the layouts above, and I have not checked it against a class with a base or a virtual member, because the generated aggregate has neither.
+
+---
+
+**Sources** (checked 6 October 2026): the three demos in [`posts/84-callable-members/examples`](https://github.com/wrocpp/cpp26-reflection-examples/tree/6964dd0/posts/84-callable-members/examples) at commit `6964dd0`, compiled with `-std=c++26 -freflection -Wall -Wextra -Werror` on `gcc:16.2` (Docker, aarch64) and run on Compiler Explorer g162; the error texts, the same-type probe and the `const` and `noexcept` probe, compiled on that image; the sizes, offsets and compile-time table from the callable-members spike results of 5 October 2026 on Homebrew GCC 16.2.0 (aarch64 macOS), of which the sizes and offsets were reproduced on Docker and Compiler Explorer.
