@@ -2,6 +2,7 @@
 title: "Deserialization and std::expected: completing the round-trip"
 slug: "json-deserialize"
 pubDate: 2026-09-23
+updatedDate: 2026-10-06
 author: filip-sajdak
 language: en
 kind: flagship
@@ -16,6 +17,8 @@ discussion: https://github.com/wrocpp/wrocpp.github.io/discussions/51
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
+*Correction, 6 October 2026. The Performance notes at the end say that using a SIMD JSON parser such as simdjson for the first phase puts this approach within 10-15% of hand-written parsers for flat schemas. I have no measurement behind that figure, and there is nothing here to measure it with: the Compiler Explorer demo at the end has no lexer and no parser. It fills the struct from a `std::map` of already-parsed values, and its own header calls it a scaled-down demo. The parser of phase 1 is not shown in this post either, and the snippets call a `parse_value` that the post never defines. I removed the figure and the claim that the parse phase dominates the cost, because neither was measured. I also fixed the sample error message in the first snippet, which the code does not print, and the note that the walker touches no strings on the happy path, because it builds a path string for every field it reads. The text below is otherwise left as published, so you can read it against this note.*
+
 [Post 8](/posts/json-naive/) and [post 9](/posts/annotations/) built one side of the round-trip: struct → JSON. This post builds the other side: JSON → struct. Same reflection walk, different direction, plus proper error handling via `std::expected`.
 
 ## The goal
@@ -28,7 +31,7 @@ auto r = rjson::from_json<User>(
 if (r) {
     User& u = *r;  // valid struct
 } else {
-    std::println("{}", r.error());  // "expected string at .email, got number"
+    std::println("{}", r.error());  // at .email: expected string
 }
 ```
 
@@ -213,13 +216,13 @@ static_assert(
 
 Worth testing: `test_round_trip` is a one-liner in test suites now.
 
-<GodboltEmbed id="qKK7v4vdE" title="JSON → struct with std::expected errors" />
+<GodboltEmbed id="qKK7v4vdE" title="Struct from a pre-parsed map with std::expected errors (reduced demo, no parser)" />
 
 ## Performance notes
 
 - No dynamic dispatch at runtime. Each `from_value<T>` is monomorphised.
-- One string allocation per path segment during error construction. Happens only on error. On the happy path, no strings touched by the walker.
-- Parse phase (AST) dominates cost, not the reflective dispatch. Using a SIMD JSON parser (like simdjson) as the AST phase puts us within 10-15% of hand-written parsers for flat schemas.
+- The walker builds the path string (`path + "." + key`) for every field it reads, on the happy path as well as on error. I did not measure what that costs.
+- This post has no measurement of the parse phase, and the demo has no parser. It makes no claim about how the cost compares with a hand-written parser.
 
 ## Where the series goes next
 
