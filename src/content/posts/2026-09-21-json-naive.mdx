@@ -2,6 +2,7 @@
 title: "A 40-line JSON serializer with reflection"
 slug: "json-naive"
 pubDate: 2026-09-21
+updatedDate: 2026-10-06
 author: filip-sajdak
 language: en
 kind: flagship
@@ -9,14 +10,16 @@ series: cpp26-reflection
 series_order: 8
 audience: working-cpp
 tags: [reflection, cpp26, json, serialization, reflect_json]
-summary: "Walking a struct and emitting JSON: the naive but complete version. About forty lines, no macros, no external codegen. The foundation of the reflect_json library."
+summary: "Corrected on 6 October 2026: there is no reflect_json library, and the speed figures in the first version were not measured with a method I can show. The post walks a struct and emits JSON in about fifty lines, with no macros and no external codegen; the corrected measurement is in the Runtime cost section."
 draft: false
 discussion: https://github.com/wrocpp/wrocpp.github.io/discussions/49
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
-[Post 1](/posts/why-cpp26-reflection-matters/) previewed a 40-line JSON serializer. This post builds it properly, stepping through every decision, handling the edge cases (strings, escapes, nested types, containers), and landing `reflect_json` as a real library.
+*Correction, 6 October 2026. This post says it lands `reflect_json` as a real library. There is no such library: the repository `wrocpp/reflect_json` does not exist (GitHub returns 404), and the serializer below is all there is. The post also says the serializer is within 3% of a hand-rolled `fmt::format` and about twice as fast as nlohmann/json. Those figures came from no machine, flags or harness that I recorded, so I could not show them, and they do not hold. I measured again on an Apple M2 Max with GCC 16.2.0 (`-std=c++26 -freflection -O2`). The serializer takes about 1.6 to 1.8 times as long as hand-written appends with the same escaping, and nlohmann/json takes about 3.4 to 4.9 times as long as the serializer. The method and the table are in the Runtime cost section. The code compiles on GCC 16.2.0 when `<experimental/meta>` is replaced by `<meta>`. The text below is otherwise left as published, so you can read it against this note.*
+
+[Post 1](/posts/why-cpp26-reflection-matters/) previewed a 40-line JSON serializer. This post builds it properly, stepping through every decision, handling the edge cases (strings, escapes, nested types, containers), and ending with a serializer you can copy into a project.
 
 ## Design
 
@@ -148,7 +151,7 @@ Nested struct: handled via recursion. String array: handled via range branch. Qu
 
 ## Edge cases it does *not* yet handle
 
-- **`std::map<K,V>`:** currently walks as a range of `pair<K,V>`, which produces an array of two-element arrays, not an object. Fix: detect `std::map`-like and emit `{...}`.
+- **`std::map<K,V>`:** currently walks as a range of `pair<K,V>`, which produces an array of objects with `first` and `second` keys, not one object (GCC 16.2.0 printed `[{"first":"k","second":1}]` for a map with one entry). Fix: detect `std::map`-like and emit `{...}`.
 - **Non-finite floats** (`NaN`, `inf`): `std::to_string` renders `"nan"` which isn't valid JSON. Fix: detect and emit `null`, or throw.
 - **Self-referential types via pointers:** infinite recursion. Fix: cycle detection with a visited set (out of scope for the naive version).
 - **Large integers:** `long long` values above 2^53 lose precision in some JSON consumers. Fix: emit as string, optional per-field annotation. That's post 9 territory.
@@ -169,19 +172,31 @@ NLOHMANN_DEFINE_TYPE_INTRUSIVE(Address, city, postal_code)
 
 Field names appear twice (declaration + macro). Add a field, forget the macro, ship a silent schema-drift bug.
 
-With `reflect_json`: declare the type once. Done.
+With the serializer above: declare the type once. Done.
 
-<GodboltEmbed id="GTo4hMn56" title="reflect_json — the 40-line foundation" />
+<GodboltEmbed id="GTo4hMn56" title="rjson, the 40-line serializer" />
 
-## Library packaging
+## Packaging
 
-Put the above in `reflect_json/reflect_json.hpp`. That's the whole library for now. Posts 9-11 add annotations, deserialization, and multi-format support **without changing `to_json`'s signature**. The public API stays `to_json(T const&) -> std::string`; everything else is opt-in behaviour.
+Put the above in a header of your own, for example `rjson.hpp`. That's everything this post has, and it is not a published library. Posts 9-11 add annotations, deserialization, and multi-format support **without changing `to_json`'s signature**. The public API stays `to_json(T const&) -> std::string`; everything else is opt-in behaviour.
 
 ## Runtime cost
 
-For a concrete `T`, `rjson::to_json<T>` compiles to a straight-line `std::string` builder. The reflection walk is unrolled; the `if constexpr` ladder in `append_value` is pruned to the one branch that matches each member's type. After `-O2`, equivalent to a hand-written serializer, and sometimes better, because the compiler has full type info during inlining.
+For a concrete `T`, `rjson::to_json<T>` compiles to a straight-line `std::string` builder. The reflection walk is unrolled; the `if constexpr` ladder in `append_value` is pruned to the one branch that matches each member's type. The version of this section I first published said that after `-O2` it is equivalent to a hand-written serializer, and sometimes better. The measurement below does not support that: a hand-written serializer is faster.
 
-A benchmark (clang-p2996, release, 1M iterations on a 5-field `User`): reflect_json is within 3% of hand-rolled `fmt::format` for the same shape, and about 2× faster than nlohmann with its runtime map lookups per field.
+I measured it on 6 October 2026. Machine: Apple M2 Max, 12 cores, macOS. Compiler: GCC 16.2.0, `-std=c++26 -freflection -O2`. Each call serializes the 5-field `User` above into a fresh `std::string`, with `age` changed on every call; the loop makes 1,000,000 calls, in seven separate processes per variant, and the table gives the median and the range of CPU time per call. The result of every call goes through an asm barrier and into a checksum, so the calls cannot be hoisted or discarded. The outputs of the four variants that keep declaration order are byte-identical.
+
+| Variant | CPU ns per call, median | Range | Time relative to `rjson::to_json` |
+|---|---|---|---|
+| `rjson::to_json` (the serializer above) | 267 | 262-271 | 1.00 |
+| hand-written appends, same `append_escaped` | 160 | 157-162 | 0.60 |
+| hand-rolled `std::format` string, no escaping | 332 | 324-343 | 1.24 |
+| nlohmann/json 3.12.0, `ordered_json`, `dump()` | 1273 | 1243-1278 | 4.77 |
+| nlohmann/json 3.12.0, `json`, `dump()` | 1050 | 1034-1065 | 3.94 |
+
+The serializer in this table is the committed example behind the Compiler Explorer link, which has no `\uXXXX` branch for control characters. I repeated the measurement twice more with nine processes per variant, while the machine was shared and its load average was above 100 (it was 52 for the table above): once with the same example, and once with the serializer exactly as printed in this post, which has the `\uXXXX` branch. Across the three runs the serializer took 1.6 to 1.8 times as long as the hand-written appends, the `std::format` string took 1.05 to 1.24 times as long as the serializer, and nlohmann/json took 3.4 to 4.9 times as long. The absolute times were up to 1.7 times higher under load, so read the ratios and not the nanoseconds.
+
+What the numbers do not say. The `fmt::format` baseline of the first version is replaced by `std::format`, and fmt itself was not measured. The compiler named in the first version, clang-p2996, was not used. The `std::format` variant does not escape strings, so it does less than the other three. I did not look for the reason the serializer is slower than the hand-written appends. The code does build a separate `std::string` for the nested `Address` and append it, but I did not test whether that explains the gap. The harness is not published; the numbers are for one machine, one compiler and one `User`.
 
 ## Annotations, deserialization, and more formats
 
