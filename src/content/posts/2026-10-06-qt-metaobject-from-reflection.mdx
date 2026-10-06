@@ -2,6 +2,7 @@
 title: "Qt accepts a QMetaObject that C++26 reflection built"
 slug: "qt-metaobject-from-reflection"
 pubDate: 2026-10-06
+updatedDate: 2026-10-06
 author: filip-sajdak
 language: en
 kind: flagship
@@ -16,7 +17,7 @@ draft: false
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 import PostLink from '../../components/PostLink.astro';
 
-*Correction to <PostLink slug="qt-moc-replacement">post 17</PostLink>. That post said that replacing the parts of moc that QML relies on would be a bigger engineering project than a blog post. It was smaller than the sentence suggests: the first working version is one file of 516 lines. The `rqt::Object` registry in post 17 is a sketch and not a library. This series is about the library that replaced it, reflect-moc, which is not published yet. The link will be added here when it is.*
+*Correction to <PostLink slug="qt-moc-replacement">post 17</PostLink>. That post said that replacing the parts of moc that QML relies on would be a bigger engineering project than a blog post. It was smaller than the sentence suggests: the first working version is one file of 516 lines. The `rqt::Object` registry in post 17 is a sketch and not a library. This series is about the library that replaced it, reflect-moc, which is [published on GitHub](https://github.com/wrocpp/reflect-moc) (experimental: GCC 16.2, Qt 6.10.3, aarch64 Docker only).*
 
 This is what Qt reports about a class that moc never saw (output of a Docker run with GCC 16.2.0 and Qt 6.10.3, not of Compiler Explorer):
 
@@ -66,7 +67,7 @@ QtMocHelpers::metaObjectData<Class, Tag>(
 
 Qt's own helper lays out the `uint` tables and the string data. Whatever can produce the same arguments can call it, and the arguments are names, types, flags and indexes: the things reflection reads from a class.
 
-I checked this against the generated code of a small header, then wrote the same tables by hand (`handwritten.cpp`, which passed the connect, invoke, property and cast checks listed below) before replacing the hand-written part with reflection.
+I checked this against the generated code of a small header, then wrote the same tables by hand ([`handwritten.cpp`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/spikes/06-qt/handwritten.cpp), which passed the connect, invoke, property and cast checks listed below) before replacing the hand-written part with reflection.
 
 ## Where each argument comes from
 
@@ -152,7 +153,7 @@ For every class level, the test dumps what Qt exposes through its API and compar
 
 A second test guards the other half of the claim. `capability_no_moc_in_build` rebuilds a class from scratch and fails if the verbose log shows moc or an autogen step. For the four Qt examples of a later post, the same kind of script has a positive control: run on the unmodified originals it fires, so the check can fail.
 
-A third check does not read build logs at all. `examples/qt/check_moc_trapped.sh` replaces every `moc` in a throwaway container with a trap that records the caller and fails, then builds the four ported examples, the two demos and the library tests. Only the differential test, which runs moc on purpose as its oracle, is allowed to need it, and its failing to build is the positive control. In the Docker run (GCC 16.2.0, Qt 6.10.3, aarch64) the ported examples built with no moc call and printed the same output as the originals, the demos built with plain `g++`, and the differential test was the only target that failed. CMake's configure step asks moc once for `--version` because that one target has `AUTOMOC` on.
+A third check does not read build logs at all. [`examples/qt/check_moc_trapped.sh`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/examples/qt/check_moc_trapped.sh) replaces every `moc` in a throwaway container with a trap that records the caller and fails, then builds the four ported examples, the two demos and the library tests. Only the differential test, which runs moc on purpose as its oracle, is allowed to need it, and its failing to build is the positive control. In the Docker run (GCC 16.2.0, Qt 6.10.3, aarch64) the ported examples built with no moc call and printed the same output as the originals, the demos built with plain `g++`, and the differential test was the only target that failed. CMake's configure step asks moc once for `--version` because that one target has `AUTOMOC` on.
 
 ## What the Qt developers said, and where this differs
 

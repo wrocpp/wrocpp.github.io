@@ -7,7 +7,7 @@ RQT_OBJECT expands to member functions defined in the class body. Inside one, st
 
 RQT_PROPERTY takes the exact Q_PROPERTY text, turns it into a string and parses it in a consteval function. The existing property lines keep working, and a keyword the parser does not know stops the build with a named error. In the library's differential test the eight Q_PROPERTY lines are identical for moc and for reflect-moc (I diffed them; I did not re-run that test).
 
-The limits are in the post. The demo is a reduction without Qt, run on Compiler Explorer with GCC 16.2. The real RQT_OBJECT and RQT_PROPERTY were not rebuilt for this post, and current_function is not in clang-p2996. The library is not published yet.
+The limits are in the post. The demo is a reduction without Qt, run on Compiler Explorer with GCC 16.2. The real RQT_OBJECT and RQT_PROPERTY were not rebuilt for this post, and current_function is not in clang-p2996. The library is published at https://github.com/wrocpp/reflect-moc (experimental; GCC 16.2, Qt 6.10.3, aarch64 Docker only).
 
 https://wrocpp.github.io/posts/qt-object-that-never-names-its-class/
 

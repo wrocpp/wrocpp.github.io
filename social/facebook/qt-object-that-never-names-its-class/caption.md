@@ -5,7 +5,7 @@ Q_OBJECT does not say which class it sits in, and neither does RQT_OBJECT in ref
 
 RQT_PROPERTY takes the exact Q_PROPERTY text and parses it in a consteval function, so a misspelled keyword stops the build with a named error.
 
-The demo is a reduction without Qt, run on Compiler Explorer with GCC 16.2. The real macros were not rebuilt for this post, and the library is not published yet.
+The demo is a reduction without Qt, run on Compiler Explorer with GCC 16.2. The real macros were not rebuilt for this post. The library is published at https://github.com/wrocpp/reflect-moc (experimental; GCC 16.2, Qt 6.10.3, aarch64 Docker only).
 
 https://wrocpp.github.io/posts/qt-object-that-never-names-its-class/
 
