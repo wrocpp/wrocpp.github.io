@@ -9,12 +9,15 @@ series: cpp26-reflection
 series_order: 14
 audience: working-cpp
 tags: [reflection, cpp26, di, dependency-injection]
+updatedDate: 2026-10-06
 summary: "Spring's and .NET's DI containers, reimplemented as a 60-line C++26 library. Reflect constructor parameters, resolve them from a type registry, compose."
 draft: false
 discussion: https://github.com/wrocpp/wrocpp.github.io/discussions/60
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+*Correction, 6 October 2026. Several code blocks in this post do not compile as published, and one sentence about GCC support is wrong. I compiled every block that is complete enough on g++-16 (Homebrew GCC 16.2.0, `-std=c++26 -freflection -Wall -Wextra`) and changed only what that run showed. First, `parameters_of` on a constructor works on GCC 16.2.0 with plain `-freflection`, so no separate flag is needed, and `members_of(^^::)` lists the current translation unit's namespace (only that unit's declarations). The sentence that namespace reflection is "still in flight" is replaced, and it cited the wrong paper: P2988 is `std::optional<T&>`, and the paper for parameter reflection is P3096, *Function Parameter Reflection in Reflection for C++26*. Second, `construct_with_reflection` failed with four errors. The splice in a template argument needs `typename`, the `params` array must be `static constexpr`, `find_primary_ctor` was never defined, and the parameter type `Clock const&` has to lose its reference and `const` before `get<T>` is instantiated, or GCC reports `neither complete class type nor namespace`. The text said the registry ignores reference qualifiers; only the `typeid` lookup does, and the instantiation of `get<Clock const&>` does not. The block now has the form that compiled and ran, and the output was `Hello` after a clock reading. Third, `"circular dependency at " + typeid(T).name()` adds two pointers, and GCC says `invalid operands of types 'const char [24]' and 'const char*' to binary 'operator+'`; it is now `std::string{...} + ...`. With that fix the check does run at run time: two types that need each other throw `circular dependency at 1A`. In my test it also has a flaw: if resolving a type throws for another reason (an unregistered dependency), the type stays in `resolving_`, and a retry after registering the dependency reports a false cycle. The entry must be erased on every exit path. Fourth, the `scan_and_register<translation_unit_reflection>` call and the `dep_graph` skeleton named things that do not exist. The annotation scan and a one-root `dep_graph` are now written in the form that compiled, and the `static_assert` on `{"Greeter", {"Clock", "I18n"}}` held. Fifth, the table said misconfiguration is a `static_assert` error. The container in this post reports a missing registration and a cycle with exceptions at run time, and the constructor arguments are looked up at run time; only the parameter list is read at compile time. A compile-time graph with `static_assert` errors needs a separate design. The Compiler Explorer demo does not do what its old title said: it is a type-keyed registry with explicit factory lambdas and a `std::any` map. It never calls `parameters_of` or any reflection function, and its header says the autowired variant needs a separate flag, which is wrong for GCC 16.2.0. The Spring comparison and the interface and scope sketches (`bind`, `add_transient`) were not compiled and are sketches. The text below is otherwise left as published, so you can read it against this note.*
 
 In Spring (Java) or .NET:
 
@@ -97,18 +100,29 @@ Simple. Registration stores an empty slot; lookup lazily constructs. The interes
 [P3096](https://wg21.link/P3096) (function parameter reflection) lets us inspect a constructor's parameter list:
 
 ```cpp
+// Tested on GCC 16.2.0: this block, plus the container above and a forward
+// declaration of construct_with_reflection before the class, compiles and runs.
+template <typename T>
+consteval std::meta::info find_primary_ctor() {
+    for (auto m : std::meta::members_of(^^T, std::meta::access_context::unchecked()))
+        if (std::meta::is_constructor(m) && !std::meta::is_copy_constructor(m)
+                                         && !std::meta::is_move_constructor(m))
+            return m;
+    return {};
+}
+
 template <typename T>
 T construct_with_reflection(container& c) {
     // Find T's primary constructor
     constexpr auto ctor = find_primary_ctor<T>();
     // Reflect its parameters
-    constexpr auto params = std::define_static_array(
+    static constexpr auto params = std::define_static_array(
         std::meta::parameters_of(ctor));
 
     // Build a tuple of resolved arguments
-    auto args = std::tuple<>{};
     auto build_args = [&]<std::size_t... I>(std::index_sequence<I...>) {
-        return std::make_tuple(c.get<[: std::meta::type_of(params[I]) :]>()...);
+        return std::make_tuple(
+            c.get<std::remove_cvref_t<typename [: std::meta::type_of(params[I]) :]>>()...);
     };
     auto arg_tuple = build_args(std::make_index_sequence<params.size()>{});
 
@@ -120,13 +134,13 @@ T construct_with_reflection(container& c) {
 Two reflection moves:
 
 1. **`parameters_of(ctor)`** returns `std::vector<info>`, one per parameter.
-2. **`[: type_of(params[I]) :]`** splices each parameter's type. `c.get<Clock const&>()` then recursively resolves (the registry ignores reference-qualifiers for lookup).
+2. **`[: type_of(params[I]) :]`** splices each parameter's type. `remove_cvref_t` turns `Clock const&` into `Clock` before `c.get<Clock>()` recursively resolves it; without it `get<Clock const&>` tries to construct a reference type and GCC 16.2.0 rejects it.
 
-The result: `Greeter{c.get<Clock const&>(), c.get<I18n const&>()}`, assembled at compile time.
+The result: `Greeter{c.get<Clock>(), c.get<I18n>()}`. The parameter list is read at compile time; the lookups in the registry happen at run time.
 
 ## Circular dependencies
 
-What if `A` needs `B` and `B` needs `A`? The naive container recurses until stack overflow. Detection is easy:
+What if `A` needs `B` and `B` needs `A`? The naive container recurses until stack overflow. Detection is easy (a fragment, not a complete program; tested inside the container above):
 
 ```cpp
 thread_local std::unordered_set<std::type_index> resolving_;
@@ -134,7 +148,7 @@ thread_local std::unordered_set<std::type_index> resolving_;
 template <typename T>
 T& get() {
     if (resolving_.contains(typeid(T)))
-        throw std::runtime_error{"circular dependency at " + typeid(T).name()};
+        throw std::runtime_error{std::string{"circular dependency at "} + typeid(T).name()};
     resolving_.insert(typeid(T));
     /* ... construct + cache ... */
     resolving_.erase(typeid(T));
@@ -176,25 +190,52 @@ Instead of explicit `c.add<T>()`, annotate:
 struct [[=di::service{}]] Greeter { /* ... */ };
 struct [[=di::service{}]] Clock  { /* ... */ };
 
-// Somewhere at startup:
-di::scan_and_register<translation_unit_reflection>(container);
+// Somewhere at startup (sketch: scan_and_register does not exist):
+di::scan_and_register<^^::>(container);
 ```
 
-`scan_and_register` walks every type in a translation unit's reflection and registers those with `@di::service`. This is future-ish. It assumes [P2988](https://wg21.link/P2988) (namespace-level reflection) or similar, which is still in flight, but the architecture is ready.
+`scan_and_register` is a name for a function you would write; it is not in a library. On GCC 16.2.0 the building blocks work: `members_of(^^::, access_context::current())` lists the namespace as the current translation unit declares it (a second translation unit sees its own list, not this one's), and `annotations_of_with_type(m, ^^di::service)` filters it. This loop found `Greeter`, `Clock` and `I18n` and skipped an unannotated type:
+
+```cpp
+consteval std::vector<std::meta::info> services_in_namespace() {
+    std::vector<std::meta::info> out;
+    for (auto m : std::meta::members_of(^^::, std::meta::access_context::current()))
+        if (std::meta::is_type(m) && !std::meta::annotations_of_with_type(m, ^^di::service).empty())
+            out.push_back(m);
+    return out;
+}
+```
+
+Registering them is then a loop over `define_static_array(services_in_namespace())` with `template for`. Parameter reflection is [P3096](https://wg21.link/P3096), *Function Parameter Reflection in Reflection for C++26*.
 
 ## Compile-time dependency graph
 
 A fun debug hook: ask the container for its dependency graph **at compile time**:
 
 ```cpp
-consteval auto dep_graph(auto roots) {
+// Tested on GCC 16.2.0 (one root; the static_assert holds).
+consteval auto dep_graph(std::meta::info root) {
     std::vector<std::pair<std::string, std::vector<std::string>>> edges;
-    /* walk each root, recurse via parameters_of ctors, record (type, [deps]) */
+    std::vector<std::meta::info> todo{root};
+    for (std::size_t i = 0; i < todo.size(); ++i) {
+        auto t = todo[i];
+        std::vector<std::string> deps;
+        for (auto m : std::meta::members_of(t, std::meta::access_context::unchecked()))
+            if (std::meta::is_constructor(m) && !std::meta::is_copy_constructor(m)
+                                             && !std::meta::is_move_constructor(m))
+                for (auto p : std::meta::parameters_of(m)) {
+                    auto d = std::meta::dealias(std::meta::remove_cvref(std::meta::type_of(p)));
+                    deps.push_back(std::string{std::meta::identifier_of(d)});
+                    todo.push_back(d);
+                }
+        edges.push_back({std::string{std::meta::identifier_of(t)}, deps});
+    }
     return edges;
 }
 
-static_assert(dep_graph(std::make_tuple(^^Greeter)) ==
-              std::vector<...>{{"Greeter", {"Clock", "I18n"}}, ...});
+static_assert(dep_graph(^^Greeter) ==
+    std::vector<std::pair<std::string, std::vector<std::string>>>{
+        {"Greeter", {"Clock", "I18n"}}, {"Clock", {}}, {"I18n", {}}});
 ```
 
 The graph is knowable at compile time because every constructor's parameter types are reflectable. Tools can emit DOT diagrams, detect cycles, and check for unreachable services, all without running the program.
@@ -207,12 +248,12 @@ The graph is knowable at compile time because every constructor's parameter type
 | Resolution | Reflection at runtime | Reflection at compile time |
 | Cost per `get()` | Hash-map + constructor reflection | Hash-map + fully-inlined constructor |
 | Cycle detection | Runtime | Runtime or compile-time |
-| Error at misconfiguration | `BeanCreationException` at startup | `static_assert` at compile time |
+| Error at misconfiguration | `BeanCreationException` at startup | exception at run time in this post's container; a compile-time graph can give `static_assert` errors |
 | Lines of framework code | ~600k (Spring Core) | ~60 (demo), ~600 (production-adequate) |
 
 Spring has 20 years of production polish; our 60-line demo doesn't. But the architectural core (inspect constructors, resolve parameters from a registry) is exactly the same, and C++ gets it at compile time.
 
-<GodboltEmbed id="Wb6zPa1Ex" title="reflect_di — autowired constructors" />
+<GodboltEmbed id="Wb6zPa1Ex" title="reflect_di: registry with explicit factories (no parameters_of)" />
 
 ## Next: mocks and type synthesis
 
