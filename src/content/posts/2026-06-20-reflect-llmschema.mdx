@@ -9,14 +9,16 @@ series: cpp26-reflection
 series_order: 19
 audience: working-cpp
 tags: [reflection, cpp26, llm, openai, anthropic, mcp, reflect_llmschema]
-summary: "In the AI agent era every tool you expose to Claude/GPT needs a JSON-Schema description. Today you write it by hand next to the C++ function. With C++26 reflection, a single consteval call emits the tool-use JSON at compile time — parameter names, types, docstrings, dispatch, done."
+updatedDate: 2026-10-06
+summary: "Corrected on 6 October 2026: reflect_llmschema is not a published library (its repository holds only a README), and the embedded demo is a reduced stand-in that prints a smaller JSON than this post shows. The correction at the top has the details and the real output; the rest is kept as published."
 draft: false
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
-> **Library repo:** [github.com/wrocpp/reflect_llmschema](https://github.com/wrocpp/reflect_llmschema) · v0.1.0 · MIT.
-> Installs via `find_package(reflect_llmschema)` (vcpkg recipe attached below).
+*Correction, 6 October 2026. This post presents `reflect_llmschema` as a published library, and it is not one. The repository linked below holds a README and one "Initial commit" from 22 June 2026: no code, release, tag or licence. There is no `find_package` target and no vcpkg recipe (the post said one was attached below, and none was). The Compiler Explorer demo is a reduced stand-in. It has `openai_tool_json<Args>("name")` where the post writes `openai_tool<&fn, "name">`, and it maps `bool`, integers, floating-point numbers, strings and nested structs. It has no field descriptions, `format`, default values, enums, `std::optional` handling or ranges (a comment in its source mentions enums, but the code has no enum case), and no Anthropic or MCP output. It also puts every field in `required`. The post's example said the output is the JSON shown at the top, with a field description, `"format": "email"`, a default and a `required` list of two names. That claim does not hold. I ran the demo on Compiler Explorer (clang-p2996) and on GCC 16.2.0 (where `annotation_of_type` is missing and I looked the annotation up with `annotations_of_with_type`), and both print this for its `CreateUserArgs` (name, email, admin, age): `{"type":"function","function":{"name":"create_user","description":"Create a new user account.","parameters":{"type":"object","properties":{"name":{"type":"string"},"email":{"type":"string"},"admin":{"type":"boolean"},"age":{"type":"integer"}},"required":["name","email","admin","age"]}}}`. I also fed the struct from this post to the same code on GCC 16.2.0. It printed the struct description, the three property types and `"required":["name","email","admin"]`, and nothing for the field descriptions, the format or the default. The core walk in this post leaves out `append_enum_schema`, `append_array_schema` and `append_required_list`, so it does not compile as shown (GCC 16.2.0 refuses an instantiation that reaches a function the code never declares: `'append_object_schema' was not declared in this scope`, in my test with that function absent). In the MCP example `list_flights` and `cancel` are never declared, and `mcp.hpp`, `llm::mcp::server`, `Weather` and `FlightBooking` do not exist. I removed the claim that the whole library is under 500 lines, because there is no library to count, and I removed the claim that the dispatch uses a `reflect_json` library: no such repository exists. The text below is otherwise left as published, so you can read it against this note.*
+
+> **No published library.** [github.com/wrocpp/reflect_llmschema](https://github.com/wrocpp/reflect_llmschema) is a placeholder repository with a README only. This post describes a design sketch.
 
 Arc 6 kicks off with the use case that didn't exist when Arc 1 started: feeding C++ functions to large language models as **tools**.
 
@@ -38,10 +40,10 @@ In 2026 OpenAI's function-calling API, Anthropic's `tool_use`, and Anthropic's M
 }
 ```
 
-With `reflect_llmschema`:
+With a library like `reflect_llmschema` (sketch: there is no such header, and the demo below does not handle the field annotations):
 
 ```cpp
-#include <reflect_llmschema/schema.hpp>
+#include <reflect_llmschema/schema.hpp>  // sketch: there is no such header
 
 struct [[=llm::description("Creates a new user account.")]] CreateUserArgs {
     [[=llm::description("Display name")]]          std::string name;
@@ -56,7 +58,7 @@ int main() {
 }
 ```
 
-Output: the exact JSON above, computed at compile time, baked into `.rodata`. Rename a field; the schema follows. Add a parameter; the schema grows. Drift becomes impossible.
+The aim is the JSON above, computed at compile time and baked into `.rodata`, so that renaming a field renames the schema entry. No code here produces that JSON: the walk below emits no description, format or default, and the embedded demo prints a smaller shape (see the correction at the top for the real output).
 
 ## The mapping
 
@@ -73,11 +75,14 @@ JSON Schema's primitive type set is small. We map C++ types into it by walking t
 | aggregate `struct` | `{"type": "object", "properties": ...recurse, "required": [...]}` |
 | `enum class` | `{"type": "string", "enum": ...enumerators}` |
 
-That's ~50 lines of `if constexpr` ladders plus `template for` recursion. The whole library is under 500 lines.
+That would be a few dozen lines of `if constexpr` ladders plus `template for` recursion. The demo at the end of the post covers the first four rows and nested structs, and nothing else in this table.
 
 ## The core walk
 
 ```cpp
+// Sketch: append_enum_schema, append_array_schema and append_required_list are
+// never defined, so an instantiation that reaches them is refused. The demo has
+// no enum or range case, and its "required" lists every field.
 template <typename T>
 consteval void append_type_schema(std::string& out) {
     if constexpr (std::is_same_v<T, bool>)             out += R"({"type":"boolean"})";
@@ -115,10 +120,10 @@ consteval void append_object_schema(std::string& out) {
 
 ## MCP server demo
 
-A four-tool MCP server (built on top of [`mcp-cpp`](https://github.com/modelcontextprotocol) or your own HTTP shim):
+A four-tool MCP server (built on top of [`mcp-cpp`](https://github.com/modelcontextprotocol) or your own HTTP shim). This is a sketch: there is no `mcp.hpp` and no `llm::mcp::server`, and `list_flights` and `cancel` are elided like the other declarations (`Weather`, `FlightBooking` and their argument structs).
 
 ```cpp
-#include <reflect_llmschema/mcp.hpp>
+#include <reflect_llmschema/mcp.hpp>  // sketch: there is no such header
 
 struct [[=llm::description("Fetch weather for a city.")]] WeatherArgs {
     std::string city;
@@ -137,18 +142,18 @@ int main() {
     llm::mcp::server s;
     s.register_tool<&get_weather,  "get_weather">();
     s.register_tool<&book_flight,  "book_flight">();
-    s.register_tool<&list_flights, "list_flights">();
-    s.register_tool<&cancel,       "cancel">();
+    s.register_tool<&list_flights, "list_flights">();  // declaration elided
+    s.register_tool<&cancel,       "cancel">();        // declaration elided
     s.serve(8080);
 }
 ```
 
-Four lines register four tools. Each registration:
+Four lines would register four tools. Each registration would:
 1. Emits the JSON-Schema at compile time for the tool's parameter struct.
-2. Registers a runtime dispatch that deserialises the incoming JSON (using the `reflect_json` library from post 10) into the typed struct, calls the function, serialises the return value back.
+2. Registers a runtime dispatch that deserialises the incoming JSON into the typed struct (the technique is the one in [post 10](/posts/json-deserialize/); there is no published `reflect_json` library), calls the function, serialises the return value back.
 3. Publishes on the `/tools` MCP endpoint.
 
-<GodboltEmbed id="oTbbWW1TG" title="reflect_llmschema — OpenAI tool-use from C++ function" />
+<GodboltEmbed id="oTbbWW1TG" title="reflect_llmschema stand-in: OpenAI tool JSON for two structs (reduced)" />
 
 ## Why this was impossible before 2026
 
@@ -169,17 +174,19 @@ Without reflection, you'd use one of:
 
 reflect_llmschema removes all three. Your C++ declaration *is* the schema.
 
-## What the library ships
+## What exists today
 
-Under [github.com/wrocpp/reflect_llmschema](https://github.com/wrocpp/reflect_llmschema):
+[github.com/wrocpp/reflect_llmschema](https://github.com/wrocpp/reflect_llmschema) is a placeholder: a README with no code, licence or release. The embedded demo is the only code. It has `llm::description` on a struct, and `llm::openai_tool_json<Args>("name")`, which prints the OpenAI function-calling JSON for `bool`, integer, floating-point, string and nested-struct fields. It has no field descriptions, `format`, `default_value`, `range`, `pattern` or enum support, no `anthropic_tool` or `mcp_tool` output, no MCP server, and no `std::optional` handling (every field lands in `required`).
+
+A library could go further. This list is what the post sketched, and none of it is built:
 
 - `llm::openai_tool<Fn, "name">()`: OpenAI function-calling JSON.
 - `llm::anthropic_tool<Fn, "name">()`: Anthropic tool_use JSON.
 - `llm::mcp_tool<Fn, "name">()`: MCP `tools/list` entry.
-- `llm::mcp::server`: drop-in MCP server class that handles JSON-RPC + tool dispatch.
+- `llm::mcp::server`: an MCP server class that handles JSON-RPC and tool dispatch.
 - Annotations: `description`, `format`, `default_value`, `range`, `pattern`, `enum_values`.
 
-Status: v0.1.0 covers the MVP scope above. v0.2 roadmap: streaming tool-responses, ref schemas for shared sub-types, parameter validation with `std::expected` errors.
+Open questions for a first version: streaming tool responses, ref schemas for shared sub-types, and parameter validation with `std::expected` errors.
 
 ## Next in the series, and the example sources
 
