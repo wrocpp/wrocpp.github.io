@@ -1,0 +1,163 @@
+---
+title: "Signals, slots and thread affinity without Qt or moc"
+slug: "signals-slots-threads-without-qt"
+pubDate: 2026-10-15
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 29
+audience: working-cpp
+tags: [reflection, cpp26, qt, signals, threads, threadsanitizer]
+summary: "The core of reflect-moc is signals, slots, queued and blocking connections, thread affinity and a per-thread event loop in plain C++26 with no Qt. A worker thread reports progress to an object on the main thread, and the program runs on Compiler Explorer. Under ThreadSanitizer the 18 core tests passed in the recorded run, and one test reports in 27 of 11000 repeats, a report that a 12-line std::latch program without the library also gets and that a mutex and condition variable removes."
+draft: false
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+```text
+start on worker thread
+progress 0 on main thread
+progress 25 on main thread
+progress 50 on main thread
+progress 75 on main thread
+progress 100 on main thread
+finished on main thread
+```
+
+A worker object computes on a background thread, and a UI object prints each progress value on the main thread. The two classes below use no Qt, no moc, and no mutex or queue of their own. They are the example program of the standalone core of reflect-moc, the library behind the last three posts. The previous one was about <PostLink slug="qt-object-that-never-names-its-class">how `RQT_OBJECT` finds its class</PostLink>. This one leaves Qt out, because the signal and slot machinery stands on its own. The library is not published yet. In <PostLink slug="qt-moc-replacement">post 17</PostLink> I listed thread affinity as the part of signals and slots that needs careful design; this post shows that design and how I checked it.
+
+## A worker and a UI object
+
+This is `examples/core/worker_demo.cpp` from the library, without its includes and constants:
+
+```cpp
+struct Worker : rqt::Object {
+  [[= rqt::property{.notify = true}]] int progress = not_started;
+  [[= rqt::signal]] void finished() { rqt::emit{this}(); }
+
+  [[= rqt::slot]] void start() {
+    std::println("start on {} thread", thread_label());
+    for (int p = 0; p <= progress_done; p += progress_step) set<"progress">(p);
+    finished();
+  }
+};
+
+struct Ui : rqt::Object {
+  [[= rqt::signal]] void startRequested() { rqt::emit{this}(); }
+
+  [[= rqt::slot]] void onProgress(int value) { std::println("progress {} on {} thread", value, thread_label()); }
+  [[= rqt::slot]] void onFinished() {
+    std::println("finished on {} thread", thread_label());
+    rqt::EventLoop::current()->quit();
+  }
+};
+```
+
+`main` moves `worker` to the background thread's id and connects three signals:
+
+```cpp
+worker.move_to_thread(background.get_id());
+
+ui.connect<&Ui::startRequested>(worker, &Worker::start);
+rqt::connect<"progressChanged">(worker, ui, &Ui::onProgress);
+rqt::connect<"finished">(worker, ui, &Ui::onFinished);
+```
+
+`ui.startRequested()` is emitted on the main thread and `Worker::start` runs on the background one. Each `set<"progress">` there emits `progressChanged`, the signal the library generates for a `notify` property, and `onProgress` runs on the main thread inside `loop.run()`. Nothing in the two classes says which thread a slot runs on. Each connection compares the receiver's thread with the emitting one.
+
+<GodboltEmbed id="hzKzdMc4o" gccOnly gccLabel="GCC 16.2" title="Worker thread reports progress to the main thread (no Qt, no moc)" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -pthread -Wall -Wextra · runs live" />
+
+The core is seven headers under `include/reflect_moc/core/`. The Compiler Explorer source is a generated single file (about 36 KB): `examples/core/amalgamate.py` pastes those headers in front of the demo. It compiled without warnings and printed the output above in three runs, exit code 0 each time.
+
+## Where a slot runs
+
+A connection has one of four types (`include/reflect_moc/core/README.md`):
+
+| Type | Behaviour |
+|---|---|
+| `automatic` (default) | direct if the receiver lives on the emitting thread, else queued |
+| `direct` | called on the emitting thread, arguments by reference |
+| `queued` | posted to the receiver's thread, arguments copied into the event |
+| `blocking_queued` | queued, and the emitter waits for the slot; direct on the receiver's own thread |
+
+An object's thread affinity is a `std::atomic<std::thread::id>` in its shared state. It starts as the constructing thread, and `move_to_thread` changes it. `automatic` is resolved at each emit, and `capability_move_to_thread` checks that: a receiver moved to a worker gets its slot there, and after it is moved back the next emit calls the slot on the main thread.
+
+The second Compiler Explorer program is mine, not the repository's. It uses only the public API to show four behaviours in one run:
+
+```text
+automatic, receiver on main:   ran on main before emit returned, text "original"
+automatic, receiver on worker: calls when emit returned: 0
+automatic, receiver on worker: ran on worker, text "original", while the emitter's string is now "changed"
+blocking_queued, receiver on worker: ran on worker and finished before emit returned, text "second"
+```
+
+<GodboltEmbed id="3WjWrj76z" gccOnly gccLabel="GCC 16.2" title="Direct, queued and blocking delivery between two threads (no Qt)" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -pthread -Wall -Wextra · runs live" />
+
+A `std::latch` holds the worker during the first emit, so "0 calls" is deterministic. The queued call had copied the string before the emitter changed it. Queued delivery is where the library copies arguments, and `connection.hpp` names the reason: the hand-off to another thread. The same behaviour is pinned by `capability_auto_connection_queues_across_threads`.
+
+## How a signal is found and where connections live
+
+The core has three ways to declare a signal: a member function with a one-line body (`[[= rqt::signal]] void finished() { rqt::emit{this}(); }`), a static descriptor (`static constexpr rqt::signal_of<int> valueChanged{};`) and a `notify` property. Reflection lists them, and `connect<"name">` resolves a name at compile time. A misspelled name stops the build, and the test `capability_connect_by_name_rejects_typo` expects `no signal named 'progresChanged' in Worker`; it passed in the run described below.
+
+A signal's identity at run time is a key. For a function signal or a `notify` property the key is the address of one byte in a per-class array, at the signal's index among the class's own signals. A descriptor is its own key. The library uses an array because a variable template specialised on the reflection of `std::meta::current_function()` is emitted twice under one name on macOS, where the assembler then rejects the object file with `symbol ... is already defined`. I reproduced that with `tests/core/limit_current_function_reflection_as_template_argument.cpp` and Homebrew GCC 16.2.0 on this Mac.
+
+So the index is the identity, but connections are not stored in a table indexed by it. Each sender's shared state holds a mutex and a vector of connection records, and an emit copies the records whose key matches while holding the lock. Slots run after the lock is released, so a slot may connect or disconnect during an emit. `capability_disconnect_during_emit` has a slot disconnect itself and a later slot of the same signal, and the later one is not called, even in that emit.
+
+Destroying an object marks it dead and disconnects everything it sends. A queued delivery checks on the receiver's thread that the receiver is still alive, so `capability_receiver_destroyed_drops_queued_event` sees the delivery dropped, not called. A blocking emit whose task is dropped still returns, because the task owns a latch that counts down when the task is destroyed.
+
+## Running the core tests under ThreadSanitizer
+
+`scripts/tsan.sh` builds the core tests and examples with `-fsanitize=thread -g -O1` and runs them under ctest with `TSAN_OPTIONS=halt_on_error=1`, so any report fails the test. I ran its in-container part unmodified on 6 October 2026, with the Docker flags the script itself uses (image `reflect-moc/gcc16-qt610`, GCC 16.2.0, aarch64, repository mounted read-only, commit `f6827b1`). The last lines:
+
+```text
+100% tests passed, 0 tests failed out of 18
+tsan.sh exit: 0
+```
+
+The whole log contains no `WARNING: ThreadSanitizer` line. Of the 18, six are threaded tests and three run the worker demo (nine carry the `threads` label), seven are single-threaded and two are builds that must fail. The compile command of a test shows `-fsanitize=thread`, and the test binary I checked contains 21 `__tsan` symbols. The script has no positive control, so I added the one from `scripts/tsan-qt.sh`, two threads incrementing one `int`:
+
+```text
+control (a real race): 2 report(s)
+```
+
+One run says little about interleavings, so I ran each of the six threaded tests and the single-file demo 200 more times with `halt_on_error=0`. Six of those seven had no report in 200 runs. `capability_blocking_queued_waits_for_slot` reported in 1 of 200, so I gave that test a longer look: 11,000 runs, one process per run, the flags of `scripts/tsan.sh`, in the same image and on copies of the sources (the repository is unchanged).
+
+ThreadSanitizer reported two data races in 27 of the 11,000 runs, about 1 run in 400. All 27 reports have the same shape: two warnings, one for each field the test's slot writes (`seen` and `ran_on`), read on the main thread after the blocking emit. Both accesses are in the test's own code. No frame in any of the 27 reports is in `std::latch`, `atomic_wait` or a futex call, and no run failed an assertion. I then changed what the blocking emit waits on, and wrote a program that has no reflect-moc in it:
+
+| What waits for the slot | Runs with a report |
+|---|---|
+| `std::latch`, as in `post_and_wait` | 27 of 11000 |
+| mutex and condition variable | 0 of 11000 |
+| `std::binary_semaphore` | 0 of 11000 |
+| control: 12-line program, a thread writes an `int` and calls `count_down`, main calls `wait` and reads | 132 of 11000 |
+
+The same report appears in a program that only uses `std::latch`, and it disappears when the latch is replaced by a mutex and condition variable or a `std::binary_semaphore`. In libstdc++'s `<bits/atomic_wait.h>`, a woken `std::latch::wait` takes the value from `__wait_impl` inside `libstdc++.so`, which is not built with ThreadSanitizer, so ThreadSanitizer does not see the acquire. I treat it as a ThreadSanitizer limitation with `std::latch` on GCC 16.2, not a race in the library.
+
+That is a reading of the header and a set of counts, with these limits. I did not read the body of `__wait_impl` (it is in `src/c++20/atomic.cc`). That the reports come only from runs where the waiter slept and was woken fits the code and the rates, but I did not record which path each run took, so it is a hypothesis. The experiment that would confirm it, a ThreadSanitizer-built libstdc++ or a `__tsan_acquire` annotation after the wait, was not run. `std::binary_semaphore` also waits on a futex and shows 0, and I do not know why. The result says the report is not a race in reflect-moc's own synchronisation. It does not show that libstdc++'s latch is correct on every path, and it was measured on GCC 16.2 on aarch64 in Docker only. The core's result is therefore 0 reports in the recorded ctest run, and a report in 27 of 11000 runs of one test that I attribute to ThreadSanitizer and `std::latch`.
+
+The Qt layer was measured separately, and I did not re-run it for this post. `docs/measurements.md` records `scripts/tsan-qt.sh` with `TSAN_OPTIONS=halt_on_error=0:ignore_noninstrumented_modules=1`:
+
+```text
+control (a real race): 1 report(s)
+capability_static_signal_queued: exit 0, 0 report(s)
+capability_queued_across_qthread: exit 0, 0 report(s)
+capability_signal_to_signal_connect: exit 0, 0 report(s)
+3 tests, 0 reports, 0 failed
+```
+
+Qt is not instrumented, and without that option ThreadSanitizer reports Qt's hand-over of queued arguments in every test. A fourth test, `capability_custom_metatype_queued`, reports 8 races even with the option and is left out. The core run needed no such option and left no test out. libstdc++'s shared library is not instrumented either, and that is where the latch report above comes from, according to the header reading.
+
+## What this has not been tested on
+
+- GCC 16.2 only (`std::meta::current_function` and `std::meta::exception` are missing from clang-p2996). The demos ran on Compiler Explorer's x86-64 GCC 16.2, the ThreadSanitizer runs on aarch64 Linux in Docker. No ThreadSanitizer run on x86_64, and the repository's CMake preset says Homebrew GCC on macOS ships no libtsan (read, not run).
+- ThreadSanitizer sees only the interleavings that happen. The tests are short and ran in an 8-core Docker VM, so the result is evidence, not a proof.
+- A function-form signal checks the argument types of `rqt::emit{this}(...)` at run time and aborts on a mismatch (`limit_function_form_argument_types_checked_at_run_time`). The descriptor and by-name forms check at compile time.
+- The latch explanation rests on the header and the counts above. The latch variants were run on copies of the sources, and the mutex and semaphore gates are not in the repository.
+- The library asks for an object to be destroyed on its own thread. The demos destroy theirs on the main thread, after the worker thread has been joined, so nothing runs concurrently.
+- The event loop runs posted tasks and queued deliveries, with no timers or I/O watchers. There is no benchmark here: I have no measured emit or delivery cost for the core.
+
+---
+
+**Sources** (checked 6 October 2026): reflect-moc, not published yet, read at commit `f6827b1` of the local public clone: `README.md`, `include/reflect_moc/core/README.md`, `include/reflect_moc/core/{object,connection,event_loop,slot,introspection,annotations}.hpp`, `examples/core/worker_demo.cpp` and `amalgamate.py`, `tests/core/` (the tests named above), `scripts/tsan.sh`, `scripts/tsan-qt.sh`, `docs/measurements.md` and `CMakeLists.txt`. Both programs were compiled and run three times on Compiler Explorer (g162, GCC 16.2) on 6 October 2026. The ThreadSanitizer runs, the 200-run repeats, the 11,000-run comparison and the `std::latch` program were run on 5 and 6 October 2026 in the `reflect-moc/gcc16-qt610` image (GCC 16.2.0, aarch64). The Qt-layer result is quoted from `docs/measurements.md` and was not re-run.
