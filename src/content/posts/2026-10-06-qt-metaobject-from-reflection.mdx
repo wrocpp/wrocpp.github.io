@@ -166,7 +166,7 @@ Verdigris from Woboq builds a constexpr `QMetaObject` with macros (`W_OBJECT`, `
 ## What this has not been tested on
 
 - GCC 16.2 only. The library uses `std::meta::current_function`, `current_class`, `offset_of` and `std::meta::exception`; on Compiler Explorer's `clang_bb_p2996` on 6 October 2026, `offset_of` compiled, while `current_function`, `current_class` and `std::meta::exception` are not declared in its `<meta>`.
-- Run on Qt 6.10.3, Linux aarch64 in Docker, with the offscreen platform plugin. Not run on x86_64, on other Qt versions, with clang or with MSVC. The 6.9.0 and 6.11.0 results above are compile-only.
+- Run on Qt 6.10.3, Linux aarch64 in Docker, with the offscreen platform plugin. CI on a GitHub x86_64 runner passed the core and Qt tests, the tool tests, the four ported Qt examples (built with no moc, output identical to the baseline) and the moc trap ([run 37466622213 on main on 6 October 2026](https://github.com/wrocpp/reflect-moc/actions/runs/37466622213)), but the sizes, timings and ThreadSanitizer results in this post were measured on aarch64 only, and a pass on x86_64 does not show that they carry over. The mandelbrot example needs `-ffp-contract=off` for identical checksums across aarch64 and x86_64. Not run on other Qt versions, with clang or with MSVC. The 6.9.0 and 6.11.0 results above are compile-only.
 - It specializes `QtPrivate::HasQ_OBJECT_Macro` and, later in the series, `QtPrivate::FunctionPointer`. `QtPrivate` is Qt's internal namespace and can change in any release.
 - `Q_PLUGIN_METADATA` and `BINDABLE` properties are not supported.
 

@@ -73,7 +73,7 @@ The reason to parse the text instead of inventing a new syntax is that existing 
 ## What this has not been tested on
 
 - GCC 16.2 only. The reduction ran on Compiler Explorer's GCC 16.2 and on Homebrew GCC 16.2.0. `current_function` is not in clang-p2996.
-- The reduction has no Qt in it. The real macros ran only in the project's Docker image (GCC 16.2.0, Qt 6.10.3, aarch64), as the library's README records, not on x86_64, other Qt versions, clang or MSVC. I did not run them myself for this post, and the real parser's error text is read from its source.
+- The reduction has no Qt in it. The real macros ran only in the project's Docker image (GCC 16.2.0, Qt 6.10.3, aarch64), as the library's README records, not on other Qt versions, clang or MSVC. CI on a GitHub x86_64 runner passed the core and Qt tests, the tool tests, the four ported Qt examples (built with no moc, output identical to the baseline) and the moc trap ([run 37466622213 on main on 6 October 2026](https://github.com/wrocpp/reflect-moc/actions/runs/37466622213)); the series' sizes, timings and ThreadSanitizer results were measured on aarch64 only, and a pass on x86_64 does not show that they carry over. I did not run them myself for this post, and the real parser's error text is read from its source.
 - `BINDABLE` and function-valued `DESIGNABLE`, `SCRIPTABLE`, `STORED` and `USER` are rejected. `Q_GADGET`, `Q_NAMESPACE`, `Q_PLUGIN_METADATA` and `QML_ELEMENT` are not supported (README, Limits).
 
 ---
