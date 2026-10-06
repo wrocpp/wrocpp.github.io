@@ -9,17 +9,20 @@ series: cpp26-reflection
 series_order: 25
 audience: working-cpp
 tags: [reflection, cpp26, performance, soa, data-oriented, simd, reflect_soa]
-summary: "Data-oriented design has been telling you AoS-is-bad for twenty years. The reason it's still rare in C++: writing SoA by hand is painful and splits your logical model from your memory layout. Reflection collapses that: SoaVector<Particle> is automatic, and an A/B benchmark harness shows you which layout wins for your workload."
+updatedDate: 2026-10-06
+summary: "Corrected on 6 October 2026: reflect_soa is not a published library (its repository holds only a README), the embedded demo is a reduced hand-written stand-in, and the benchmark timings were never measured and are removed. The correction at the top has the details; the rest is kept as published."
 draft: false
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
-> **Library repo:** [github.com/wrocpp/reflect_soa](https://github.com/wrocpp/reflect_soa) · v0.1.0 · MIT.
+*Correction, 6 October 2026. This post presents `reflect_soa` as a published library, and it is not one. The repository linked below holds a README and nothing else: it has no code, release or licence. What the post shows is a design sketch. The Compiler Explorer demo is a reduced hand-written stand-in: a six-field `ParticleSoA` written by hand, a reflection walk that prints the field list, and one loop. It contains no `SoaVector`, `define_aggregate`, AoSoA, benchmark harness or timing. The timings the post printed (14.2, 4.3, 4.1, 3.8 and 4.0 ms), the "3.3x" and "3.8x faster" ratios and the claim of 2-3x better bandwidth use came from no harness, machine or method. They were not measured, and I removed them. I also fixed four slips. Of the 32 bytes of `Particle` the CPU reads 24 (six floats), not 12. One AoSoA field array of 8 floats is 32 bytes, but the six arrays the loop touches are 192 bytes, so a group is not one cache line. Five layouts are listed in the harness, not four. And the seven posts of the arc ran from 20 June to 2 October, not 15 months. Four code claims do not work as written, and I marked or fixed them. First, `define_aggregate` adds data members only, so a synthesised `SoaVector` cannot have `size()`, a size constructor or `col<>()`. Second, the workload lambda indexes `container.x[i]`, which does not compile for the AoS layout. Third, the "compile-time asserts" that every layout gives the same output would be run-time checks of results. Fourth, on GCC 16.2.0 `build_soa_type` is refused as written: `define_aggregate` must be evaluated from a consteval block (`'define_aggregate' not evaluated from 'consteval' block`), and `soa_impl<T>` is never declared. The alias `using SoaVector = [: ... :]` itself compiled in my test once the type was defined that way. The comparison table now keeps only the rows I could check against the Zig and soa_derive documentation; the Unity DOTS and ISPC rows and the benchmark and boilerplate columns are removed. A measured comparison of array layouts is planned for a later post. The text below is otherwise left as published, so you can read it against this note.*
 
-Prior art: Barry Revzin's 2025 blog post *"Implementing a Struct of Arrays"* showed how reflection turns the SoA pattern from a macro-library chore into a small template. `reflect_soa` productises that and adds two siblings: **AoSoA** (cache-line-aligned blocks) and an **A/B benchmark harness** that picks the layout for you.
+> **No published library.** [github.com/wrocpp/reflect_soa](https://github.com/wrocpp/reflect_soa) is a placeholder repository with a README only. This post describes a design sketch.
 
-<GodboltEmbed id="eqE1GraY5" title="reflect_soa -- AoS/SoA/AoSoA layout transform from struct shape" />
+Prior art: Barry Revzin's 2025 blog post *"Implementing a Struct of Arrays"* showed how reflection turns the SoA pattern from a macro-library chore into a small template. A library named `reflect_soa` could build on that and add two siblings: **AoSoA** (cache-line-aligned blocks) and an **A/B benchmark harness** that times the layouts for you.
+
+<GodboltEmbed id="eqE1GraY5" title="reflect_soa sketch: field list and one SoA loop (reduced stand-in)" />
 
 ## The problem
 
@@ -43,7 +46,7 @@ for (auto& p : particles) {
 }
 ```
 
-On a modern x86 this loop is bandwidth-bound. Every particle is 32 bytes; your CPU only cares about 12 of them (position + velocity); the rest evicts cache lines for nothing. The compiler can't auto-vectorise because adjacent position values are 32 bytes apart in memory.
+On a modern x86 this loop is bandwidth-bound. Every particle is 32 bytes; your CPU only cares about 24 of them (position + velocity, six floats); the rest evicts cache lines for nothing. The compiler can't auto-vectorise because adjacent position values are 32 bytes apart in memory.
 
 Data-oriented design's answer: SoA.
 
@@ -56,14 +59,14 @@ struct ParticleSoA {
 };
 ```
 
-Now the hot loop touches only `x/y/z/vx/vy/vz` and nothing else. SIMD auto-vectorises. Bandwidth utilisation 2-3× better.
+Now the hot loop touches only `x/y/z/vx/vy/vz` and nothing else. SIMD auto-vectorises.
 
 The catch: you now maintain two types. The `Particle` struct you think about + the `ParticleSoA` bag of parallel arrays. Every change to `Particle` propagates to both.
 
 ## The reflection answer
 
 ```cpp
-#include <reflect_soa/soa.hpp>
+#include <reflect_soa/soa.hpp>  // sketch: there is no such header
 
 struct Particle {
     float x, y, z;
@@ -72,6 +75,8 @@ struct Particle {
     std::uint32_t color;
 };
 
+// Sketch, does not work as written: define_aggregate adds data members only,
+// so size(), this constructor and col<>() cannot be generated into the struct.
 soa::SoaVector<Particle> particles(100'000);
 
 // Hot loop
@@ -97,7 +102,9 @@ For workloads that do *some* whole-particle work (render, cull) and *some* per-c
 ```cpp
 soa::AoSoAVector<Particle, 8> particles_aosoa(100'000);
 // Particles stored in groups of 8.
-// Each group's x/y/z/vx/vy/vz occupy 8×4 = 32 bytes — one cache line.
+// Each field array in a group is 8×4 = 32 bytes. The six arrays the loop
+// touches are 192 bytes, and all eight fields are 256 bytes, so a group spans
+// several cache lines (64 bytes on x86, 128 on Apple M-series).
 
 particles_aosoa.each_group([dt](auto& group) {
     // group.x is an std::array<float, 8>
@@ -114,6 +121,8 @@ Auto-vectorises better than SoA when you're doing small windows at a time, and k
 `SoaVector<T>`'s job: walk `T`'s reflection, emit a struct-of-arrays layout. `define_aggregate` is the primitive:
 
 ```cpp
+// Sketch, refused by GCC 16.2.0 as written: define_aggregate must be evaluated
+// from a consteval block, and soa_impl<T> is never declared.
 template <typename T>
 consteval auto build_soa_type() {
     std::vector<std::meta::info> specs;
@@ -136,14 +145,17 @@ For each `T::field`, emit `std::vector<decltype(T::field)> field` in the synthes
 
 ## The A/B benchmark harness
 
-You're rarely sure which layout wins for your workload without measuring. `reflect_soa` ships a harness:
+You're rarely sure which layout wins for your workload without measuring. A harness could look like this:
 
 ```cpp
+// Sketch: nothing here is built, and nothing was measured.
 #include <reflect_soa/bench.hpp>
 
 auto report = soa::bench::compare<Particle>({
     .layouts = {soa::AoS, soa::SoA, soa::AoSoA<4>, soa::AoSoA<8>, soa::AoSoA<16>},
     .n = 1'000'000,
+    // Does not compile for the AoS layout: a vector of Particle has no member x.
+    // A real harness needs an accessor per layout.
     .workload = [](auto& container, float dt) {
         for (std::size_t i = 0; i < container.size(); ++i) {
             container.x[i] += container.vx[i] * dt;
@@ -154,24 +166,17 @@ auto report = soa::bench::compare<Particle>({
 });
 
 std::println("{}", report);
-//   AoS             14.2 ms/iter  (baseline)
-//   SoA              4.3 ms/iter  (0.30× — 3.3× faster)
-//   AoSoA<4>         4.1 ms/iter  (0.29× — 3.4× faster)
-//   AoSoA<8>         3.8 ms/iter  (0.27× — 3.8× faster, best)
-//   AoSoA<16>        4.0 ms/iter
 ```
 
-The harness generates all four containers from the same `Particle` reflection, runs the workload against each, reports timings + ratios. Your layout decision has evidence instead of folklore.
+Such a harness would generate all five layouts from the same `Particle` reflection, run the workload against each and report timings and ratios, so the layout choice rests on a measurement of your own workload. This post prints no such measurement.
 
 ## Compared to...
 
-| Language / library | AoS→SoA conversion | A/B benchmark | Zero-boilerplate |
-|---|---|---|---|
-| Zig `MultiArrayList` | Built-in | Manual | Yes |
-| Rust `soa-derive` | `#[derive(StructOfArray)]` | Manual | Partial (derive macro) |
-| Unity DOTS | `IComponentData` + codegen | Yes | Macro-heavy |
-| ISPC | Separate language | Manual | n/a |
-| **C++26 `reflect_soa`** | **`SoaVector<T>` via reflection** | **`soa::bench::compare`** | **Yes** |
+| Language / library | AoS→SoA conversion |
+|---|---|
+| Zig `std.MultiArrayList` | In the standard library |
+| Rust `soa_derive` crate | `#[derive(StructOfArray)]` derive macro |
+| C++26 reflection (the sketch in this post) | `SoaVector<T>`, not built |
 
 ## When not to use this
 
@@ -179,21 +184,21 @@ The harness generates all four containers from the same `Particle` reflection, r
 - You need per-particle invariants. AoS keeps `particle.x` and `particle.y` adjacent; debugging a scrambled AoSoA is harder when you don't know the layout.
 - `define_aggregate` is too experimental for your project's compiler pin. The capability was behind `-freflection-latest` in early clang-p2996; production-grade may need to wait for GCC / MSVC implementations to catch up. Keep an eye on the project's "known-good compiler versions" table.
 
-## What the library ships
+## What a library could ship (not built)
 
-Under [github.com/wrocpp/reflect_soa](https://github.com/wrocpp/reflect_soa):
+None of this exists. It is the shape the sketch above points to:
 
 - `soa::SoaVector<T>`: synthesised struct-of-arrays.
 - `soa::AoSoAVector<T, N>`: array-of-struct-of-N-arrays.
 - `soa::bench::compare<T>({.layouts = ..., .workload = ...})`: harness.
 - `soa::span_of<&T::field>(container)`: get an `std::span<field_type>` view.
-- Compile-time asserts that every layout produces identical numerical output for the same workload (no silent drift).
+- Run-time checks that every layout produces identical numerical output for the same workload (no silent drift).
 
-v0.1.0 handles flat aggregates. v0.2 roadmap: nested SoA (SoaVector where fields are themselves SoA-transformable), GPU / SYCL tuned layouts (padding for SPIR-V), packed-bitfield variants.
+A first version would handle flat aggregates only. Nested SoA (SoaVector where fields are themselves SoA-transformable), GPU / SYCL tuned layouts (padding for SPIR-V) and packed-bitfield variants are open questions.
 
 ## The arc closes
 
-Seven libraries over 15 months:
+Seven library designs, in posts from 20 June to 2 October:
 
 1. `reflect_llmschema`: AI era
 2. `reflect_arbitrary`: property-based testing
