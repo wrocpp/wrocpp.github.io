@@ -65,6 +65,11 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # post of the day.
     "2026-10-12": {"slug": "qt-object-that-never-names-its-class", "hour": 16,
                    "why": "reflect-moc series episode 3 alongside the evergreen post"},
+    # Fourth episode of the reflect-moc series (signals, slots and thread affinity
+    # in the Qt-free core, with the ThreadSanitizer results). It runs beside the
+    # evergreen post of the day.
+    "2026-10-15": {"slug": "signals-slots-threads-without-qt", "hour": 16,
+                   "why": "reflect-moc series episode 4 alongside the evergreen post"},
     # A reactive stdlib short on the std::span initializer_list constructor,
     # beside the evergreen memory-safety post.
     "2026-10-16": {"slug": "span-initializer-list-removed", "hour": 16,
