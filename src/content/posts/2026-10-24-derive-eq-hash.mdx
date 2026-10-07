@@ -22,7 +22,7 @@ C++20 introduced defaulted comparison:
 struct Point { int x; int y;  bool operator==(Point const&) const = default; };
 ```
 
-That's two-thirds of what you need. The missing third is **hashing**. `std::hash<Point>` still requires a manual specialisation. And when you need non-default behaviour (skip a field, compare a `double` within epsilon, normalise a string before hashing), `= default` doesn't help.
+That's two-thirds of what you need. The missing third is **hashing**. `std::hash<Point>` still requires a manual specialisation. And when you need non-default behaviour (skip a field, compare a double within epsilon, normalise a string before hashing), `= default` doesn't help.
 
 Reflection fills the gap. One header (`reflect_eq`) handles defaulted hashing for any aggregate, plus opt-in annotations for per-field customisation.
 
@@ -97,7 +97,7 @@ Sometimes the defaults are wrong. Three common cases:
 
 ### Skip a field
 
-The `password_hash` field on a `User` shouldn't participate in equality. Annotate:
+The password hash on a `User` shouldn't participate in equality. Annotate:
 
 ```cpp
 struct skip_eq {};
@@ -120,7 +120,7 @@ template for (constexpr auto m : members) {
 }
 ```
 
-Fields tagged `skip_eq` contribute nothing to the hash. Two `User`s with the same `{name, age}` but different `password_hash` hash equally.
+Fields tagged `skip_eq` contribute nothing to the hash. Two users with the same name and age but different password hashes hash equally.
 
 ### Float comparison with epsilon
 
@@ -136,7 +136,7 @@ struct Rectangle {
 };
 ```
 
-During `<=>`, if a field has `approx`, emit `std::abs(a - b) < eps` instead of exact equality.
+During `<=>`, a field with `approx` gets a different test. The code emits `std::abs(a - b) < eps` instead of exact equality.
 
 ### Custom key derivation
 
@@ -153,7 +153,7 @@ struct EmailAddress {
 // Now two EmailAddress differing only in case hash to the same bucket.
 ```
 
-Implementation detail: inside the `template for`, `if constexpr (has<hash_as>(m))` → splice the annotation's `transform` as a function call: `hash_combine(h, [:a.transform:](obj.[:m:]))`. (That splice in call position is one of the more acrobatic but surprisingly clean things P2996 lets you do.)
+Implementation detail: inside the loop, a compile-time check finds the annotation on the member. The walker then splices the annotation's transform as a function call: `hash_combine(h, [:a.transform:](obj.[:m:]))`. That splice in call position is one of the more acrobatic but surprisingly clean things P2996 lets you do.
 
 ## Comparison with hand-written
 
