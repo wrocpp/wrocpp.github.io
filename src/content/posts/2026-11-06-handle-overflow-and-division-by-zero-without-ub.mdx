@@ -17,11 +17,19 @@ relatedPosts: [float-to-int-ub, sanitizers-on-ce]
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 import PostLink from '../../components/PostLink.astro';
 
-A reader question started this series: can the language check a single statement for undefined behavior in debug builds, and cover integer overflow and division by zero along with the rest? This is the third episode, and it covers those two cases for `int`. The tools below give three different policies. None of them is an operator on one expression.
+A reader question started this series. Can the language check a single statement for undefined behavior in debug builds, including integer overflow and division by zero? This is the third episode, and it covers those two cases for `int`. The tools below give three different policies. None of them is an operator on one expression.
+
+## In short
+
+- Signed overflow and integer division by zero are undefined for `int`. On GCC 16.2 at `-O2`, adding one to the maximum value wraps silently, and dividing by zero raises SIGFPE.
+- Three policies remove the undefined behavior. Saturation clamps the result, the checked functions report overflow to the caller, and trapping stops the program.
+- The saturating division function clamps one case only. A zero divisor is still an error.
+- In a constant expression, overflow and division by zero are compile errors.
+- GCC 16.2 ships both libraries. Support in libc++ and the MSVC STL differs, as the compiler section shows.
 
 ## What plain arithmetic does
 
-`INT_MAX + 1` and `x / 0` are undefined for `int` ([expr.pre] and [expr.mul]). `INT_MIN / -1` is undefined as well, because the quotient does not fit. The program in [`ub_cases_single_file.cpp`](https://github.com/wrocpp/cpp26-reflection-examples/blob/d36ff67/posts/91-overflow-without-ub/examples/ub_cases_single_file.cpp) reads its operands from `volatile` variables so the compiler cannot fold them. This is what GCC 16.2 produced on x86-64 (Compiler Explorer, g162, `-std=c++26`):
+Three plain expressions are undefined for `int` ([expr.pre] and [expr.mul]). They are adding one to the maximum value, dividing by zero, and dividing the minimum value by -1. The last one is undefined because the quotient does not fit. The program in [`ub_cases_single_file.cpp`](https://github.com/wrocpp/cpp26-reflection-examples/blob/d36ff67/posts/91-overflow-without-ub/examples/ub_cases_single_file.cpp) reads its operands from `volatile` variables so the compiler cannot fold them. This is what GCC 16.2 produced on x86-64 (Compiler Explorer, g162, `-std=c++26`):
 
 | build | `INT_MAX + 1` | `x + 1 > x` at `INT_MAX` | `10 / 0` | `INT_MIN / -1` |
 |---|---|---|---|---|
@@ -31,11 +39,15 @@ A reader question started this series: can the language check a single statement
 | `-O0 -ftrapv` | SIGABRT | SIGABRT | not run | not run |
 | `-O2 -ftrapv` | SIGABRT | `1`, no trap | not run | not run |
 
-The `x + 1 > x` column is the same function at every setting. It answers `1` at `-O0` as well as `-O2`, so the comparison was already treated as always true without optimization. `-fwrapv` defines the wrap and the answer becomes `0`. With `-ftrapv`, `-O0` aborts, and `-O2` prints `1` and never reaches a trapping addition.
+The `x + 1 > x` column is one function compiled at every setting. Read down the column:
+
+- At `-O0` and `-O2` it answers 1, so the comparison counts as always true even without optimization.
+- With `-fwrapv` the wrap is defined, and the answer becomes 0.
+- With `-ftrapv`, the `-O0` build aborts. The `-O2` build prints 1 and never reaches a trapping addition.
 
 ## What the sanitizer prints
 
-`-fsanitize=signed-integer-overflow,integer-divide-by-zero` at `-O2` reports and, for overflow, keeps running (exit code 0). Division goes on to the hardware trap. The path in the messages is the one on Compiler Explorer:
+The options `-fsanitize=signed-integer-overflow,integer-divide-by-zero` at `-O2` report each error. After an overflow the program keeps running (exit code 0). After a division error it goes on to the hardware trap. The path in the messages is the one on Compiler Explorer:
 
 ```text
 /app/example.cpp:23:18: runtime error: signed integer overflow: 2147483647 + 1 cannot be represented in type 'int'
@@ -45,7 +57,9 @@ Program terminated with signal SIGFPE (8)
 Program terminated with signal SIGFPE (8)
 ```
 
-The `x + 1 > x` function prints `1` under the sanitizer at `-O0` and `-O2`, with no diagnostic, as it does without the sanitizer. Adding `-fsanitize-trap` removes the message: both the overflow and the division by zero end in `Program terminated with signal SIGILL (4)`. The sanitizer setup on Compiler Explorer is covered in <PostLink slug="sanitizers-on-ce">the sanitizers post</PostLink>, and the matching float case in <PostLink slug="float-to-int-ub">the float-to-int post</PostLink>.
+Under the sanitizer the comparison function prints 1 at `-O0` and `-O2` with no diagnostic, exactly as it does without the sanitizer. Adding `-fsanitize-trap` removes the message. The overflow and the division by zero then both end in `Program terminated with signal SIGILL (4)`.
+
+The sanitizer setup on Compiler Explorer is covered in <PostLink slug="sanitizers-on-ce">the sanitizers post</PostLink>. The matching float case is in <PostLink slug="float-to-int-ub">the float-to-int post</PostLink>.
 
 ## Three policies without undefined behavior
 
@@ -75,11 +89,11 @@ feature macros              : sat=202603 ckd=202603
 | `__builtin_add_overflow` | wrapped value and `true` | same, a GCC and Clang extension |
 | `-ftrapv`, or UBSan with `-fsanitize-trap` | no value | the program stops |
 
-`saturating_div` clamps only the one overflowing case, `INT_MIN / -1`. A zero divisor is not handled: libstdc++ asserts `__y != 0`. On GCC 16.2, `saturating_div(10, 0)` with a runtime zero ended in SIGFPE, and with `-D_GLIBCXX_ASSERTIONS` it aborted with `sat_arith.h:101: ... Assertion '__y != 0' failed.`
+The `saturating_div` function clamps only the overflowing case, the minimum value divided by -1. It does not handle a zero divisor, and libstdc++ asserts `__y != 0`. On GCC 16.2, `saturating_div(10, 0)` with a runtime zero ended in SIGFPE. With `-D_GLIBCXX_ASSERTIONS` it aborted with `sat_arith.h:101: ... Assertion '__y != 0' failed.`
 
 ## Division by zero in integers, floating point and constant evaluation
 
-Integer division by zero is undefined, and no library function in the table defines it. Floating-point division by zero is defined when the implementation uses IEEE 754: `1.0 / 0` gave `inf` and `0.0 / 0` gave a NaN. The sign of that NaN printed as `-nan` on x86-64 and `nan` on aarch64, which is why the demo prints `isnan` instead.
+Integer division by zero is undefined, and no library function in the table defines it. Floating-point division by zero is defined when the implementation uses IEEE 754. Dividing 1.0 by 0 gave `inf`, and dividing 0.0 by 0 gave a NaN. The sign of that NaN printed as `-nan` on x86-64 and `nan` on aarch64. That is why the demo prints the result of `isnan` instead.
 
 In a constant expression the same operations are compile errors. These are the GCC 16.2 messages from [`constant_eval_single_file.cpp`](https://github.com/wrocpp/cpp26-reflection-examples/blob/d36ff67/posts/91-overflow-without-ub/examples/constant_eval_single_file.cpp):
 
@@ -94,12 +108,18 @@ constexpr double fdiv = 1.0 / 0.0;
   error: '(1.0e+0 / 0.0)' is not a constant expression
 ```
 
-`std::saturating_add(INT_MAX, 1)` is a constant expression and passed a `static_assert` against `INT_MAX`. `__builtin_add_overflow` was accepted inside a `constexpr` function. `ckd_add` was not: GCC 16.2 reported `call to non-'constexpr' function 'bool __gnu_cxx::ckd_add(_Tp1*, _Tp2, _Tp3)'`.
+The library tools split in constant expressions:
+
+| tool | in a constant expression |
+|---|---|
+| `std::saturating_add(INT_MAX, 1)` | accepted, and a `static_assert` against `INT_MAX` passed |
+| `__builtin_add_overflow` | accepted inside a `constexpr` function |
+| `ckd_add` | rejected: GCC 16.2 reported `call to non-'constexpr' function 'bool __gnu_cxx::ckd_add(_Tp1*, _Tp2, _Tp3)'` |
 
 ## Which compilers and libraries have them
 
-- **GCC 16.2 (libstdc++):** `__cpp_lib_saturation_arithmetic` and `__cpp_lib_stdckdint_h` are both `202603`. `std::add_sat` gives `'add_sat' is not a member of 'std'`: the functions were renamed from `add_sat` to `saturating_add` by [P4052R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4052r0.html) (Jan Schultke and Corentin Jabot, 13 March 2026), and only the new names exist.
-- **clang 23.1 and trunk with libc++:** `std::saturating_add` compiles and runs, and `std::add_sat` is not a member of `std`. `#include <stdckdint.h>` compiles and `ckd_add` works, but the header it found was clang's own (`lib/clang/23/include/stdckdint.h`), and `__cpp_lib_stdckdint_h` was undefined. The libc++ tracking issue for P3370 ([llvm-project #118381](https://github.com/llvm/llvm-project/issues/118381)) was open on 7 October 2026.
+- **GCC 16.2 (libstdc++):** the macros `__cpp_lib_saturation_arithmetic` and `__cpp_lib_stdckdint_h` are both 202603. The old name `std::add_sat` gives `'add_sat' is not a member of 'std'`. [P4052R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4052r0.html) (Jan Schultke and Corentin Jabot, 13 March 2026) renamed the functions from `add_sat` to `saturating_add`, and only the new names exist.
+- **clang 23.1 and trunk with libc++:** `std::saturating_add` compiles and runs. The old name `std::add_sat` is not a member of `std`. The line `#include <stdckdint.h>` compiles, and `ckd_add` works. The header it found was clang's own (`lib/clang/23/include/stdckdint.h`). The macro `__cpp_lib_stdckdint_h` was undefined. The libc++ tracking issue for P3370 ([llvm-project #118381](https://github.com/llvm/llvm-project/issues/118381)) was open on 7 October 2026.
 - **MSVC STL:** the saturation arithmetic tracking issue ([microsoft/STL #4168](https://github.com/microsoft/STL/issues/4168)) was open on 7 October 2026. I did not run MSVC.
 
 ## What this has not been tested on
@@ -112,4 +132,4 @@ constexpr double fdiv = 1.0 / 0.0;
 
 ---
 
-**Sources** (checked 7 October 2026): the three demos in [`posts/91-overflow-without-ub/examples`](https://github.com/wrocpp/cpp26-reflection-examples/tree/d36ff67/posts/91-overflow-without-ub/examples) at commit `d36ff67`, run on Compiler Explorer g162, clang 23.1.0 and clang trunk (libc++), and on the `gcc:16.2` Docker image (aarch64); the diagnostics are the compiler's own output. [P4052R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4052r0.html) for the rename. The reader question that started the series came from Zamfir Yonchev, in [a comment on our Facebook post](https://www.facebook.com/wrocpp/posts/pfbid02snUq5XLSWrz81qkiZhXVSy9b5EkuNu7QU89LEe3x7rv16hc5NNBzKkCTh2kLz6qpl?comment_id=1655384732663723).
+**Sources** (checked 7 October 2026): the three demos in [`posts/91-overflow-without-ub/examples`](https://github.com/wrocpp/cpp26-reflection-examples/tree/d36ff67/posts/91-overflow-without-ub/examples) at commit `d36ff67`. I ran them on Compiler Explorer g162, clang 23.1.0 and clang trunk (libc++), and on the `gcc:16.2` Docker image (aarch64). The diagnostics are the compiler's own output. [P4052R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4052r0.html) for the rename. The reader question that started the series came from Zamfir Yonchev, in [a comment on our Facebook post](https://www.facebook.com/wrocpp/posts/pfbid02snUq5XLSWrz81qkiZhXVSy9b5EkuNu7QU89LEe3x7rv16hc5NNBzKkCTh2kLz6qpl?comment_id=1655384732663723).
