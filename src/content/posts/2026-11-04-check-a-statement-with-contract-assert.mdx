@@ -15,6 +15,7 @@ relatedPosts: [cpp26-contracts, contracts-dispute, hardened-stdlib-turn-it-on]
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
 
 ```cpp
 std::vector<int> v{10, 20, 30};
@@ -26,7 +27,7 @@ int x = v[i];
 
 The first line after the declarations is a C++26 **contract assertion**. It is a statement. When the predicate is false, the implementation does what the evaluation semantic of the build says, and the access on the next line is either never reached or reached on purpose.
 
-This post is the second in a series about checking undefined behavior one statement at a time. A reader question started the series, in [a comment from Zamfir Yonchev](https://www.facebook.com/wrocpp/posts/pfbid02snUq5XLSWrz81qkiZhXVSy9b5EkuNu7QU89LEe3x7rv16hc5NNBzKkCTh2kLz6qpl?comment_id=1655384732663723). Contracts themselves are covered in [C++26 contracts](/posts/cpp26-contracts/) and [the contracts dispute](/posts/contracts-dispute/), and the library-side check in [the hardened standard library](/posts/hardened-stdlib-turn-it-on/). This one is about `contract_assert` as the per-statement tool.
+This post is the second in a series about checking undefined behavior one statement at a time. A reader question started the series, in [a comment from Zamfir Yonchev](https://www.facebook.com/wrocpp/posts/pfbid02snUq5XLSWrz81qkiZhXVSy9b5EkuNu7QU89LEe3x7rv16hc5NNBzKkCTh2kLz6qpl?comment_id=1655384732663723), and the first post, <PostLink slug="catch-undefined-behavior-with-constexpr">catching undefined behavior with constexpr</PostLink>, answered it with the tool the language already has. Contracts themselves are covered in [C++26 contracts](/posts/cpp26-contracts/) and [the contracts dispute](/posts/contracts-dispute/), and the library-side check in [the hardened standard library](/posts/hardened-stdlib-turn-it-on/). This one is about `contract_assert` as the per-statement tool.
 
 ## Running it
 
