@@ -17,13 +17,25 @@ relatedPosts: [embed-the-file, embed-reflect-config, tiny-orm, define-aggregate]
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 import PostLink from '../../components/PostLink.astro';
 
+## In short
+
+- A `consteval` parser reads the schema file that `#embed` put into the program, and each table becomes a row struct with one member per column.
+- A nullable column becomes a `std::optional` member. A query string is checked against the schema, and a hand-written struct can be checked for drift.
+- Every misuse stops the build with a message that names the table and the column.
+- The SQL subset is tiny: no joins, no `IS NULL`, and enums are strings.
+- The two tables and one query in the demo added about half a second of compile time over the headers alone. Only GCC 16.2 was tried.
+
+## One misspelled column, one build error
+
 Here is a build error from GCC 16.2:
 
 ```text
 error: static assertion failed: unknown column 'nme' in table 'users' (columns: id, name, email, age, active) in query "SELECT id, nme FROM users"
 ```
 
-No database was running when it appeared. The compiler had read `schema.sql`, parsed the `CREATE TABLE` statements in a `consteval` function, and checked the query string against the result. This post builds that: a SQL schema file becomes row structs with the columns as members, a `SELECT` is checked against them, and the whole thing is a few hundred lines of ordinary C++26.
+No database was running when it appeared. The compiler had read the schema file and parsed its `CREATE TABLE` statements in a `consteval` function. It then checked the query string against the result.
+
+This post builds that. A SQL schema file becomes row structs with the columns as members. A `SELECT` is checked against them. The whole thing is a few hundred lines of ordinary C++26.
 
 ## One file in, one struct per table out
 
@@ -46,7 +58,7 @@ CREATE TABLE orders (
 );
 ```
 
-`#embed` (<PostLink slug="embed-the-file">the earlier post</PostLink> covers it) puts the bytes of that file into a `constexpr` array, and a `consteval` function turns the array into a description of the tables:
+The `#embed` directive puts the bytes of that file into a `constexpr` array. <PostLink slug="embed-the-file">The earlier post</PostLink> covers it. A `consteval` function then turns the array into a description of the tables:
 
 ```cpp
 namespace sqlschema::embedded {
@@ -59,7 +71,9 @@ static_assert(db.ok(), db.message());
 using schema = ::sqlschema::of<::sqlschema::embedded::db>;
 ```
 
-`schema_t` is a structural type: a pointer to static arrays of tables and columns, with names kept alive by `std::define_static_string` and `std::define_static_array`. That makes it usable as a non-type template parameter, which is how `of<db>` carries the schema into every type derived from it.
+The `schema_t` type is structural. It holds a pointer to static arrays of tables and columns. Two functions keep the names alive: `std::define_static_string` and `std::define_static_array`. That makes the type usable as a non-type template parameter. This is how `of<db>` carries the schema into every type derived from it.
+
+## Defining the row struct
 
 A row type is one `define_aggregate` call, with one data member per column:
 
@@ -70,7 +84,16 @@ template <schema_t S, std::size_t Table> struct row_for {
 };
 ```
 
-The member name is the column name, and the member type comes from the column. `INTEGER` and `BIGINT` are `int64_t`, `REAL` is `double`, `TEXT` is `std::string`, `BOOLEAN` is `bool`. A column that is neither `NOT NULL` nor a `PRIMARY KEY` is wrapped in `std::optional`. The demo prints the generated structs, and the `email` and `age` columns come out as optionals:
+The member name is the column name, and the member type comes from the column type:
+
+| SQL type | C++ member type |
+|---|---|
+| `INTEGER`, `BIGINT` | `int64_t` |
+| `REAL` | `double` |
+| `TEXT` | `std::string` |
+| `BOOLEAN` | `bool` |
+
+A nullable column is wrapped in `std::optional`. Nullable means the column is neither `NOT NULL` nor a `PRIMARY KEY`. The demo prints the generated structs, and the `email` and `age` columns come out as optionals:
 
 ```cpp
 using Users = schema::row<"users">;
@@ -87,11 +110,11 @@ struct users {
 };
 ```
 
-Designated initializers work on it, which is the point of the exercise: the struct is an aggregate, so the compiler checks the member names and types at every use.
+Designated initializers work on it. That is the point of the exercise: the struct is an aggregate, so the compiler checks the member names and types at every use.
 
 ## A query checked against the schema
 
-`schema::query<"...">` takes a `SELECT` as a string template argument. It parses the query with the same small lexer, finds the table and the columns, and defines a result struct with the selected columns in the order written. A single `WHERE column OP ?` gives the query one parameter whose type is the column's:
+`schema::query<"...">` takes a `SELECT` as a string template argument. It parses the query with the same small lexer and finds the table and the columns. It then defines a result struct with the selected columns in the order written. A single `WHERE column OP ?` gives the query one parameter whose type is the column's:
 
 ```cpp
 using Adults = schema::query<"SELECT id, name, email FROM users WHERE age >= ? ORDER BY id">;
@@ -101,7 +124,9 @@ static_assert(std::is_same_v<decltype(Adults::row::email), std::optional<std::st
 auto q = Adults::bind(18);   // q.args is a std::tuple<std::int64_t>, q.sql the query text
 ```
 
-`bind` list-initializes the parameter from the argument, so `18` (an `int`) is accepted for an `int64_t` and `18.5` is not, because that would narrow. The parameter takes the base type of the column even when the column is nullable. In SQL a comparison with `NULL` never matches, so `age >= ?` with an `std::optional` would be a bug, and `bind` refuses it and says so.
+The `bind` function list-initializes the parameter from the argument. So 18 (an `int`) is accepted for an `int64_t`, and 18.5 is not, because that would narrow.
+
+The parameter takes the base type of the column even when the column is nullable. In SQL a comparison with `NULL` never matches. A condition such as `age >= ?` given an optional value would therefore be a bug. The `bind` function refuses it and says so.
 
 Here is the demo on Compiler Explorer (g162, x86-64). It runs the string-literal variant, which is the same engine with the schema written in a raw string. The `#embed` variant is further down.
 
@@ -109,7 +134,7 @@ Here is the demo on Compiler Explorer (g162, x86-64). It runs the string-literal
 
 ## What the compiler says when something is wrong
 
-Each row is one misuse. The demo's source has a macro for each (`-DV_UNKNOWN_COLUMN` and so on), and the text is the first `error:` line from GCC 16.2.0 in the `gcc:16.2` Docker image, with the file position removed:
+Each row is one misuse. The demo's source has a macro for each, such as `-DV_UNKNOWN_COLUMN`. The text is the first `error:` line from GCC 16.2.0 in the `gcc:16.2` Docker image, with the file position removed:
 
 | Misuse | First error line |
 |---|---|
@@ -122,11 +147,15 @@ Each row is one misuse. The demo's source has a macro for each (`-DV_UNKNOWN_COL
 | `bind(18.5)` | `static assertion failed: parameter 1 of the query is users.age >= ?: expected int64_t, got double (query "...")` |
 | `bind(std::optional<std::int64_t>{18})` | `static assertion failed: parameter 1 of the query is users.age >= ?: got std::optional<int64_t>; a comparison with NULL never matches, pass the int64_t itself (query "...")` |
 
-The schema errors carry the position inside the `.sql` file, not inside the C++ file, because the file name is a parameter of `parse`. For the `#embed` form the `static_assert` itself is reported at the header line that contains it, and the message after the colon carries the DDL position.
-
-The keyword row has a reason. If the parser handed `class` straight to `define_aggregate`, GCC would say `name is a keyword`, naming neither the table nor the column. The parser checks first, against a list of C++ keywords, so the message can name them. The check is deliberately stricter than the compiler, which accepts `or`, `not` and the other alternative tokens as member names (I tried them on GCC 16.2) even though `r.or` cannot be written in source. The library rejects them anyway.
+The schema errors carry the position inside the `.sql` file, not inside the C++ file, because the file name is a parameter of `parse`. For the `#embed` form, GCC reports the `static_assert` itself at the header line that contains it. The message after the colon carries the DDL position.
 
 Each of these errors is followed by a long instantiation note that spells the whole schema as a literal. A reader looks at the `error:` line, and the note grows with the number of tables.
+
+## Why the parser rejects keywords
+
+The keyword row has a reason. Suppose the parser handed `class` straight to `define_aggregate`. GCC would say `name is a keyword`, naming neither the table nor the column. So the parser checks first, against a list of C++ keywords, and the message can name them.
+
+The check is deliberately stricter than the compiler. I tried the alternative tokens on GCC 16.2, and it accepts tokens such as `or` and `not` as member names. A member access like `r.or` cannot be written in source, and the library rejects them anyway.
 
 ## Checking a struct you wrote by hand
 
@@ -138,17 +167,21 @@ struct User { std::int64_t id; std::string name; std::optional<std::string> emai
 static_assert(schema::matches<User, "users">);
 ```
 
-This compiles. A struct that has fallen behind the schema gives a message like this one, for a `Stale` struct with `email` as a plain `std::string`, no `age`, and an extra `score`:
+This compiles. Now take a `Stale` struct that has fallen behind the schema. Its `email` member is a plain `std::string`. It has no `age` member and an extra `score` member. The message looks like this:
 
 ```text
 nullability: Stale::email is std::string but users.email is nullable (expected std::optional<std::string>); missing: column users.age has no member in Stale (expected std::optional<int64_t> age); extra: Stale::score (double) is not a column of users
 ```
 
-The spelling of the assertion matters. A bare `static_assert(schema::matches<Stale, "users">)` stops the build with `static assertion failed` and nothing else, no names. The form that prints the text is `static_assert(schema::drift<Stale, "users">.empty(), schema::drift<Stale, "users">)`, because C++26 allows a constant expression as the message. The demo's `V_BARE_MATCHES` and `V_DRIFT` macros show both. The drift check also reports wrong types and wrong member order; the order complaint appears only when nothing else is wrong, because a missing column shifts every later index.
+The spelling of the assertion matters. A bare `static_assert(schema::matches<Stale, "users">)` stops the build with `static assertion failed` and nothing else, no names. The form that prints the text is `static_assert(schema::drift<Stale, "users">.empty(), schema::drift<Stale, "users">)`. It works because C++26 allows a constant expression as the message. The demo's `V_BARE_MATCHES` and `V_DRIFT` macros show both.
+
+The drift check also reports wrong types and wrong member order. The order complaint appears only when nothing else is wrong, because a missing column shifts every later index.
 
 ## The same engine, reading a file
 
-The embedded variant is [`schema_embed.cpp`](https://github.com/wrocpp/cpp26-reflection-examples/blob/ff49084/posts/86-sql-schema/examples/schema_embed.cpp) with [`schema.sql`](https://github.com/wrocpp/cpp26-reflection-examples/blob/ff49084/posts/86-sql-schema/examples/schema.sql) beside it. The string-literal file is [`schema_single_file.cpp`](https://github.com/wrocpp/cpp26-reflection-examples/blob/ff49084/posts/86-sql-schema/examples/schema_single_file.cpp), and it is the one in the embed above. Compiler Explorer cannot run `#embed` from a single source pane, so the permalink has the schema as a string. I ran the `#embed` file there through the compile API, with `schema.sql` sent as an extra file, and it compiled and ran on g162 with the same output as in Docker, but I did not mint a permalink for it. Its output on GCC 16.2.0:
+The embedded variant is [`schema_embed.cpp`](https://github.com/wrocpp/cpp26-reflection-examples/blob/ff49084/posts/86-sql-schema/examples/schema_embed.cpp) with [`schema.sql`](https://github.com/wrocpp/cpp26-reflection-examples/blob/ff49084/posts/86-sql-schema/examples/schema.sql) beside it. The string-literal file is [`schema_single_file.cpp`](https://github.com/wrocpp/cpp26-reflection-examples/blob/ff49084/posts/86-sql-schema/examples/schema_single_file.cpp), and it is the one in the embed above. Compiler Explorer cannot run `#embed` from a single source pane, so the permalink has the schema as a string.
+
+I ran the `#embed` file there through the compile API, with `schema.sql` sent as an extra file. It compiled and ran on g162 with the same output as in Docker. I did not mint a permalink for it. Its output on GCC 16.2.0:
 
 ```text
 embedded bytes: 396, tables: 2
@@ -166,38 +199,62 @@ Editing `schema.sql` and rebuilding changes the structs, and every use that no l
 
 ## Compared with sqlpp23, sqlgen and sqlx
 
-All three solve a neighbouring problem, and none of them is built on P2996, so the comparison is about where the schema lives and when it is read.
+All three solve a neighbouring problem. None of them is built on P2996, so the comparison is about where the schema lives and when it is read.
 
-- **sqlpp23** has [`sqlpp23-ddl2cpp`](https://github.com/rbock/sqlpp23/blob/main/docs/ddl2cpp.md), a script that takes one or more DDL files and writes C++ headers (or modules) with the table definitions. It is a generation step in the build, and the generated code feeds sqlpp23's query builder. What this post does is read the DDL in the compiler instead of in a script. sqlpp23 is a complete query library, with a type-checked expression builder far beyond one `WHERE column OP ?`. I did not read its generator code, only its documentation.
-- **[sqlgen](https://github.com/getml/sqlgen)** goes the other way. Its README defines schemas as C++ structs, builds on reflect-cpp, shows compile-time errors such as an unknown column, and lists DuckDB, MySQL/MariaDB, PostgreSQL and SQLite as backends. The struct is the source of truth there, and I did not find a description of importing an existing DDL file. Here the SQL file is the source and the structs are derived.
-- **sqlx** (Rust) checks `query!` against a live database at build time. Its [CLI README](https://github.com/launchbadge/sqlx/blob/main/sqlx-cli/README.md) describes `cargo sqlx prepare`, which saves query metadata to a `.sqlx` directory that you check in, so that "an active database connection will no longer be needed to build your project". That is the nearest idea to this one: a derived artifact in the repository lets the build run without a database. The artifact differs. sqlx stores metadata a real database produced, and this post parses the DDL itself and trusts it.
+- **sqlpp23** has [`sqlpp23-ddl2cpp`](https://github.com/rbock/sqlpp23/blob/main/docs/ddl2cpp.md), a script that takes one or more DDL files and writes C++ headers (or modules) with the table definitions. It is a generation step in the build, and the generated code feeds sqlpp23's query builder. This post reads the DDL in the compiler instead of in a script. Beyond that, sqlpp23 is a complete query library, with a type-checked expression builder far beyond one `WHERE column OP ?`. I did not read its generator code, only its documentation.
+- **[sqlgen](https://github.com/getml/sqlgen)** goes the other way. Its README defines schemas as C++ structs and builds on reflect-cpp. It shows compile-time errors such as an unknown column, and it lists DuckDB, MySQL/MariaDB, PostgreSQL and SQLite as backends. The struct is the source of truth there, and I did not find a description of importing an existing DDL file. Here the SQL file is the source and the structs are derived.
+- **sqlx** (Rust) checks `query!` against a live database at build time. Its [CLI README](https://github.com/launchbadge/sqlx/blob/main/sqlx-cli/README.md) describes `cargo sqlx prepare`. That command saves query metadata to a `.sqlx` directory that you check in. The README says that "an active database connection will no longer be needed to build your project". That is the nearest idea to this one: a derived artifact in the repository lets the build run without a database. The artifact differs: sqlx stores metadata a real database produced, and this post parses the DDL itself and trusts it.
 
-What the others do and this does not: nothing here talks to a database during the build, so nothing confirms that the DDL means what the parser thinks, and the parser understands a small subset of one dialect. All three libraries above cover far more SQL, and sqlx checks queries against the database's own semantics.
+## Where this approach falls short
+
+Here is what this post lacks next to the others. Nothing here talks to a database during the build, so nothing confirms that the DDL means what the parser thinks. The parser understands a small subset of one dialect. All three libraries above cover far more SQL, and sqlx checks queries against the database's own semantics.
 
 ## What the subset leaves out
 
-- Types: `INTEGER`, `BIGINT`, `REAL`, `TEXT`, `BOOLEAN`. `INT`, `VARCHAR(n)`, dates and blobs are errors, as the table above shows for `VARCHAR`.
-- Constraints: `NOT NULL` and a column-level `PRIMARY KEY`. `PRIMARY KEY` implies not-null here, which is true in SQLite only for rowid tables. There are no table-level constraints, no `DEFAULT`, no foreign keys, no `ALTER`, no `IF NOT EXISTS`, no block comments.
-- Queries: one table, a column list or `*`, one optional `WHERE column OP ?` with `= < > <= >= <>`, and an optional `ORDER BY column [ASC | DESC]`. No joins, no `IS NULL`, no literals in the condition, no aggregates, and nothing that checks `INSERT` or `UPDATE` beyond the struct-matches-table check.
+The parser covers a small subset:
+
+| Area | Supported | Not supported |
+|---|---|---|
+| Types | `INTEGER`, `BIGINT`, `REAL`, `TEXT`, `BOOLEAN` | `INT`, `VARCHAR(n)`, dates and blobs are errors, as the error table above shows for `VARCHAR` |
+| Constraints | `NOT NULL` and a column-level `PRIMARY KEY` | table-level constraints, `DEFAULT`, foreign keys, `ALTER`, `IF NOT EXISTS`, block comments |
+| Queries | one table, a column list or `*`, one optional `WHERE column OP ?` with `= < > <= >= <>`, and an optional `ORDER BY column` with `ASC` or `DESC` | joins, `IS NULL`, literals in the condition, aggregates, and any check of `INSERT` or `UPDATE` beyond the struct-matches-table check |
+
+Here `PRIMARY KEY` implies not-null, which is true in SQLite only for rowid tables. Three more limits:
+
 - Enums: a column that holds one of a few values is a `TEXT` column and a `std::string` member. C++26 has no `define_enum`, so the generated type cannot be an enumeration.
 - Names: a column named like a C++ keyword (`class`, `default`) is a build error with no renaming syntax to get around it. I did not build a mapping such as `COLUMN class AS class_`.
 - Case: SQL names match case-insensitively and members keep the spelling in the DDL. Two columns that differ only in case are rejected as duplicates.
 
 ## Compile time
 
-I measured the string-literal demo in the `gcc:16.2` image, `-c -O0`, three runs: 1.5 to 2.1 s of CPU time (user plus system), against 0.9 to 1.0 s for a file that includes only the same standard headers (`<meta>` among them) and has an empty `main`. So the two tables and one query in the demo cost about half a second on top of the headers. That is one schema, one query and one Docker VM, so it is a single data point and says nothing about scaling.
+I measured the string-literal demo in the `gcc:16.2` image with `-c -O0`, in three runs. It took 1.5 to 2.1 s of CPU time (user plus system). A file with an empty `main` that includes only the same standard headers (`<meta>` among them) took 0.9 to 1.0 s. So the two tables and one query in the demo cost about half a second on top of the headers. That is one schema, one query and one Docker VM. It is a single data point and says nothing about scaling.
 
-An earlier run of a larger version, on Homebrew GCC 16.2.0 on an Apple machine, put a 50-column table at 0.78 to 0.81 s and a 200-column table at 1.76 to 1.80 s, and a first version of the parser hit the default `-fconstexpr-ops-limit` at 200 columns because it computed a line and column for every column; computing the position only when an error is built fixed it. Those runs are not published anywhere I can link, so treat them as unverified here. In either measurement each translation unit that includes the header parses the schema again, and nothing is shared between them.
+An earlier run of a larger version used Homebrew GCC 16.2.0 on an Apple machine. It put a 50-column table at 0.78 to 0.81 s and a 200-column table at 1.76 to 1.80 s.
+
+A first version of the parser hit the default `-fconstexpr-ops-limit` at 200 columns, because it computed a line and column for every column. Computing the position only when an error is built fixed it. Those runs are not published anywhere I can link, so treat them as unverified here.
+
+In either measurement, each translation unit that includes the header parses the schema again. Nothing is shared between them.
 
 ## What this has not been tested on
 
-- GCC 16.2 only: the `gcc:16.2` Docker image (aarch64 Linux) and Compiler Explorer's g162 (x86-64). Not clang-p2996, which I did not try (`dealias`, `substitute(^^std::optional, ...)` and `define_static_array` over structs are untested there), not GCC trunk, not another 16.x.
+- GCC 16.2 only: the `gcc:16.2` Docker image (aarch64 Linux) and Compiler Explorer's g162 (x86-64). I did not try clang-p2996. The call `substitute(^^std::optional, ...)` is untested there. So are `dealias` and `define_static_array` over structs. I also did not try GCC trunk or another 16.x.
 - Not across translation units. The schema description holds pointers into static storage that belongs to one translation unit, so `of<db>` in two TUs gives two distinct types. I did not build that with `-flto -Wodr` and I do not know whether it is a problem for a program that passes rows between them.
 - `#embed` path rules on Linux and other platforms beyond what the Docker run exercised, and no `-O2` timings.
-- No database was involved in these demos. In an earlier version I inserted and fetched rows through SQLite's C API using the generated structs, and it worked, but that code is not in the examples repository and I am not claiming it here. Compiler Explorer has no `sqlite3.h` in any case.
+## What was never run against a real system
+
+- No database was involved in these demos. In an earlier version I inserted and fetched rows through SQLite's C API using the generated structs. It worked, but that code is not in the examples repository, and I am not claiming it here. Compiler Explorer has no `sqlite3.h` in any case.
 - The parser was written against my own schema and my own error cases. Nobody has fed it DDL from a real project, so it will refuse things that real schemas contain.
-- No comparison with the three libraries above beyond reading their documentation (sqlpp23 and sqlx pages, the sqlgen README), all read on 6 October 2026. I did not build or run any of them.
+- There is no comparison with the three libraries above beyond reading their documentation. I read the sqlpp23 and sqlx pages and the sqlgen README on 6 October 2026. I did not build or run any of them.
 
 ---
 
-**Sources** (checked 6 October 2026): the two demos in [`posts/86-sql-schema/examples`](https://github.com/wrocpp/cpp26-reflection-examples/tree/ff49084/posts/86-sql-schema/examples) at commit `ff49084`, compiled with `-std=c++26 -freflection -Wall -Wextra -Werror` in the `gcc:16.2` Docker image (aarch64) and run on Compiler Explorer g162, permalink `hGz5fqa3K` re-read through `api/shortlinkinfo`; every error text in the table was produced by the demo's `-DV_*` macros on that image; the `#embed` run on g162 used the compile API with `schema.sql` as an extra file; the timing is a Docker measurement; the earlier Homebrew timings, the keyword and alternative-token probes and the SQLite run are from my own spike notes and are not linked. Competitor facts come from the [sqlpp23 ddl2cpp page](https://github.com/rbock/sqlpp23/blob/main/docs/ddl2cpp.md), the [sqlgen README](https://github.com/getml/sqlgen) and the [sqlx-cli README](https://github.com/launchbadge/sqlx/blob/main/sqlx-cli/README.md).
+**Sources** (checked 6 October 2026):
+
+- The two demos are in [`posts/86-sql-schema/examples`](https://github.com/wrocpp/cpp26-reflection-examples/tree/ff49084/posts/86-sql-schema/examples) at commit `ff49084`.
+- I compiled them with `-std=c++26 -freflection -Wall -Wextra -Werror` in the `gcc:16.2` Docker image (aarch64) and ran them on Compiler Explorer g162.
+- I re-read the permalink `hGz5fqa3K` through `api/shortlinkinfo`.
+- Every error text in the table was produced by the demo's `-DV_*` macros on that image.
+- The `#embed` run on g162 used the compile API with `schema.sql` as an extra file.
+- The timing is a Docker measurement.
+- The earlier Homebrew timings, the keyword and alternative-token probes and the SQLite run are from my own spike notes and are not linked.
+- Competitor facts come from the [sqlpp23 ddl2cpp page](https://github.com/rbock/sqlpp23/blob/main/docs/ddl2cpp.md), the [sqlgen README](https://github.com/getml/sqlgen) and the [sqlx-cli README](https://github.com/launchbadge/sqlx/blob/main/sqlx-cli/README.md).
