@@ -46,7 +46,7 @@ The violation report goes to stderr and the other two lines to stdout, so the or
 
 On GCC 16.2 `-std=c++26` is enough: `-fcontracts` is on by itself, `__cpp_contracts` is `202502L`, and `-fno-contracts` turns `contract_assert` into the error `'contract_assert' is only available with '-fcontracts'`. With `-std=c++23` the keyword is not recognised at all.
 
-One link detail: the default violation handler lives in `libstdc++exp`. Without `-lstdc++exp` the link fails with `undefined reference to handle_contract_violation(std::contracts::contract_violation const&)`. That reference is satisfied either by the library or by a handler you define yourself, shown below.
+One link detail: the default violation handler lives in `libstdc++exp`. Passing `-fcontracts` explicitly makes the driver link it for you, but relying on the implicit `-std=c++26` default does not, so without `-lstdc++exp` the link fails with `undefined reference to handle_contract_violation(std::contracts::contract_violation const&)`. That reference is satisfied either by the library or by a handler you define yourself, shown below.
 
 ## The four semantics, measured
 
