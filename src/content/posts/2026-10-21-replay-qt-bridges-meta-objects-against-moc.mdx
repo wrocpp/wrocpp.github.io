@@ -14,16 +14,28 @@ relatedPosts: [qt-four-examples-without-moc, qt-metaobject-from-reflection]
 
 import PostLink from '../../components/PostLink.astro';
 
-These are two lines from a diff of the same class's meta-object, once as moc generates it and once as the Qt Bridges Rust layer's builder calls produce it:
+These two lines come from a diff of one class's meta-object. The first line is what moc generates. The second is what the builder calls of the Qt Bridges Rust layer produce:
 
 ```text
 moc:     property 3 total type=int flags=R--DST--------
 builder: property 3 total type=int flags=RW--S---------
 ```
 
-`total` is declared with a getter and nothing else. moc marks it read-only (`R`, no `W`). The builder path marks it writable, and a QML assignment to it is accepted without an error, where the moc class throws `TypeError: Cannot assign to read-only property "total"`. This post lists where the two meta-objects differ for one small class, what the builder calls are, and what each difference does or does not change.
+## In short
 
-Two limits first. Qt Bridges targets languages other than C++, and its Rust and C# layers are labelled beta on the [Qt Bridges page](https://www.qt.io/development/qt-framework/qt-bridges), which I read again on 6 October 2026. reflect-moc, the library from <PostLink slug="qt-four-examples-without-moc">the previous post</PostLink>, is a C++ analogue that generates the same tables moc does. This is a comparison of two ways to produce a `QMetaObject`, run on one class, and not a comparison of the products. And I did not build or run any Rust. The Rust layer's C++ half is replayed in C++, so every behaviour below is the replay's.
+- Qt Bridges' Rust layer builds each class's meta-object at run time with Qt's private `QMetaObjectBuilder`. I replayed its builder calls on one class in C++ and diffed the result against moc. The versions were Qt 6.10.3, 6.11.3 and 6.12.0.
+- The registration API has no way to say that a property is read-only, to name a signal's parameters or to add an enum.
+- The visible effects in QML: a write to a getter-only property is accepted, and an implicit signal handler fails with a ReferenceError.
+- In the C++ analogue, emitting a signal by name costs about 22 to 46 ns more than emitting it by index.
+- No Rust was built or run, so every behaviour is the replay's. The dumps are identical across the three Qt versions.
+
+## The difference in one property
+
+The property `total` is declared with a getter and nothing else. The tool moc marks it read-only (`R`, no `W`). The builder path marks it writable. A QML assignment to it is accepted without an error. The moc class throws `TypeError: Cannot assign to read-only property "total"` instead. This post lists where the two meta-objects differ for one small class. It also lists the builder calls and what each difference does or does not change.
+
+## Limits of the comparison
+
+Two limits first. Qt Bridges targets languages other than C++. Its Rust and C# layers are labelled beta on the [Qt Bridges page](https://www.qt.io/development/qt-framework/qt-bridges), which I read again on 6 October 2026. The library reflect-moc, from <PostLink slug="qt-four-examples-without-moc">the previous post</PostLink>, is a C++ analogue that generates the same tables moc does. This is a comparison of two ways to produce a `QMetaObject`, run on one class, and not a comparison of the products. And I did not build or run any Rust. The Rust layer's C++ half is replayed in C++, so every behaviour below is the replay's.
 
 ## The snapshot
 
@@ -39,7 +51,7 @@ The projects move, so treat these as a dated snapshot. Every source link below i
 
 ## What the Rust layer asks Qt to build
 
-The builder is [`dynamicmetaobjectbuilder.cpp`](https://code.qt.io/cgit/qt/qtbridge-rust.git/tree/crates/qtbridge-runtime/src/cpp/dynamicmetaobjectbuilder.cpp?id=f7fe523d10357751bc90c334263188610c0382cf), which includes `<private/qmetaobjectbuilder_p.h>` (line 11) and owns a `QMetaObjectBuilder`. The calls it makes are these:
+The builder is the file [`dynamicmetaobjectbuilder.cpp`](https://code.qt.io/cgit/qt/qtbridge-rust.git/tree/crates/qtbridge-runtime/src/cpp/dynamicmetaobjectbuilder.cpp?id=f7fe523d10357751bc90c334263188610c0382cf). It includes `<private/qmetaobjectbuilder_p.h>` (line 11) and owns a `QMetaObjectBuilder`. The calls it makes are these:
 
 | Qt call | line |
 |---|---|
@@ -51,23 +63,55 @@ The builder is [`dynamicmetaobjectbuilder.cpp`](https://code.qt.io/cgit/qt/qtbri
 | `addSlot(signature)`, `setReturnType` | [139](https://code.qt.io/cgit/qt/qtbridge-rust.git/tree/crates/qtbridge-runtime/src/cpp/dynamicmetaobjectbuilder.cpp?id=f7fe523d10357751bc90c334263188610c0382cf#n139), 142 |
 | `toMetaObject()` | 151 |
 
-The proc-macro fixes the order: signals, slots, properties, class infos ([`generate_meta.rs`](https://code.qt.io/cgit/qt/qtbridge-rust.git/tree/crates/qtbridge-gen/src/qt_gen_impl/qt_meta_gen/generate_meta.rs?id=f7fe523d10357751bc90c334263188610c0382cf#n35), lines 35 to 38). The registration API that the macros call has three entry points, `registerProperty(name, prop_id, meta_type, is_constant, notify_signal)`, `registerSignal(name, arg_meta_types)` and `registerSlot(name, slot_id, arg_meta_types, return_meta_type, mutability)` ([`dynamicmetaobjectbuilder.rs`](https://code.qt.io/cgit/qt/qtbridge-rust.git/tree/crates/qtbridge-runtime/src/dynamicmetaobjectbuilder.rs?id=f7fe523d10357751bc90c334263188610c0382cf#n43), lines 43 to 49). Nothing in them carries a parameter name, a revision, a final flag or an enum.
+The proc-macro fixes the order: signals, slots, properties, class infos ([`generate_meta.rs`](https://code.qt.io/cgit/qt/qtbridge-rust.git/tree/crates/qtbridge-gen/src/qt_gen_impl/qt_meta_gen/generate_meta.rs?id=f7fe523d10357751bc90c334263188610c0382cf#n35), lines 35 to 38). The registration API that the macros call has three entry points ([`dynamicmetaobjectbuilder.rs`](https://code.qt.io/cgit/qt/qtbridge-rust.git/tree/crates/qtbridge-runtime/src/dynamicmetaobjectbuilder.rs?id=f7fe523d10357751bc90c334263188610c0382cf#n43), lines 43 to 49):
+
+| entry point | signature |
+|---|---|
+| property | `registerProperty(name, prop_id, meta_type, is_constant, notify_signal)` |
+| signal | `registerSignal(name, arg_meta_types)` |
+| slot | `registerSlot(name, slot_id, arg_meta_types, return_meta_type, mutability)` |
+
+Nothing in them carries a parameter name, a revision, a final flag or an enum.
 
 ### Calls that appear nowhere in the repository
 
-I grepped the whole qtbridge-rust tree at `f7fe523` (every `.cpp`, `.h`, `.hpp` and `.rs` file) for these names and found no match: `setFinal`, `setRequired`, `setBindable`, `setRevision`, `addEnumerator`, `setEnumOrFlag`, `setStdCppSet`, `setParameterNames`, `setResettable`, `setDesignable`, `setStored`, `addMethod` and `setStaticMetacallFunction`. The only files that name `QMetaObjectBuilder`, `QMetaPropertyBuilder` or `QMetaMethodBuilder` are `dynamicmetaobjectbuilder.h` and `.cpp`. Dispatch goes through `QDynamicMetaObjectData` instead of a static metacall: [`qbaseproxy.h`](https://code.qt.io/cgit/qt/qtbridge-rust.git/tree/crates/qtbridge-interfaces/src/cpp/qbaseproxy.h?id=f7fe523d10357751bc90c334263188610c0382cf#n69) installs it at line 69 with `QObjectPrivate::get(proxy)->metaObject = ...`.
+I grepped the whole qtbridge-rust tree at `f7fe523` for the names in the table. The search covered every C++ source and header file, and every Rust file. The table also shows a grep of the whole qtbridge-csharp tree for six of the names.
 
-One of those names needs a qualifier. `QMetaPropertyBuilder::setRequired` is not in the Qt 6.10.3 private header at all. It appears in the 6.11.3 header, which I diffed against 6.10.3, so it is a call the Rust layer does not make on versions that offer it.
+| name | qtbridge-rust | qtbridge-csharp |
+|---|---|---|
+| `setFinal` | no match | no match |
+| `setRequired` | no match | no match |
+| `setBindable` | no match | no match |
+| `setRevision` | no match | no match |
+| `addEnumerator` | no match | not searched |
+| `setEnumOrFlag` | no match | not searched |
+| `setStdCppSet` | no match | no match |
+| `setParameterNames` | no match | no match |
+| `setResettable` | no match | not searched |
+| `setDesignable` | no match | not searched |
+| `setStored` | no match | not searched |
+| `addMethod` | no match | not searched |
+| `setStaticMetacallFunction` | no match | not searched |
 
-The C# layer decides some of this differently. Its [`metadata_loader.cpp`](https://code.qt.io/cgit/qt/qtbridge-csharp.git/tree/src/Qt.Bridge.CSharp.Generator.Rules.SourceCode/Static/cpp/metadata_loader.cpp?id=575651a7d037bd133f7f6a1efa8398d0af65cc28#n204) calls `setWritable(false)` from a `hasSet` flag in its generated metadata (line 204), and `loadEnum` calls `addEnumerator("Values")` (line 245). A grep of the whole qtbridge-csharp tree for `setFinal`, `setRequired`, `setBindable`, `setParameterNames`, `setRevision` and `setStdCppSet` returns no match either.
+Three Qt builder classes appear in only two files, `dynamicmetaobjectbuilder.h` and `.cpp`. The classes are:
+
+- `QMetaObjectBuilder`
+- `QMetaPropertyBuilder`
+- `QMetaMethodBuilder`
+
+Dispatch goes through `QDynamicMetaObjectData` instead of a static metacall. The file [`qbaseproxy.h`](https://code.qt.io/cgit/qt/qtbridge-rust.git/tree/crates/qtbridge-interfaces/src/cpp/qbaseproxy.h?id=f7fe523d10357751bc90c334263188610c0382cf#n69) installs it at line 69 with `QObjectPrivate::get(proxy)->metaObject = ...`.
+
+One of those names needs a qualifier. `QMetaPropertyBuilder::setRequired` is not in the Qt 6.10.3 private header at all. It appears in the 6.11.3 header, which I diffed against 6.10.3. So it is a call the Rust layer does not make on versions that offer it.
+
+The C# layer decides some of this differently. Its file [`metadata_loader.cpp`](https://code.qt.io/cgit/qt/qtbridge-csharp.git/tree/src/Qt.Bridge.CSharp.Generator.Rules.SourceCode/Static/cpp/metadata_loader.cpp?id=575651a7d037bd133f7f6a1efa8398d0af65cc28#n204) calls `setWritable(false)` from a flag in its generated metadata (line 204). The flag is named `hasSet`. The function `loadEnum` calls `addEnumerator("Values")` (line 245). The grep of the whole qtbridge-csharp tree in the table returns no match for the six names it covers.
 
 ### What the Rust macro knows about read-only
 
-The property macro does distinguish the case. In [`qproperty_info.rs`](https://code.qt.io/cgit/qt/qtbridge-rust.git/tree/crates/qtbridge-gen/src/qt_gen_impl/qt_meta_gen/qproperty_info.rs?id=f7fe523d10357751bc90c334263188610c0382cf#n276), `get_write_code` returns nothing for a property with neither a setter nor a member and annotates it `// A read-only property` (line 302). What reaches the registration call is `is_const()` (line 230), so a property that is read-only but not constant is registered with `setWritable(true)`. That is what the replay does for `total`. What the generated Rust `writeProperty` does when QML writes to such a property I did not read or run.
+The property macro does distinguish the case. In the file [`qproperty_info.rs`](https://code.qt.io/cgit/qt/qtbridge-rust.git/tree/crates/qtbridge-gen/src/qt_gen_impl/qt_meta_gen/qproperty_info.rs?id=f7fe523d10357751bc90c334263188610c0382cf#n276), the function `get_write_code` returns nothing for a property with neither a setter nor a member. It annotates that case `// A read-only property` (line 302). What reaches the registration call is `is_const()` (line 230). So a property that is read-only but not constant is registered with `setWritable(true)`. That is what the replay does for `total`. What the generated Rust function `writeProperty` does when QML writes to such a property I did not read or run.
 
 ## The replay and the diff
 
-The replay is 197 lines of C++ (`builder.hpp`) that makes only the calls in the table above, in that order, with the same signature strings, and dispatches reads, writes and slot calls to a small `Counter` class. The oracle that dumps and compares meta-objects is the one in reflect-moc ([`differential_dump.hpp`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/tests/qt/differential_dump.hpp)) with one more namespace prefix stripped. Neither the replay nor the harness around it is published, so you cannot rerun my numbers from a link. What a reader can check is the builder calls, which are the table above. This is the registration for the test class:
+The replay is 197 lines of C++ (`builder.hpp`). It makes only the calls in the table above, in that order, with the same signature strings. It dispatches reads, writes and slot calls to a small `Counter` class. The oracle that dumps and compares meta-objects is the one in reflect-moc ([`differential_dump.hpp`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/tests/qt/differential_dump.hpp)) with one more namespace prefix stripped. Neither the replay nor the harness around it is published, so you cannot rerun my numbers from a link. What a reader can check is the builder calls, which are the table above. This is the registration for the test class:
 
 ```cpp
 Builder b(&QObject::staticMetaObject, "viabuilder::Counter");
@@ -84,9 +128,21 @@ b.registerProperty("total", 3, I, false, "");  // getter only in the source
 b.addClassInfo("author", "me");
 ```
 
-The twin written for moc has `Q_CLASSINFO("author", "me")`, `value` with `READ`, `WRITE` and `NOTIFY`, `pinned` with `FINAL`, `limit` as `CONSTANT`, `total` with `READ` only, an `enum class Mode` under `Q_ENUM`, the signals `valueChanged(int value)` and `moved(int from, int to)`, the slots `setValue(int v)` and `setPinned(int v)`, and `Q_INVOKABLE int add(int n)`.
+The twin written for moc declares these members:
 
-The reflect-moc version of the class and the moc version produce identical dumps. The differential test in reflect-moc checks that, and it passed in the [CI run 37466622213](https://github.com/wrocpp/reflect-moc/actions/runs/37466622213) on `main`, in the step "Core and Qt tests". The builder replay differs from moc as follows (Qt 6.10.3; the dumps on 6.11.3 and 6.12.0 are byte-identical to these):
+| member | declaration in the moc twin |
+|---|---|
+| class info | `Q_CLASSINFO("author", "me")` |
+| `value` | `READ`, `WRITE` and `NOTIFY` |
+| `pinned` | `FINAL` |
+| `limit` | `CONSTANT` |
+| `total` | `READ` only |
+| enum | `enum class Mode` under `Q_ENUM` |
+| signals | `valueChanged(int value)` and `moved(int from, int to)` |
+| slots | `setValue(int v)` and `setPinned(int v)` |
+| invokable method | `Q_INVOKABLE int add(int n)` |
+
+The reflect-moc version of the class and the moc version produce identical dumps. The differential test in reflect-moc checks that, and it passed in the [CI run 37466622213](https://github.com/wrocpp/reflect-moc/actions/runs/37466622213) on `main`, in the step "Core and Qt tests". The builder replay differs from moc as follows, for Qt 6.10.3. The dumps on 6.11.3 and 6.12.0 are byte-identical to these:
 
 | what moc's dump has | the builder replay | which call is missing |
 |---|---|---|
@@ -97,11 +153,38 @@ The reflect-moc version of the class and the moc version produce identical dumps
 | `names=from\|to`, `names=v`, `names=value`, `names=n` | empty | `setParameterNames` |
 | `add(int)` has method type 0 | method type 2 (slot) | `addMethod` (not called; every callable is a slot) |
 
-Equal in both: the class and base class names, the class info, every signature, access, return type and parameter type, the `NOTIFY` index of `value` (0), and the index of every method. The row for `total` carries the visible consequence, and the next section shows it.
+Equal in both:
+
+- the class and base class names, and the class info
+- every signature, access, return type and parameter type
+- the `NOTIFY` index of `value` (0)
+- the index of every method
+
+The row for `total` carries the visible consequence, and the next section shows it.
 
 ## What differs when the object is used
 
-The checks that pass on the replay, on all three Qt versions: connecting two objects by `SIGNAL`/`SLOT` strings (also with an un-normalised `valueChanged( int )`), `QMetaProperty::read` and `write` with the `NOTIFY` signal firing, a constant property reporting as not writable, `invokeMethod` with a return value and a queued `invokeMethod` delivering the call. A `QQmlEngine` run (no Qt Quick items) of the same QML against both classes gave the same output for a property read, a binding, a write to `value`, a call to `add`, a write to the constant `limit` (a `TypeError` on both) and a `function onValueChanged(v)` handler. Two lines differ:
+These checks pass on the replay on all three Qt versions:
+
+- Connecting two objects by `SIGNAL`/`SLOT` strings.
+- The same connection with an un-normalised `valueChanged( int )`.
+- Property reads and writes through `QMetaProperty`, with the `NOTIFY` signal firing.
+- A constant property reporting as not writable.
+- A call to `invokeMethod` with a return value.
+- A queued call to `invokeMethod` delivering the call.
+
+## The same QML against both classes
+
+A run of the same QML against both classes, using a `QQmlEngine` with no Qt Quick items, gave the same output for these cases:
+
+- a property read
+- a binding
+- a write to `value`
+- a call to `add`
+- a write to the constant `limit`, which threw a `TypeError` on both
+- a `function onValueChanged(v)` handler
+
+Two lines differ:
 
 ```text
 moc class:      res.totalWrite = threw TypeError: Cannot assign to read-only property "total"
@@ -110,39 +193,76 @@ moc class:      implicit from=1 to=2
 builder class:  ReferenceError: from is not defined
 ```
 
-The first pair is the `total` row above. The second is an implicit handler, `onMoved: log(from, to)`: it needs the parameter names, which the builder was never given. Qt prints a deprecation warning for that form on the moc class, and the explicit `function onMoved(a, b)` works on both. In the replay the dispatch for `total` has nowhere to store a written value, so "assigned, total now 2" says the write was accepted and then dropped.
+The first pair is the `total` row above. The second is an implicit handler, `onMoved: log(from, to)`: it needs the parameter names, which the builder was never given. Qt prints a deprecation warning for that form on the moc class, and the explicit `function onMoved(a, b)` works on both. In the replay, the dispatch for `total` has nowhere to store a written value. So "assigned, total now 2" says the write was accepted and then dropped.
 
-The remaining rows (final, designable, stored, the slot type, the missing enum) show up in the dump. I did not observe a behavioural difference from them in these checks, except that no QML code in them used the missing `Mode` enum, which a QML expression such as `Counter.Mode.Log` would need.
+The remaining rows (final, designable, stored, the slot type, the missing enum) show up in the dump. I did not observe a behavioural difference from them in these checks. One caveat: no QML code in them used the missing `Mode` enum. A QML expression such as `Counter.Mode.Log` would need it.
 
 ## Emitting by name and by index
 
-The Rust path emits a signal from a name: [`dynamicmetaobjectdata.cpp`](https://code.qt.io/cgit/qt/qtbridge-rust.git/tree/crates/qtbridge-runtime/src/cpp/dynamicmetaobjectdata.cpp?id=f7fe523d10357751bc90c334263188610c0382cf#n24) builds a `QByteArray` from the name (line 26), searches the signal list linearly for it (lines 36 to 45) and calls `QMetaObject::activate` with the index it found. I replayed those steps in C++ and compared them with calling `activate` with a known index. This is an analogue of the C++ half. The Rust-side cost of getting the name into C++ is not in it.
+The Rust path emits a signal from a name. The file [`dynamicmetaobjectdata.cpp`](https://code.qt.io/cgit/qt/qtbridge-rust.git/tree/crates/qtbridge-runtime/src/cpp/dynamicmetaobjectdata.cpp?id=f7fe523d10357751bc90c334263188610c0382cf#n24) does this in three steps:
 
-Setup: GCC 16.2.0, `-O2`, Qt 6.10.3, arm64 Linux in Docker on a Mac, one class with 16 signals, 10,000,000 emits per run, 3 runs in each of two sessions (5 and 6 October). The machine was busy both times (on 6 October the host's load average was about 30, and the container sees 12 CPUs), so a difference under about 10 ns is noise. The numbers are nanoseconds per emit with no connection on the signal.
+- It builds a `QByteArray` from the name (line 26).
+- It searches the signal list linearly for it (lines 36 to 45).
+- It calls `QMetaObject::activate` with the index it found.
+
+I replayed those steps in C++ and compared them with calling `activate` with a known index. This is an analogue of the C++ half. The Rust-side cost of getting the name into C++ is not in it.
+
+## Benchmark setup and results
+
+The setup was:
+
+- GCC 16.2.0 with `-O2`, and Qt 6.10.3
+- arm64 Linux in Docker on a Mac
+- one class with 16 signals
+- 10,000,000 emits per run
+- 3 runs in each of two sessions (5 and 6 October)
+
+The machine was busy both times. On 6 October the host's load average was about 30, and the container sees 12 CPUs. So a difference under about 10 ns is noise. The numbers are nanoseconds per emit with no connection on the signal.
 
 | signal | by index | by name |
 |---|---|---|
 | first of 16 | 6.2 to 7.3 (5 October), 4.3 (6 October) | 33.8 to 51.9 (5 October), 28.9 to 30.5 (6 October) |
 | last of 16 | 4.7 to 5.3 (5 October), 4.3 (6 October) | 43.9 to 48.9 (5 October), 46.6 to 47.3 (6 October) |
 
-With one connection to a trivial slot on the signal, the 5 October runs gave 41 ns by index and 71 to 124 ns by name for the first signal. On 6 October they gave 40 and 73 to 77. With no connection, by name costs about 22 to 46 ns more per emit than by index in this analogue, over both sessions. I did not separate the allocation of the `QByteArray` from the search, so I do not say which part is the cost.
+Take the first signal with one connection to a trivial slot. On 5 October it took 41 ns by index and 71 to 124 ns by name. On 6 October it took 40 ns by index and 73 to 77 ns by name. With no connection, by name costs about 22 to 46 ns more per emit than by index in this analogue, over both sessions. I did not separate the allocation of the `QByteArray` from the search, so I do not say which part is the cost.
 
-Both calls follow from how the Rust macro lays things out. Signals are registered first and in order, so a signal's position in `m_signals` is the index that `activate` wants, and `dynamicmetaobjectdata.cpp` already relies on that for notify signals. Whether any Rust program emits often enough for 22 to 46 ns to show, I did not measure.
+Both calls follow from how the Rust macro lays things out. Signals are registered first and in order. So a signal's position in `m_signals` is the index that `activate` wants. The file `dynamicmetaobjectdata.cpp` already relies on that for notify signals. Whether any Rust program emits often enough for 22 to 46 ns to show, I did not measure.
 
 ## Qt 6.10.3, 6.11.3 and 6.12.0
 
-I installed 6.11.3 and 6.12.0 with aqtinstall next to the 6.10.3 image and ran the same dump, behaviour and QML checks. The builder, moc and reflect-moc dumps are byte-identical across the three versions (I compared the files), and the behaviour output is the same. The private header changed in between. From 6.10.3 to 6.11.3, `QMetaMethodBuilder::parameterTypes()` returns `QList<QByteArrayView>` instead of `QList<QByteArray>`, the method builder stores its method type, and the property builder gains `setRequired` (and `setVirtual` and `setOverride`). From 6.11.3 to 6.12.0, `QMetaObjectBuilder::signal(int)` and `removeSignal(int)` appear. The Rust builder has a branch on whether `signal()` exists, under a comment on line 33: "There are behavior changes in QMetaObjectBuilder between Qt versions 6.11 and 6.12." On 6.12.0 I ran the replay with the `signal(i)` branch and with `method(i)` forced, and the dump was identical, with the notify signal at index 0 in both. For a class whose signals come first, which is the Rust layout, I could not make the change visible. Which class shape does show it, I did not find.
+I installed 6.11.3 and 6.12.0 with aqtinstall next to the 6.10.3 image. I ran the same dump, behaviour and QML checks on each. The builder, moc and reflect-moc dumps are byte-identical across the three versions (I compared the files), and the behaviour output is the same.
+
+The private header changed in between:
+
+| step | change |
+|---|---|
+| 6.10.3 to 6.11.3 | `QMetaMethodBuilder::parameterTypes()` returns `QList<QByteArrayView>` instead of `QList<QByteArray>` |
+| 6.10.3 to 6.11.3 | the method builder stores its method type |
+| 6.10.3 to 6.11.3 | the property builder gains `setRequired` (and `setVirtual` and `setOverride`) |
+| 6.11.3 to 6.12.0 | `QMetaObjectBuilder::signal(int)` and `removeSignal(int)` appear |
+
+The Rust builder has a branch on whether `signal()` exists. A comment on line 33 says: "There are behavior changes in QMetaObjectBuilder between Qt versions 6.11 and 6.12." On 6.12.0 I ran the replay twice, once with the `signal(i)` branch and once with `method(i)` forced. The dump was identical, with the notify signal at index 0 in both. For a class whose signals come first, which is the Rust layout, I could not make the change visible. Which class shape does show it, I did not find.
 
 ## What this has not been tested on
 
-- No Rust was built or run. The checks run a C++ replay of the C++ half of the Rust layer, and the Rust-generated dispatch (including the write path for a read-only property) was not exercised.
-- Only `int` members. Strings, lists, `QObject*` properties, custom registered types, bases beyond `QObject` (including `QAbstractItemModel`) and `QQmlListProperty` were not tried.
+- No Rust was built or run. The checks run a C++ replay of the C++ half of the Rust layer. The Rust-generated dispatch, including the write path for a read-only property, was not exercised.
+- Only `int` members. Strings, lists, custom registered types and `QObject*` properties were not tried. Bases beyond `QObject`, including `QAbstractItemModel`, were not tried. The type `QQmlListProperty` was not tried either.
 - The C# layer was read for its C++ builder calls only. Which flags its managed side sets for user-defined members was not read.
 - Qt 6.10.3, 6.11.3 and 6.12.0, not 6.12.1. GCC only. QML was run with `QtQml` and no Qt Quick items or QML type registration.
-- Linux on aarch64 in Docker. The reflect-moc side of the comparison also ran on the project's x86_64 CI runner: [run 37466622213](https://github.com/wrocpp/reflect-moc/actions/runs/37466622213) on `main` passed its core and Qt tests, which include the differential test against moc, and I read the step results from that run. The replay itself was not run on x86_64.
+- Linux on aarch64 in Docker. The reflect-moc side of the comparison also ran on the project's x86_64 CI runner. The [run 37466622213](https://github.com/wrocpp/reflect-moc/actions/runs/37466622213) on `main` passed its core and Qt tests, which include the differential test against moc. I read the step results from that run. The replay itself was not run on x86_64.
 - The timings are from a loaded virtual machine, the analogue is C++ and not Rust, and no run was pinned to a core.
 - I re-ran the Qt 6.10.3 dump, behaviour and QML checks and the benchmark on 6 October against reflect-moc at `6145d94`. The 6.11.3 and 6.12.0 results are from the run of 5 October.
 
 ---
 
-**Sources** (read 6 October 2026): qtbridges `40bdaee`, qtbridge-rust `f7fe523` and qtbridge-csharp `575651a` on code.qt.io, with the files linked above; the [Qt Bridges page](https://www.qt.io/development/qt-framework/qt-bridges) (Rust and C# marked beta); reflect-moc at commit [`6145d94`](https://github.com/wrocpp/reflect-moc/tree/6145d942da78c9b5eb8d8e5f978a278e84597523) (`tests/qt/differential_dump.hpp`, `tests/qt/capability_differential_against_moc.cpp`, `.github/workflows/ci.yml`) and CI run 37466622213; Qt 6.10.3, 6.11.3 and 6.12.0 private header `qmetaobjectbuilder_p.h`.
+**Sources** (read 6 October 2026):
+
+- qtbridges `40bdaee` on code.qt.io, with the files linked above.
+- qtbridge-rust `f7fe523` on code.qt.io.
+- qtbridge-csharp `575651a` on code.qt.io.
+- The [Qt Bridges page](https://www.qt.io/development/qt-framework/qt-bridges) (Rust and C# marked beta).
+- reflect-moc at commit [`6145d94`](https://github.com/wrocpp/reflect-moc/tree/6145d942da78c9b5eb8d8e5f978a278e84597523).
+- The reflect-moc file `tests/qt/differential_dump.hpp`.
+- The reflect-moc file `tests/qt/capability_differential_against_moc.cpp`.
+- The reflect-moc file `.github/workflows/ci.yml`, and CI run 37466622213.
+- Qt 6.10.3, 6.11.3 and 6.12.0 private header `qmetaobjectbuilder_p.h`.
