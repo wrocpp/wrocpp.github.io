@@ -18,6 +18,14 @@ import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
 Seven episodes of what CTRE does well earns one about what it costs. Three things: build time, syntax coverage, and what happens when you get a pattern wrong.
 
+## In short
+
+- On GCC 16.1 at `-O1`, including the header alone costs 724 ms. Twenty distinct patterns took 4206 ms, so each pattern adds very approximately a hundred milliseconds.
+- These timings come from Compiler Explorer, a shared machine, where repeated runs moved by a factor approaching two. Re-measure on your own hardware.
+- CTRE is almost PCRE-compatible. A few features are missing, and a bare dash in a character class must be escaped at either end.
+- A malformed pattern is rejected at compile time with an incomplete-type error that carries the offset of the mistake.
+- Use CTRE when the pattern is known when you write the code. Use something else when the pattern arrives at run time.
+
 ## Build time
 
 Every distinct pattern instantiates its own matcher, so the cost scales with how many different patterns a translation unit contains. Compiling N unique patterns on GCC 16.1 at `-O1`:
@@ -30,15 +38,20 @@ Every distinct pattern instantiates its own matcher, so the cost scales with how
 | 10 | 2237 ms |
 | 20 | 4206 ms |
 
-Two things stand out. Including the header at all costs about three quarters of a second before you write a single pattern, which is the floor for any translation unit that touches CTRE. After that the growth is roughly linear, at very approximately a hundred milliseconds per pattern.
+Two things stand out. Including the header at all costs about three quarters of a second before you write a single pattern. That is the floor for any translation unit that touches CTRE. After that the growth is roughly linear, at very approximately a hundred milliseconds per pattern.
 
 The honest caveat: these were measured on Compiler Explorer, which is a shared machine, and repeated runs moved by a factor approaching two. A 40-pattern measurement came out barely above the 20-pattern one, which is not plausible as real scaling and is better read as noise. Treat the shape as the finding and re-measure on your own hardware before making a decision on it.
 
-None of that is alarming for the usual case, where a program has a handful of patterns. It matters if you are tempted to put CTRE in a widely included header, which turns the fixed cost into a per-translation-unit cost across the build.
+None of that is alarming for the usual case, where a program has a handful of patterns. It matters if you are tempted to put CTRE in a widely included header. That turns the fixed cost into a per-translation-unit cost across the build.
 
 ## Syntax that is declined
 
-The library describes itself as almost PCRE-compatible, and the documentation lists what is missing: atomic groups, conditional patterns, subroutines, callouts, comments, `\K`, `\X`, character properties, octal escapes, boundaries beyond `^` and `$`.
+The library describes itself as almost PCRE-compatible. The documentation lists what is missing:
+
+- atomic groups, conditional patterns and subroutines
+- callouts and comments
+- `\K`, `\X`, character properties and octal escapes
+- boundaries beyond `^` and `$`
 
 There are also smaller divergences the list does not mention. A bare dash inside a character class is one:
 
@@ -48,7 +61,7 @@ There are also smaller divergences the list does not mention. A bare dash inside
 [+*/=()\-]  accepted
 ```
 
-PCRE takes a dash at either end of a class as a literal. CTRE wants it escaped in both positions. Nothing here is unreasonable, but it is the kind of thing you find by compiling rather than by reading, which has been the theme of this series.
+PCRE takes a dash at either end of a class as a literal. CTRE wants it escaped in both positions. Nothing here is unreasonable. It is the kind of thing you find by compiling rather than by reading, which has been the theme of this series.
 
 ## The error message
 
@@ -64,15 +77,15 @@ note: declaration of 'struct ctre::problem_at_position<23>'
 
 The mechanism is a deliberate trick. CTRE declares `problem_at_position` and never defines it, so instantiating it fails and the offset rides along in the type name. Position 23 is exactly where the pattern goes wrong.
 
-The information is precise and the delivery is a compiler diagnostic about incomplete types, which the reader has to translate. That gap is what [P2741](https://wg21.link/p2741), user-generated `static_assert` messages in C++26, exists to close: a library will be able to compute a sentence and have the compiler print it. A future CTRE could say which character it disliked and why, in words, rather than encoding the offset in a type name and hoping.
+The information is precise and the delivery is a compiler diagnostic about incomplete types, which the reader has to translate. The proposal [P2741](https://wg21.link/p2741), user-generated `static_assert` messages in C++26, exists to close that gap. A library will be able to compute a sentence and have the compiler print it. A future CTRE could say which character it disliked and why, in words, rather than encoding the offset in a type name and hoping.
 
 ## When to reach for it
 
 Use it when the pattern is known when you write the code, which is most of the time. Validation, log lines, configuration keys, tokenising a small language: all fixed patterns, all better checked during compilation than repeatedly at run time.
 
-Reach for something else when the pattern is genuinely dynamic, arriving from a user or a config file, because a template argument cannot come from run-time data. That is not a gap CTRE can close; it is the definition of what compile-time means.
+Reach for something else when the pattern is genuinely dynamic, arriving from a user or a config file. A template argument cannot come from run-time data. That is not a gap CTRE can close; it is the definition of what compile-time means.
 
-That boundary is the series in one line. Everything CTRE does well follows from the pattern being known at compile time, and its one real limitation is the same fact seen from the other side.
+That boundary is the series in one line. Everything CTRE does well follows from the pattern being known at compile time. Its one real limitation is the same fact seen from the other side.
 
 ---
 
