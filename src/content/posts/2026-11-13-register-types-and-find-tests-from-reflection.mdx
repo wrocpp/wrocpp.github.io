@@ -1,0 +1,245 @@
+---
+title: "Registration and test discovery from reflection"
+slug: "register-types-and-find-tests-from-reflection"
+pubDate: 2026-11-13
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 35
+audience: working-cpp
+tags: [reflection, cpp26, entt, testing, members_of, annotations, linker]
+summary: "Reflection can register a type with entt::meta in one line instead of N+3, and it can find the tests in a namespace by their annotation. Across translation units the second needs one registrar line per file, and the registrar's lambda argument is mandatory: without it a program links, reports 7 cases, runs one file's tests twice and never runs the other's. A plain static library drops the registrars too. Checked on GCC 16.2 (Linux aarch64 and Compiler Explorer x86-64) and, for one linker flag, on macOS."
+draft: false
+relatedPosts: [annotations, dependency-injection, auto-mocks, define-aggregate]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+This is the output of a test runner that discovers its tests by reflection, linked from two source files that each declare some tests in `namespace tests`:
+
+```text
+registry (fed by static initialisation): 7 case(s)
+pass   adds
+pass   adds
+pass   in_runner
+pass   parses[n=3]
+pass   parses[n=3]
+pass   parses[n=4]
+pass   parses[n=4]
+7 cases, 0 failed
+```
+
+Every line says `pass`, and the count is right. But `adds` ran twice, and `subtracts`, `by_name` and `known_bug`, which live in the second file, never ran at all. The compiler and the linker said nothing, and neither did `-Wodr` under LTO. The difference between this build and the correct one is a `[] {}` that I left out of one line.
+
+The rest of the post builds the working version, which is about 190 lines of non-comment C++26 in one header, and then goes through what breaks it. A second part uses the same machinery to register a type with EnTT's runtime reflection in one line.
+
+## Finding the tests in one translation unit
+
+A test is a function in a namespace with an annotation on it. The annotation is a plain constant, which <PostLink slug="annotations">the annotations post</PostLink> covers:
+
+```cpp
+namespace tests {
+using fixtures::Fixture;
+[[=rqt::test]] void adds() { rqt::expect(1 + 1 == 2); }
+[[=rqt::test]] void parses(Fixture& f /* by TYPE */, [[=rqt::param(3), =rqt::param(4)]] int n) { rqt::expect(f.base + n >= 43, "base + n"); }
+[[=rqt::test]] void by_name(int seed /* by NAME */, int offset) { rqt::expect(seed == 42 && offset == 1000, "seed/offset"); }
+[[=rqt::test, =rqt::xfail]] void known_bug() { rqt::expect(false, "known bug"); }
+void helper_not_a_test() {}
+}
+
+int main() { return rqt::run(rqt::discover<^^tests, ^^fixtures>()) == 0 ? 0 : 1; }
+```
+
+`discover` calls `members_of(^^tests, access_context::unchecked())` in a `consteval` function, keeps the functions that carry `[[=rqt::test]]`, and expands over them with `template for`. For each one it builds a call. The arguments come from a second namespace, `fixtures`, which is plain code:
+
+```cpp
+namespace fixtures {
+struct Fixture { int base; };
+inline Fixture make_fixture() { return Fixture{40}; }   // resolved by TYPE
+inline int seed() { return 42; }                        // resolved by NAME (parameter named seed)
+inline int offset() { return 1000; }                    // a second int fixture: type alone is ambiguous
+}
+```
+
+A parameter is filled by the fixture function whose name equals the parameter's name and whose return type matches. If no name matches, the unique function that returns that type is used. `parses` takes a `Fixture&`, and only `make_fixture` returns one. `by_name` takes two `int`s, so the type alone is ambiguous and `identifier_of(parameters_of(f)[i])` picks `seed()` and `offset()`. Reading a parameter's name needs `parameters_of` and `identifier_of`, and both work on GCC 16.2. What does not work is using the parameter itself inside the body (`cannot use 'x' function parameter reflection in a splice expression`), which is why the fixture lookup happens before the call.
+
+`[[=rqt::param(3), =rqt::param(4)]]` on a parameter gives one case per annotation, named `parses[n=3]` and `parses[n=4]`. The code also implements the cartesian product over several annotated parameters, but I only ran it with one.
+
+Here it is on Compiler Explorer (g162, x86-64), as a single file with the two headers pasted in:
+
+<GodboltEmbed id="b8d5c61dY" gccOnly gccLabel="GCC 16.2" title="Tests found in a namespace, fixtures by name and type" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -Wall -Wextra · runs live" />
+
+The output is five cases, sorted by name, with `known_bug` reported as `xfail`. A failing test prints the test's name and the message (`FAIL   fails_on_purpose: f.base is 40, not 0` in the `-DDEMO_FAIL` build) and the process exits 1. `helper_not_a_test` is not collected because it has no annotation.
+
+A missing or ambiguous fixture is a compile error from a `static_assert` in the header:
+
+```text
+error: static assertion failed: rqt: no fixture function returns this parameter's type
+error: static assertion failed: rqt: several fixture functions return this parameter's type and none is named like the parameter
+```
+
+Each is followed by two cascade errors (`cannot splice a null reflection`, then a `std::tuple` constructor that cannot be called), which is the usual price of going on after a failed assertion. I did not suppress them.
+
+There is a smaller finding in here. The rtest post on jonastoth.github.io lists, among things the author wanted next, "collect tests in 'this' translation unit" with the remark "does not seem possible to me", and "collect tests of a module / namespace", with "should be possible, working on it". On GCC 16.2 a walk of one namespace works, as above. So does a recursive walk starting from `^^::` that skips `std` and a few implementation namespaces: `global_walk.cpp` finds tests in `one`, `one::deep`, `two` and the global namespace, four of four. I read the rtest page on 6 October 2026 and did not run rtest.
+
+## Why a runner sees only its own file
+
+`members_of(^^tests)` lists the declarations of `tests` that the translation unit currently being compiled has seen. A second file that declares more functions in the same namespace is a different translation unit, and its declarations are not in the first one's list. I checked this in a spike (one file declaring `a, b` printed `a b`, another declaring `a, b, c` printed `a b c`), and the demo shows it again: the runner's file declares one test, `discover<^^tests, ^^fixtures>()` in it finds 1 case, and the namespace has 7 across three files.
+
+So the tests of the other files have to be handed to the runner at run time. Each file that holds tests ends with one line:
+
+```cpp
+static const rqt::registrar<^^tests, ^^fixtures> tests_of_this_tu{[] {}};
+```
+
+`registrar` is an object whose constructor walks the namespace as this translation unit sees it, and pushes the cases into `rqt::registry()`, a function-local static vector. It runs during static initialisation, before `main`. The runner reads the registry, sorts it by name and runs it. Linking `runner.o tu_b.o tu_a.o` instead of `tu_a.o tu_b.o runner.o` gives the same 7 cases, because the registry is created on first use.
+
+## The lambda that cannot be left out
+
+The first version of `registrar` had no lambda:
+
+```cpp
+template <std::meta::info TestNs, std::meta::info Fix>
+struct registrar_naive {
+    registrar_naive() {
+        for (auto& c : detail::collect<TestNs, Fix, void>()) registry().push_back(std::move(c));
+    }
+};
+```
+
+`registrar_naive<^^tests, ^^fixtures>` is one type, and it is the same type in every translation unit. Its constructor is an inline function, so the linker keeps one copy of it. But the body of that constructor depends on what `tests` contained in the file that instantiated it. Two different bodies for one inline function is an ODR violation, which the standard does not require anyone to diagnose, and nobody does. In my link order the copy from the first file won. I did not look at what decides which copy is kept.
+
+The fix is to make the constructor a template over a type that is unique per file, and a lambda expression gives you one for free. `registrar` takes `[] {}` as a constructor argument, and `Tag` is deduced as that file's closure type, so each file instantiates its own constructor:
+
+```cpp
+template <std::meta::info TestNs, std::meta::info Fix>
+struct registrar {
+    template <class Tag>
+    explicit registrar(Tag) {
+        for (auto& c : detail::collect<TestNs, Fix, Tag>()) registry().push_back(std::move(c));
+    }
+};
+```
+
+`registrar` has no default constructor, so forgetting the lambda is a compile error (`no matching function for call to 'rqt::registrar<^^tests, ^^fixtures>::registrar()'`). I tried the obvious alternative of defaulting the tag to `std::source_location::current()`, and it gives the location of the header, not of the use site, so two files got the same value. A `__COUNTER__` or `__FILE__` macro would work, and I did not want a macro in this version.
+
+The table is what I got from `build.sh` (below) for the three link variants:
+
+| Build | Cases reported | What ran |
+|---|---|---|
+| tagged `registrar`, normal link | 7 | all 7, in sorted order |
+| tagged `registrar`, `-O2 -flto -Wodr -Wlto-type-mismatch -Werror` | 7 | all 7, link prints nothing |
+| `registrar_naive`, normal link | 7 | `adds` twice, `parses[n=3]` twice, `parses[n=4]` twice, `in_runner`; no `subtracts`, `by_name` or `known_bug` |
+| `registrar_naive`, same LTO flags | 7 | the same wrong set, link prints nothing |
+
+The last row is the one I would not have guessed. Link-time optimisation sees both definitions and has `-Wodr` to say something about them, and it stays quiet.
+
+## Tests in a static library
+
+Put the same two files in a static library and link the runner against it, and the registrars are not run:
+
+```text
+registry (fed by static initialisation): 1 case(s)
+```
+
+The runner's own test is the only one left. Nothing in the translation units of the library is referenced by the runner, so the linker never pulls them out of the archive, and their static objects do not exist in the program. Telling the linker to take the whole archive brings the 7 cases back.
+
+What I ran:
+
+- **Linux aarch64, GNU ld 2.44** (the `gcc:16.2` Docker image): `-Wl,--whole-archive libtests.a -Wl,--no-whole-archive` gives 7, a plain link gives 1.
+- **macOS arm64, ld64**, in the earlier spike run: `-Wl,-force_load,libtests.a` gives 7, a plain link gives 1.
+
+What I did not run: x86-64 Linux, lld, gold, mold, or MSVC. A reader on one of those should treat the same behaviour as a guess, not a result. Shared libraries and `dlopen` I did not try at all.
+
+## Registering a type with entt::meta
+
+The second part is about registration of a different kind. EnTT's runtime reflection is built from a `meta_factory` chain that you write per type. This is the demo's `Player` registered by hand, which is how the EnTT [meta documentation](https://github.com/skypjack/entt/blob/e0f4c3763967db04f116863a0ec5e35110808a26/docs/md/meta.md) builds up the API:
+
+```cpp
+struct Player {
+    int hp{};
+    float x{};
+    float y{};
+    std::string name;
+    void heal(int n) { hp += n; }
+};
+
+entt::meta_factory<Player>{ctx}
+    .type("Player")
+    .data<&Player::hp>("hp")
+    .data<&Player::x>("x")
+    .data<&Player::y>("y")
+    .data<&Player::name>("name")
+    .func<&Player::heal>("heal");
+```
+
+and this is the reflected version:
+
+```cpp
+rqt::register_type<Player>(ctx);
+```
+
+`register_type` is 41 non-comment lines in `rqt_entt.hpp`, written once. It makes the factory with the type's identifier as the name, adds `base<B>()` for each entry of `bases_of`, then `data<&[:m:]>(name)` for each non-static data member and `func<&[:m:]>(name)` for each member function that is not a special member and not static. The demo registers `Player` both ways in two separate `entt::meta_ctx` objects and compares what comes out with one `operator==`: the same type name and id (477166624), the same four data members and one function in the same order, and the same results from `set`, `get` and `invoke("heal", 8)`.
+
+```text
+hand : Player id=477166624 data=4 [hp,x,y,name,] func=1 [heal,] hp 42 -> 50 name=bob
+refl : Player id=477166624 data=4 [hp,x,y,name,] func=1 [heal,] hp 42 -> 50 name=bob
+A: hand == reflected
+```
+
+<GodboltEmbed id="PddK8jvPj" gccOnly gccLabel="GCC 16.2" title="The same Player registered by hand and from reflection" gcc_subtitle="x86-64 GCC 16.2 · EnTT trunk · -std=c++26 -freflection -Wall -Wextra · runs live" />
+
+The number that sells this is the line count. I generated both forms for a struct with N members and one function, one call per line:
+
+| Members | Hand-written (factory, `.type`, N `.data`, one `.func`) | Reflected |
+|---|---|---|
+| 5 | 8 lines | 1 line |
+| 20 | 23 lines | 1 line |
+| 50 | 53 lines | 1 line |
+
+With 41 lines for the helper, the break-even is around six types of five members, two of twenty, or one of forty or more. That is lines of registration only. It says nothing about whether the registered members are the ones you wanted: reflection registers every public data member and every non-special, non-static member function under its C++ name, with no way to leave one out or rename it. An annotation that opts out would be the obvious next step, and I did not build it.
+
+What the helper handled and did not, on GCC 16.2 with EnTT 4:
+
+- Overloads work. For `int f(int)` and `int f(int, int)`, `&[:m:]` names each one, EnTT chains them under one id, and `invoke("f", 1)` returns 2 and `invoke("f", 1, 2)` returns 4. Const and `noexcept` members also work.
+- Inheritance works through `bases_of` and `base<B>()`: a `Derived` finds the inherited data member and invokes the inherited function.
+- Enums work as constants. EnTT has no enum concept, so each enumerator becomes a constant data member (`red=0 green=5 blue=6`), and the splice needs parentheses (`data<([:e:])>`), otherwise GCC says `unparenthesized splice expression cannot be used as a template argument`.
+- A ref-qualified member (`int k() &`) stops the build with an error inside EnTT (`no matching function for call to 'entt::meta_function_helper<...>::get_rid_of_noexcept'`). Skipping such members with `is_lvalue_reference_qualified` would work around it, and I did not do that.
+- Private members are skipped with the default `access_context::current()`. With `unchecked()` they are registered, and `&[:m:]` on a private member compiled on GCC 16.2 without an access error, so the check is not made at the splice. I did not try this on another compiler, so I do not know whether that is intended.
+
+One more practical note. EnTT's own header does not pass `-Wextra -Werror` on GCC 16.2: `entt.hpp:80944:24: error: missing initializer for member 'entt::internal::meta_func_node::next' [-Werror=missing-field-initializers]`. Including it as a system header (`-isystem`) removes the problem, and Compiler Explorer adds libraries that way, so the demo above builds there even with `-Werror`.
+
+## How Catch2, GoogleTest and EnTT register things
+
+None of these needs a line per file, and none of this post is an argument that they should change.
+
+- **Catch2.** The [tutorial](https://github.com/catchorg/Catch2/blob/devel/docs/tutorial.md) says of `TEST_CASE`: "The test automatically self-registers with the test runner, and user does not have do anything more to ensure that it is picked up by the test framework." In `catch_test_registry.hpp` the macro defines the test function and a uniquely named `const Catch::AutoReg` object in an unnamed namespace. That is my reading of the source, and an unnamed namespace is a different entity in every translation unit, which is the property the lambda gives `registrar` here. Test names and tags are strings, and the docs say that the combination "must be unique within the Catch2 executable".
+- **GoogleTest.** The [primer](https://github.com/google/googletest/blob/main/docs/primer.md) says "`TEST()` and `TEST_F()` implicitly register their tests with GoogleTest. So, unlike with many other C++ testing frameworks, you don't have to re-list all your defined tests in order to run them", and that `RUN_ALL_TESTS()` "runs all tests in your link unit". The macro defines a class per test and a static data member initialised with `MakeAndRegisterTestInfo`. For the rare case that needs registration at run time, the [advanced guide](https://github.com/google/googletest/blob/main/docs/advanced.md) describes `::testing::RegisterTest`, "to be used only when the `TEST` macros are insufficient".
+- **EnTT.** Registration is explicit and typed, as in the hand-written listing above. That is a design choice that keeps what is exposed to the runtime reflection in the programmer's hands. The cost is the line count in the table, and `register_type` removes the typing, not the choice, if you decide that every public member should be exposed.
+
+Where the tools differ from this demo is how the test is found. Catch2 and GoogleTest need a macro at each test and no list anywhere. Here the test is a plain function with an attribute, `members_of` finds it, and the price is one registrar line per file. A macro per test is less to maintain than a line per file, so for an existing codebase the macro frameworks are the lower-effort route. What annotations and namespace reflection offer is that the test is an ordinary function that other tools can also see: the same walk could generate a listing, a fixture graph or an RPC table.
+
+Both frameworks also create their registration objects at namespace scope, with constructors that run during static initialisation. I would therefore expect a static library to be able to drop them in the same way. I did not test that, and none of the pages I read mention it.
+
+## Compile time
+
+On Homebrew GCC 16.2.0 on an Apple machine (`-c -O0`, three runs, CPU time), including EnTT costs about 1.4 s, and a translation unit that registers a 5-, 20- or 50-member type costs 2.0 to 2.5 s. The reflected and the hand-written versions of the same type were within about 0.35 s of each other. The test runner header alone is 0.5 s, and a runner with 10 test functions took 0.7 s while 100 test functions (about 134 cases) took 1.4 s. That run is from my spike notes and I have not published it anywhere linkable.
+
+I repeated the 5- and 50-member registration builds in the `gcc:16.2` Docker image. The three runs of each build ranged from 2.1 to 4.1 s across both forms with no pattern between reflected and hand-written, because the Docker VM was shared. I would not draw a conclusion from that run, and this post does not.
+
+## What the demos do not cover
+
+- The directory with the build script is the multi-file demo, and it is the one the findings come from: [`posts/87-registration-discovery/examples`](https://github.com/wrocpp/cpp26-reflection-examples/tree/1587af6/posts/87-registration-discovery/examples). `sh build.sh` there compiles and checks every case in this post and exits 0 only if all behave as described. The two embeds above are the single-file variants, `tests_single_file.cpp` and `entt_single_file.cpp`, generated by `make_single_files.py` with the headers pasted in. A multi-file test run cannot be shown in one Compiler Explorer pane, so the trap, the static library and the LTO cases exist only in the directory.
+- Not clang-p2996 and not GCC trunk. I did not try either.
+- Linux x86-64 was only exercised through Compiler Explorer's g162 for the two single-file demos. The multi-file demo, the static library and the LTO results come from Linux aarch64 in Docker and macOS arm64 only. I did not run any of it on an x86-64 machine of my own, and I did not run it in CI.
+- Linkers other than GNU ld 2.44 and Apple's ld64, as above. Shared libraries, `dlopen` and thread safety of the registry (registration happens at static initialisation, so it is single-threaded by construction).
+- EnTT 3.x. Compiler Explorer offers versions up to 3.12.2 and trunk, and I used only 4.x. The local header is the single-header `entt.hpp` reporting version 4.0.0, from the `main` branch at commit `e0f4c3763967` (2026-09-17, after the v4.0.0 release of 2026-07-23). Compiler Explorer's `trunk` reports 4.1.0 when I print the version macro, and I did not record its commit. The `build.sh` script downloads the pinned commit and checks its SHA-256.
+- Templates, static members, bit-fields and members inherited from a base that is not itself registered, for `register_type`. More than one parameterised parameter per test, fixtures that need other fixtures, and fixture teardown, for the test runner. It has no filtering, no command line and no parallelism.
+- Two translation units that both see the same declaration, for example a header that declares a test function included by both. The registrar would report that case twice.
+- No performance comparison with Catch2 or GoogleTest, and I built neither. Everything I say about them comes from the pages and files linked above.
+
+---
+
+**Sources** (checked 6 October 2026): the examples at commit `1587af6` in [`posts/87-registration-discovery/examples`](https://github.com/wrocpp/cpp26-reflection-examples/tree/1587af6/posts/87-registration-discovery/examples), run with `sh build.sh` in the `gcc:16.2` Docker image (Linux aarch64, GNU ld 2.44) with EnTT at commit `e0f4c3763967`; permalinks `b8d5c61dY` and `PddK8jvPj` (g162, the second with library `entt` trunk) re-read through `api/shortlinkinfo`; the macOS ld64 `-force_load`, the Apple-machine timings, and the `members_of` per-translation-unit probe are from my spike notes and are not linked. Documentation: the [Catch2 tutorial](https://github.com/catchorg/Catch2/blob/devel/docs/tutorial.md), [test cases and sections](https://github.com/catchorg/Catch2/blob/devel/docs/test-cases-and-sections.md) and `src/catch2/internal/catch_test_registry.hpp` on `devel` (head `f899467b80`), the GoogleTest [primer](https://github.com/google/googletest/blob/main/docs/primer.md), [advanced guide](https://github.com/google/googletest/blob/main/docs/advanced.md) and `gtest-internal.h` on `main` (head `988ea2c179`), the EnTT [meta documentation](https://github.com/skypjack/entt/blob/e0f4c3763967db04f116863a0ec5e35110808a26/docs/md/meta.md), and the [rtest post](https://jonastoth.github.io/posts/rtest_library/).
