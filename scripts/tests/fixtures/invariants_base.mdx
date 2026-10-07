@@ -1,0 +1,22 @@
+---
+title: "Invariant fixture"
+slug: "invariant-fixture"
+pubDate: 2026-01-01
+summary: "The original summary."
+updatedDate: 2026-01-02
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+## What it measures
+
+The struct takes 32 bytes, and reordering the fields gets it to 24 bytes. See [the paper](https://wg21.link/p2996) for the wording.
+
+```cpp
+struct S { char a; long b; };
+static_assert(sizeof(S) == 16);
+```
+
+<GodboltEmbed id="abc123" title="Padding" />
+
+The related post is <PostLink slug="splicing">the splicing post</PostLink>.

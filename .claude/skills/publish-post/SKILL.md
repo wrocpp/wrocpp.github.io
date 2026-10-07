@@ -20,6 +20,7 @@ The skill must be invoked from the wrocpp.github.io repo root.
 
 ## Preconditions
 
+- The post body was drafted or rewritten with `.claude/skills/write-post/SKILL.md` (readability rules, `docs/STYLE.md`).
 - `gh auth status` is logged in.
 - `brand-gen` is on PATH (only matters if you also run `/advertise-post` afterwards).
 - `python3 -c "import yaml"` succeeds (pyyaml available for the shortener).

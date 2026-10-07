@@ -19,11 +19,17 @@ Usage:
   scripts/prose-lint.py --all                            # corpus stats (advisory)
   scripts/prose-lint.py --slug S --strict                # promote every WARN to ERROR
 
+Readability (docs/STYLE.md, "Readability"): sentence-length, code-density, paragraph,
+prose-run, section-length and in-short. They see inline code spans. A post listed in
+scripts/readability-baseline.json is only reported where it is WORSE than its entry; a post
+that is not listed is fully enforced. Captions are not affected.
+
 Exit code: 0 = clean (WARN allowed), 1 = at least one ERROR, 2 = usage / not found.
 """
 
 import argparse
 import glob
+import importlib.util
 import re
 import sys
 from pathlib import Path
@@ -293,8 +299,98 @@ def lint_body(text: str, label: str, strict: bool):
     if lvl:
         add(lvl, "bold", f"{bold_count} bold spans (budget {BOLD_WARN}); bold only term-of-art intros")
 
+    # 11. Readability (keeps inline code spans; grandfathered by the baseline).
+    issues.extend(readability_issues(text))
+
     if strict:
         issues = [("ERROR" if lv == "WARN" else lv, m) for lv, m in issues]
+    return issues
+
+
+# --- readability pass (spans kept; numbers live in readability-report.py) ----
+
+def _load_report():
+    path = Path(__file__).resolve().parent / "readability-report.py"
+    spec = importlib.util.spec_from_file_location("readability_report", path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+# (tell, level, metric key, detail builder name, message). A rule is active when the
+# post's metric is above its baseline entry (0 when the post is not in the baseline).
+READABILITY_RULES = [
+    ("sentence-length", "ERROR", "n_over35", "sent_error"),
+    ("sentence-length", "WARN", "n_over25", "sent_warn"),
+    ("sentence-length", "WARN", "n_sec_mean20", "section_mean"),
+    ("code-density", "ERROR", "n_sent_spans_gt4", "spans_error"),
+    ("code-density", "WARN", "n_sent_spans_gt2", "spans_warn"),
+    ("code-density", "WARN", "dense_excess", "dense"),
+    ("paragraph", "ERROR", "n_para_over7", "para_sentences"),
+    ("paragraph", "WARN", "n_para_over120", "para_words"),
+    ("prose-run", "WARN", "n_runs_over4", "runs"),
+    ("section-length", "WARN", "n_sec_over300", "section_words"),
+    ("in-short", "WARN", "no_in_short", "in_short"),
+]
+
+
+def _snip(row):
+    return row["text"][:70] + ("..." if len(row["text"]) > 70 else "")
+
+
+def _sentence_items(rows, lo, hi):
+    return [(r["line"], f"{r['n']} words (limit {lo}): {_snip(r)!r}")
+            for r in rows if lo < r["n"] <= hi]
+
+
+def _span_items(rows, lo, hi):
+    return [(r["line"], f"{r['spans']} code spans in one sentence (limit {lo}): {_snip(r)!r}")
+            for r in rows if lo < r["spans"] <= hi]
+
+
+def readability_details(rep, metrics, detail):
+    """Line-numbered findings per rule key; each value is a list of (lineno|None, message)."""
+    rows, big = detail["rows"], 10 ** 6
+    secs = detail["secs"]
+    out = {
+        "sent_error": _sentence_items(rows, rep.SENT_ERROR, big),
+        "sent_warn": _sentence_items(rows, rep.SENT_WARN, rep.SENT_ERROR),
+        "spans_error": _span_items(rows, rep.SPANS_SENT_ERROR, big),
+        "spans_warn": _span_items(rows, rep.SPANS_SENT_WARN, rep.SPANS_SENT_ERROR),
+        "dense": [(None, f"{metrics['spans_per100']} code spans per 100 prose words (limit {rep.SPANS_PER100_WARN}); "
+                         "name the thing in words, keep inline code for single names")],
+        "para_sentences": [(p["line"], f"paragraph of {p['sents']} sentences (limit {rep.PARA_SENT_ERROR})")
+                           for p in detail["paras"] if p["sents"] > rep.PARA_SENT_ERROR],
+        "para_words": [(p["line"], f"paragraph of {p['words']} words (limit {rep.PARA_WORDS_WARN})")
+                       for p in detail["paras"] if p["words"] > rep.PARA_WORDS_WARN],
+        "runs": [(None, f"{metrics['n_runs_over4']} stretch(es) of more than {rep.RUN_WARN} prose paragraphs "
+                        f"without a heading, list, table, code block or embed (longest {metrics['max_prose_run']})")],
+        "section_words": [(None, f"{metrics['n_sec_over300']} section(s) over {rep.SECTION_WORDS_WARN} prose words "
+                                 f"(longest {metrics['max_section_words']}); add a heading")],
+        "section_mean": [(None, f"{metrics['n_sec_mean20']} section(s) with mean sentence length over {rep.SENT_MEAN_MAX}")],
+        "in_short": [(None, f"{metrics['words']} prose words and no 'In short' first section (3-5 bullets)")],
+    }
+    return out
+
+
+def readability_issues(text, baseline=None):
+    """Readability findings as (level, message). `baseline` maps slug -> metrics; a rule
+    only fires for a listed post when its metric is worse than the baseline entry."""
+    rep = _load_report()
+    metrics, detail = rep.analyze(text)
+    if baseline is None:
+        baseline = rep.load_baseline()
+    base = baseline.get(rep.post_slug("", detail["fields"]), {})
+    details = readability_details(rep, metrics, detail)
+    issues = []
+    for tell, level, key, dkey in READABILITY_RULES:
+        if metrics[key] <= base.get(key, 0):
+            continue
+        suffix = f" (baseline {base[key]})" if key in base else ""
+        for lineno, msg in details[dkey]:
+            loc = f":{lineno}" if lineno else ""
+            issues.append((level, f"{tell}{loc}: {msg}{suffix}"))
     return issues
 
 

@@ -7,6 +7,8 @@ allowed-tools: Read Write Edit Glob Grep Bash(brand-gen *) Bash(cd *) Bash(cp *)
 
 # /advertise-post -- generate the LinkedIn + Facebook launch material for a wro.cpp post
 
+Prerequisite: the post body follows `.claude/skills/write-post/SKILL.md` (readability rules). This skill only writes the captions.
+
 Most recently shipped posts (for cross-referencing context):
 
 ```!
