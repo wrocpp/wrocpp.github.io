@@ -1,0 +1,114 @@
+---
+title: "Which checking tool catches which undefined behavior"
+slug: "match-each-ub-case-to-a-checking-tool"
+pubDate: 2026-11-08
+author: filip-sajdak
+language: en
+kind: short
+series: ub-checks-per-statement
+series_order: 4
+audience: working-cpp
+tags: [undefined-behavior, sanitizers, cpp26, contracts, hardening, gcc]
+summary: "Seven undefined statements (vector and array index, signed overflow, integer division by zero, null pointer and null unique_ptr dereference, uninitialised read) run under seven checking mechanisms on GCC 16.2: constexpr, contract_assert, _GLIBCXX_ASSERTIONS, UBSan, ASan, -ftrapv and C++26 erroneous behavior. One table of which mechanism stops, which only reports, and which says nothing. No mechanism covers every row, and none of them is an operator on a single expression."
+draft: false
+relatedPosts: [hardened-stdlib-turn-it-on, erroneous-behavior, sanitizers-on-ce, cpp26-contracts, float-to-int-ub]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+```cpp
+std::vector<int> v{10, 20, 30};
+v[3];                 // index one past the end
+INT_MAX + 1;          // signed overflow
+10 / 0;               // integer division by zero
+*static_cast<int*>(nullptr);   // null dereference
+int u; std::printf("%d", u);   // uninitialised read
+```
+
+Each of these lines is undefined behavior or, for the last one, erroneous behavior since C++26. The first four are the cases a reader asked about, and the series has so far looked at one tool per episode: [constexpr](/posts/catch-undefined-behavior-with-constexpr/), [contract_assert](/posts/check-a-statement-with-contract-assert/) and [saturating and checked arithmetic](/posts/handle-overflow-and-division-by-zero-without-ub/). This episode runs every case under every tool and puts the results in one table. The reader was Zamfir Yonchev, in [a comment on our Facebook post](https://www.facebook.com/wrocpp/posts/pfbid02snUq5XLSWrz81qkiZhXVSy9b5EkuNu7QU89LEe3x7rv16hc5NNBzKkCTh2kLz6qpl?comment_id=1655384732663723); the first episode quotes his question.
+
+All results are from GCC 16.2.0 with `-std=c++26 -Wall -Wextra`, on Compiler Explorer (x86-64, `g162`) unless a table says otherwise. The same script ran in the `gcc:16.2` Docker image (aarch64) and its differences are listed below. The cases are in [`ub_cases_matrix.cpp`](https://github.com/wrocpp/cpp26-reflection-examples/blob/2b9ba77/posts/92-which-tool-catches-which/examples/ub_cases_matrix.cpp), the commands in [`run_matrix.sh`](https://github.com/wrocpp/cpp26-reflection-examples/blob/2b9ba77/posts/92-which-tool-catches-which/examples/run_matrix.sh). Operands come from `volatile` variables so the compiler cannot fold them. The vector has three elements and capacity three.
+
+## What each statement does with no tool
+
+| statement | `-O0` | `-O2` | aarch64 `-O2` |
+|---|---|---|---|
+| `v[3]` (vector) | abort, exit 134 | prints `0`, exit 0 | prints `0`, exit 0 |
+| `a[3]` (built-in array) | prints `0` | prints `32765` | prints `0` |
+| `INT_MAX + 1` | `-2147483648` | `-2147483648` | `-2147483648` |
+| `10 / 0` | SIGFPE | SIGFPE | prints `0`, exit 0 |
+| `*p`, `p` null | SIGSEGV | SIGSEGV | SIGSEGV |
+| `*up`, empty `unique_ptr` | abort, exit 134 | SIGSEGV | SIGSEGV |
+| `int u;` read | `0` | `0` | `0` |
+
+Two rows have a library check at `-O0`. `_GLIBCXX_ASSERTIONS` is on by default when `__OPTIMIZE__` is not defined, so the `-O0` column is not a build with no checks for `vector` and `unique_ptr`. On aarch64 the integer division by zero did not trap: `10 / 0` printed `0` and the program exited 0. The uninitialised `int` at `-std=c++23 -O0` also printed `0` there, where x86-64 printed `32765`. The out-of-range values for `a[3]` are whatever sat next to the array, and they changed between platforms and optimisation levels.
+
+## One table, seven mechanisms
+
+The cell wording means this. stops: the build fails, or the run ends with a message naming the cause. reports: a diagnostic is printed and the run goes on to the undefined statement. silent: tested, no diagnostic from the tool. The `contract_assert` column uses a predicate written for each statement (`i < v.size()`, `i < 3`, `x < INT_MAX`, `d != 0`, `p != nullptr`, `up != nullptr`), and the default `enforce` semantic.
+
+| statement | constexpr | `contract_assert` | `_GLIBCXX_ASSERTIONS` | UBSan | ASan | `-ftrapv` | erroneous behavior |
+|---|---|---|---|---|---|---|---|
+| `v[3]` | stops, compile time | stops (`observe` reports) | stops | silent | stops | silent | not applicable |
+| `a[3]` | stops, compile time | stops (`observe` reports) | silent | reports | stops | silent | not applicable |
+| `INT_MAX + 1` | stops, compile time | stops (`observe` reports) | silent | reports | silent | stops | not applicable |
+| `10 / 0` | stops, compile time | stops (`observe` reports) | silent | reports, then SIGFPE | stops, names the signal | silent | not applicable |
+| `*p`, null | stops, compile time | stops (`observe` reports) | silent | reports, then SIGSEGV | stops, names the signal | silent | not applicable |
+| `*up`, empty | stops, compile time | stops (`observe` reports) | stops | reports, then SIGSEGV | stops, names the signal | silent | not applicable |
+| `int u;` read | stops, compile time | untested | silent | silent | silent | silent | defines it as `0` |
+
+The columns are these flags, each added to `-std=c++26`: `-DCONSTEVAL_CHECK=n` (the statement inside a `static_assert`), `-DGUARD` with `-lstdc++exp`, `-D_GLIBCXX_ASSERTIONS`, `-fsanitize=undefined`, `-fsanitize=address`, `-ftrapv`, and no flag for erroneous behavior. Every run except constexpr used `-O2`; the `-ftrapv` column was the same at `-O0` for overflow, where it aborts.
+
+What the cells say, with the text each tool printed:
+
+- constexpr. The messages are the ones from the first episode: `call to non-'constexpr' function 'void std::__glibcxx_assert_fail(...)'` for the vector and `unique_ptr`, `array subscript value '3' is outside the bounds of array 'a' of type 'int [3]'`, `overflow in constant expression [-fpermissive]`, `'(10 / 0)' is not a constant expression`, `dereferencing a null pointer`, and for the uninitialised read `the value of 'u' is not usable in a constant expression`. It stops only when the call is evaluated in a constant expression. The run-time rows of the first table are the same functions without that.
+- `contract_assert`. With `enforce`, every guarded statement ended in exit 134 after `contract violation in function int main() at ...: i < v.size()`. With `observe`, the report was printed and the statement ran: vector, array and overflow printed their values and exited 0, while division by zero ended in SIGFPE and the two null cases in SIGSEGV on x86-64. The aarch64 division printed `0`. There is no predicate in the standard library for "this local was initialised", so that cell is untested rather than a claim.
+- `_GLIBCXX_ASSERTIONS`. `stl_vector.h:1253: ... Assertion '__n < this->size()' failed.` and `unique_ptr.h:474: ... Assertion 'get() != pointer()' failed.` Both end in SIGABRT. The macro covers calls into the library. It says nothing about `a[3]`, `INT_MAX + 1`, `10 / 0` or a raw `*p`. The longer story is in [the hardened standard library post](/posts/hardened-stdlib-turn-it-on/).
+- UBSan (`-fsanitize=undefined`). `index 3 out of bounds for type 'int [3]'`, `signed integer overflow: 2147483647 + 1 cannot be represented in type 'int'`, `division by zero`, `load of null pointer of type 'int'`, and for the `unique_ptr` `reference binding to null pointer of type 'int'` followed by `load of null pointer of type 'int'`. The vector index was silent and exited 0. The reports do not stop the run: overflow and the array index exited 0, and division and null went on to SIGFPE and SIGSEGV.
+- ASan (`-fsanitize=address`). `heap-buffer-overflow ... 0 bytes after 12-byte region` for the vector and `stack-buffer-overflow` for the array, both exit 1. For division and null it printed `AddressSanitizer:DEADLYSIGNAL`, then `FPE on unknown address` or `SEGV on unknown address 0x000000000000`, exit 1. That is a report of the signal, with a stack trace, and it names no cause in the source. Overflow and the uninitialised read were silent.
+- `-ftrapv`. `INT_MAX + 1` ended in SIGABRT at `-O0` and `-O2` (`Program terminated with signal SIGABRT (6)`). It has no effect on the other rows. The third episode has the case where `x + 1 > x` still prints `1` under `-ftrapv -O2`.
+- Erroneous behavior. At `-O0` the uninitialised read printed `0` under `-std=c++26`, `32765` under `-std=c++23`, `32767` with `-std=c++26 -ftrivial-auto-var-init=uninitialized`, and `-16843010` with `-ftrivial-auto-var-init=pattern`. It is a defined value, not a diagnostic. `[[indeterminate]] int u;` printed `32765` at `-O0` and `0` at `-O2`, so the attribute brings the undefined read back. The semantics are in [the erroneous behavior post](/posts/erroneous-behavior/).
+
+## The statements that finish without a trap
+
+The demo below is `ub_matrix_embed.cpp`. It guards the index and the overflow with a `contract_assert` under `observe`, reads inside the vector's capacity so the index does not trap, and reads an uninitialised local. It exits 0:
+
+<GodboltEmbed id="ojdvzxKer" gccOnly gccLabel="GCC 16.2" title="Three statements of the matrix that finish without a trap" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O2 -fcontract-evaluation-semantic=observe -lstdc++exp · runs live" />
+
+```text
+index: statement ran
+overflow: INT_MAX + 1 = -2147483648
+uninitialised: u = 0
+contract violation in function int main() at /app/example.cpp:18: i < v.size()
+[assertion_kind: assert, semantic: observe, mode: predicate_false, terminating: no]
+contract violation in function int main() at /app/example.cpp:24: x < INT_MAX
+[assertion_kind: assert, semantic: observe, mode: predicate_false, terminating: no]
+```
+
+The two reports go to stderr, so their position relative to the other three lines depends on how the streams are merged. `-Wall` also warns `'u' may be used uninitialized` at `-O2`. The cases that trap or abort are in `run_matrix.sh` and not in the embed.
+
+## What none of them gives you
+
+An expression-level operator that checks one subexpression and picks its own failure, in the shape of `vec[i] ?? throw std::out_of_range`, does not exist in C++26 and was in none of the tools above. Each mechanism in the table has a different unit:
+
+- constexpr checks a whole constant evaluation and nothing at run time;
+- `contract_assert` checks a statement you write beside the one that can fail, with a predicate you write, and has no form for an uninitialised read;
+- `_GLIBCXX_ASSERTIONS` checks calls into the library;
+- UBSan, ASan and `-ftrapv` instrument the whole translation unit, and each covers a different subset of the rows.
+
+The constexpr column is `stops` for all seven rows, but only for code evaluated in a constant expression. Among the six run-time columns, none is `stops` or `reports` for all seven rows. The uninitialised read is the one row where nothing in the tested set reports anything at run time. Erroneous behavior gives it a defined value, so the read stops being undefined, and the program prints `0`. A later episode looks at the committee's work on making undefined behavior in the core language a contract violation.
+
+## What this has not been tested on
+
+- Clang and MSVC were not run for any cell. The `contract_assert` column is GCC only, as in the second episode.
+- GCC versions other than 16.2.0, and optimisation levels other than `-O0` and `-O2`.
+- Any build that combines two mechanisms, such as `-fsanitize=undefined,address` with `-D_GLIBCXX_ASSERTIONS`, except where the first table says a default is on.
+- ASan on a vector index inside the vector's capacity, and libstdc++'s container annotations for ASan (`_GLIBCXX_SANITIZE_VECTOR`).
+- `-fsanitize=bounds-strict`, `-fsanitize-trap`, `-fhardened`, MemorySanitizer, Valgrind, and static analysis.
+- `-ftrapv` on types other than `int`, and a `contract_assert` that states an overflow check for an operand pair, such as `a + b`, instead of the one-operand predicate used here.
+- 32-bit targets, and operating systems other than the Linux of Compiler Explorer and the Docker image.
+- The `contract_assert` row for an uninitialised read: there is no standard predicate for it, and none was tried.
+
+---
+
+**Sources** (run 7 October 2026): the three files in [`posts/92-which-tool-catches-which/examples`](https://github.com/wrocpp/cpp26-reflection-examples/tree/2b9ba77/posts/92-which-tool-catches-which/examples) at commit `2b9ba77`, built with GCC 16.2.0 on Compiler Explorer (`g162`, x86-64) and in the `gcc:16.2` Docker image (aarch64); all quoted diagnostics are the compiler's, library's or sanitizer's own output. The reader question came from Zamfir Yonchev, in [a comment on our Facebook post](https://www.facebook.com/wrocpp/posts/pfbid02snUq5XLSWrz81qkiZhXVSy9b5EkuNu7QU89LEe3x7rv16hc5NNBzKkCTh2kLz6qpl?comment_id=1655384732663723). The related posts are linked above, and [the float-to-int post](/posts/float-to-int-ub/) and [the sanitizers post](/posts/sanitizers-on-ce/) cover the sanitizer setup on Compiler Explorer.
