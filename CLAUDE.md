@@ -22,6 +22,11 @@ engineer explaining something they hit, not like a launch announcement. Let fact
 9. Rule-of-three anaphora ("same X, same Y, same Z") - <=1.
 10. Bold overuse - budget 8; bold only term-of-art introductions.
 
+**Readability:** `docs/STYLE.md` section "Readability" holds the sentence, inline-code, paragraph and
+section limits (numbers, evidence, baseline). Draft and rewrite post bodies with the `write-post`
+skill; `scripts/readability-report.py` measures and `scripts/check-rewrite-invariants.py` guards a
+rewrite. An advisory hook reports findings after every edit of a post.
+
 **Gate:** run `python3 scripts/prose-lint.py --slug <slug>` (and `--caption <path>` for captions)
 before publishing. ERROR blocks; WARN must be read and either fixed or justified. This runs inside the
 `publish-post` and `advertise-post` skills.

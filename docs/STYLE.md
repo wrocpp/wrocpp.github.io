@@ -201,11 +201,87 @@ content pass as human, and must never be used that way. Every post we publish is
 disclosure (the `aiDisclosure` frontmatter field, the byline label, and the `/ai` page). If a reader
 chooses to share a post in one of those communities, that is their decision, not ours.
 
+## Readability
+
+The ten tells are about voice. This section is about how a post is laid out and how much inline
+code it carries. It exists because a read of the unpublished posts found them "a wall of text", and
+a measurement of all 170 posts showed why: Fog was fine, but inline code density and long runs of
+paragraphs were not. `scripts/prose-lint.py` (the `sentence-length`, `code-density`, `paragraph`,
+`prose-run`, `section-length` and `in-short` checks) and `scripts/readability-report.py` enforce and
+measure these rules. The `write-post` skill carries the drafting rules.
+
+### The rules
+
+| Rule | Level | Basis |
+|---|---|---|
+| Sentence over 25 words: WARN. Over 35: ERROR | linter | evidence-based (GOV.UK splits above 25; Microsoft flags above 30); the 35 ceiling is a house choice |
+| Mean sentence length of a section (3+ sentences) over 20: WARN | linter | house choice |
+| More than 2 code spans in one sentence: WARN. More than 4: ERROR | linter | house choice |
+| More than 8 code spans per 100 prose words: WARN | linter | house choice |
+| Paragraph over 120 words: WARN. Over 7 sentences: ERROR | linter | house choice (Google: short paragraphs, one idea each) |
+| More than 4 prose paragraphs in a row with no heading, list, table, code block or embed: WARN | linter | house choice, from the F-pattern finding that readers scan |
+| A section with over 300 prose words: WARN (a heading at least every ~250 words) | linter | house choice |
+| A post over 500 prose words opens with an "In short" section of 3 to 5 bullets: WARN if missing | linter | evidence-based (inverted pyramid: the conclusion first) |
+| Name the thing in words first, then show the identifier; never use an identifier as a verb or bare noun ("the `offset_of` function", not "`offset_of` it") | skill | evidence-based (Google: code in text) |
+| Three or more parallel items go in a table or a short list | skill | evidence-based (NN/g: scannable structure) |
+| Several identifiers belong in a code block with the explanation beside it; inline code is for single names | skill | evidence-based (split attention) |
+| Fog is tracked as a trend and never gates | report | Fog is weak on C++ vocabulary and identifiers |
+
+"Evidence-based" means a published guideline or research finding supports the direction and,
+where given, the number. "House choice" means we picked the number; it can move when the data says so.
+**No study exists on inline code and reading speed.** Google, Microsoft and MDN say to put code
+entities in code font and set no limit, so the span limits above are ours. They were chosen from the
+corpus: the 8 per 100 words WARN sits just above the reflection series median, and 2 or 4 per sentence
+marks where a sentence stops being prose.
+
+### Baseline and grandfathering
+
+`scripts/readability-baseline.json` records every post that existed when the rules landed. For a post
+listed there a finding only counts, and an ERROR only gates, when its count is worse than its entry
+("must not get worse"). A post that is rewritten is removed from the baseline and is then fully
+enforced; a new post is enforced from the start. Regenerate the file only through
+`python3 scripts/readability-report.py --write-baseline` and review the diff.
+
+Measured on all 170 posts (medians; spans are inline code spans):
+
+| group | n | Fog | Fog no code | mean sent | % >25 | spans/100 | % 3+ spans | headings | max run | list items |
+|---|---|---|---|---|---|---|---|---|---|---|
+| cpp26-reflection series | 35 | 9.7 | 9.5 | 13.5 | 10.7 | 6.4 | 7.5 | 9.0 | 3.0 | 10.0 |
+| kind: short | 98 | 10.9 | 10.8 | 16.2 | 16.1 | 3.3 | 3.3 | 3.0 | 3.0 | 0.0 |
+| ub-checks-per-statement series | 4 | 10.0 | 9.9 | 15.9 | 13.2 | 10.0 | 19.8 | 5.5 | 2.5 | 6.5 |
+| other flagships | 38 | 10.7 | 10.7 | 16.5 | 15.2 | 2.5 | 0.0 | 2.0 | 3.0 | 0.0 |
+| published before 2026-06-01 | 18 | 9.9 | 10.0 | 13.9 | 11.1 | 4.1 | 4.8 | 6.0 | 3.0 | 8.0 |
+| published from 2026-06-01 | 152 | 10.5 | 10.4 | 16.2 | 15.3 | 3.8 | 4.2 | 3.0 | 3.0 | 0.0 |
+| all posts | 170 | 10.4 | 10.3 | 15.8 | 14.3 | 3.8 | 4.3 | 4.0 | 3.0 | 0.0 |
+
+The plugin rules for commits and merge requests (45-word ceiling, a heading about every 150 words)
+differ from these on purpose: post bodies are held to the stricter 35 and 250.
+
+### Tools
+
+- `python3 scripts/prose-lint.py --file <post.mdx>`: tells and readability findings.
+- `python3 scripts/readability-report.py --slug <slug>` (also `--all`, `--group`): the metrics.
+- `python3 scripts/check-rewrite-invariants.py origin/main --slug <slug>`: after a rewrite, proves
+  that code blocks, numbers, URLs, MDX components, headings and frontmatter (except `summary` and
+  `updatedDate`) are unchanged, and prints before/after metrics.
+- An advisory hook runs the first two after every edit of a post (`.claude/settings.json`).
+
+### Sources
+
+- GOV.UK, clear language: https://guidance.publishing.service.gov.uk/writing-to-gov-uk-standards/writing-guidelines/clear-language/
+- NN/g, F-shaped pattern: https://www.nngroup.com/articles/f-shaped-pattern-reading-web-content/
+- NN/g, inverted pyramid: https://www.nngroup.com/articles/inverted-pyramid/
+- Google developer style, code in text: https://developers.google.com/style/code-in-text
+- Google technical writing, paragraphs: https://developers.google.com/tech-writing/one/paragraphs
+- Microsoft, formatting developer text elements: https://learn.microsoft.com/en-us/style-guide/developer-content/formatting-developer-text-elements
+
 ## What the linter can and cannot catch
 
 - **Mechanical (linter gates it):** dashes, formulaic closers, negative parallelism (flagged for
   review), punchy-fragment runs, the caption tic, significance phrases, the colon-title formula,
   generic headers, tricolon anaphora, bold volume, stock openers.
+- **Readability (linter gates it, against the baseline):** sentence length, code spans per sentence
+  and per 100 words, paragraph size, prose runs, section length, the "In short" block.
 - **Human judgment only (linter is silent):** the myth->demo->catch->teaser skeleton as a whole,
   whether a "not X, but Y" is a real misconception-correction, whether the significance is genuine,
   and whether every adjective is earned. A green lint means "no obvious tells," not "good writing."
