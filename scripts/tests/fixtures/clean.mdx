@@ -1,0 +1,24 @@
+---
+title: "A clean fixture"
+slug: "clean-fixture"
+pubDate: 2026-01-01
+kind: short
+---
+
+## In short
+
+- The query returns the members in declaration order.
+- Each member has a name and an offset.
+
+## What the query returns
+
+Ask the compiler for the members of a type. It answers with a list in declaration order.
+
+Each entry has a name. Use `identifier_of` to read it.
+
+| Query | Result |
+|---|---|
+| names | the identifiers |
+| offsets | byte positions |
+
+The offsets include padding, so the sum of the sizes can be smaller than the type.

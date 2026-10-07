@@ -1,0 +1,10 @@
+---
+title: "A deliberately dense fixture"
+slug: "dense-fixture"
+pubDate: 2026-01-01
+kind: short
+---
+
+Calling `std::meta::members_of`, `nonstatic_data_members_of`, `identifier_of`, `type_of`, `offset_of` and `define_aggregate` in one pass gives you the whole layout of the type at compile time.
+
+When the compiler evaluates the splice inside the expansion statement it instantiates the body once for every member that the query returned, and each instantiation adds its own diagnostics to the output that you then have to read through.
