@@ -1,0 +1,101 @@
+---
+title: "constexpr catches undefined behavior at compile time and nowhere else"
+slug: "catch-undefined-behavior-with-constexpr"
+pubDate: 2026-11-02
+author: filip-sajdak
+language: en
+kind: short
+series: ub-checks-per-statement
+series_order: 1
+audience: working-cpp
+tags: [safety, constexpr, undefined-behavior, stdlib, cpp26, series]
+summary: "A static_assert over a constexpr test suite stops the build on an out-of-range std::array, std::vector or std::span index, signed overflow, division by zero and a null dereference. GCC 16.2 and Clang 23.1 each reject all six bad calls we tried. The same functions called with a run-time value compile cleanly and, at -O2, print stale memory or return a value no wrapped add could produce. Episode 1 of the UB checks per statement series."
+draft: false
+relatedPosts: [hardened-stdlib-turn-it-on, sanitizers-on-ce]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+After the <PostLink slug="hardened-stdlib-turn-it-on">hardened standard library post</PostLink>, a reader, [Zamfir Yonchev, commented](https://www.facebook.com/wrocpp/posts/pfbid02snUq5XLSWrz81qkiZhXVSy9b5EkuNu7QU89LEe3x7rv16hc5NNBzKkCTh2kLz6qpl?comment_id=1655384732663723): "I wish there was a language construct for enabling checking of UB of this kind on a per-statement basis". (The link opened without a login when we fetched it on 2026-10-07.) This series takes that question one case at a time. The first tool is the one the language already has: evaluate the code in a constant expression and let the compiler refuse undefined behavior.
+
+## One suite, six bad calls
+
+The file defines small `constexpr` functions for the cases and a `static_assert` suite over them:
+
+```cpp
+constexpr int array_at(std::size_t i) {
+    std::array<int, 3> a{10, 20, 30};
+    return a[i];
+}
+constexpr int add_one(int x) { return x + 1; }
+constexpr int divide(int a, int b) { return a / b; }
+constexpr int deref(const int* p) { return *p; }
+
+static_assert(array_at(2) == 30);
+static_assert(add_one(41) == 42);
+static_assert(divide(84, 2) == 42);
+```
+
+`vector_at` and `span_at` follow the same shape. Built as it stands, every assertion holds. Building with `-DCASE=1` through `-DCASE=6` adds one more `static_assert` that makes a single bad call: `array_at(3)`, `vector_at(3)`, `span_at(3)`, `add_one(INT_MAX)`, `divide(1, 0)` and `deref(nullptr)`. Each one stops the build.
+
+GCC 16.2 (`-std=c++26 -Wall -Wextra`) says, after `non-constant condition for static assertion`:
+
+| call | GCC 16.2 error |
+| --- | --- |
+| `array_at(3)` | `call to non-'constexpr' function 'void std::__glibcxx_assert_fail(const char*, int, const char*, const char*)'` at `array:210` |
+| `vector_at(3)` | the same text, at `stl_vector.h:1253` |
+| `span_at(3)` | the same text, at `span:288` |
+| `add_one(INT_MAX)` | `overflow in constant expression [-fpermissive]` |
+| `divide(1, 0)` | `'(1 / 0)' is not a constant expression` |
+| `deref(nullptr)` | `dereferencing a null pointer` |
+
+Clang 23.1 on Compiler Explorer rejects the same six with `static assertion expression is not an integral constant expression`, and its notes read `value 2147483648 is outside the range of representable values of type 'int'`, `division by zero` and `dereferencing a null pointer is not allowed in a constant expression` for the last three. The `-stdlib=libc++` build rejects them too. These were run on Compiler Explorer, so Clang used its bundled libstdc++ 15.2 in the default mode.
+
+## Where the rule comes from
+
+The standard's list of things that stop an expression from being a core constant expression includes "an operation that would have undefined or erroneous behavior as specified in Clause [intro] through Clause [cpp]" ([expr.const], paragraph 2 in the [current draft](https://eel.is/c++draft/expr.const), fetched 2026-10-07). Signed overflow, division by zero and a null dereference are defined in those clauses, so a conforming compiler has to reject them.
+
+An out-of-range `operator[]` is different. Its precondition is written in the library clauses, and paragraph 4 says it is unspecified whether such an expression is a core constant expression. So whether `v[3]` on a three-element vector is diagnosed is up to the implementation. libstdc++ chooses to diagnose it. Its `c++config.h` says that without `_GLIBCXX_ASSERTIONS` the assertion checks are enabled only during constant evaluation, "to diagnose undefined behaviour in constant expressions". We built at `-O2` with the macro defined and with it left out, and GCC rejected all three index cases both times; the error text differs (`__glibcxx_assert_fail()` takes no arguments in the constant-evaluation-only version).
+
+With libc++, Clang's notes name a different reason. For an index of 3 it reads `read of dereferenced one-past-the-end pointer is not allowed in a constant expression`, and for 100 it reads `cannot refer to element 100 of array of 3 elements in a constant expression`. Those are core-language rules about the array, not a libc++ assertion, so this test does not show whether libc++ checks the precondition itself in constant evaluation.
+
+## The same functions at run time
+
+Nothing in the file changed except where the argument comes from. `main` passes values derived from `argc`, so the compiler sees no constant:
+
+<GodboltEmbed id="ssP7T7roq" gccOnly gccLabel="GCC 16.2" title="The same functions with a run-time index and a run-time INT_MAX" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -Wall -Wextra -O2 · runs live" />
+
+It compiles without a warning and exits 0. On Compiler Explorer, `array_at(3)` and `span_at(3)` printed `0` in one run and `32766` in another with the same binary settings, and `vector_at(3)` printed `0`. Clang 23.1 `-O2` printed `990059265` for the array and span reads. `add_one(INT_MAX) > INT_MAX` printed `true`, which a wrapped addition cannot produce, because the optimizer is allowed to assume the addition does not overflow.
+
+Exit codes and output for the whole matrix, measured on Compiler Explorer (x86-64) with the default run and the `div` and `null` arguments:
+
+| compiler and flags | index and overflow | `divide(1, 0)` | `deref(nullptr)` |
+| --- | --- | --- | --- |
+| GCC 16.2 `-O0` | exit 134, `array:210 ... Assertion '__n < this->size()' failed.` | SIGFPE | SIGSEGV |
+| GCC 16.2 `-O2` | exit 0, stale values | exit 0, printed `0` | SIGSEGV |
+| GCC 16.2 `-O2 -D_GLIBCXX_ASSERTIONS` | exit 134, same assertion | not run | not run |
+| Clang 23.1 `-O0` | exit 134, same assertion | SIGFPE | SIGSEGV |
+| Clang 23.1 `-O2` | exit 0, stale values | exit 0, printed `0` | exit 0, printed `2` |
+
+The `-O0` rows are the hardened standard library's checks from the <PostLink slug="hardened-stdlib-turn-it-on">earlier post</PostLink>, on by default in an unoptimized libstdc++ build. Run time behavior is the territory of the hardened library and of the <PostLink slug="sanitizers-on-ce">sanitizers</PostLink>.
+
+## What constexpr covers
+
+The check happens when a constant expression is evaluated. It sees the values you wrote into the test, which makes it a way to turn a test suite into a compile-time proof for those inputs. It does not look at the index a user types at run time, and it does not mark code that was never written as a test. A function has to be `constexpr` for a `static_assert` to call it, and every function it calls has to be too.
+
+Trail of Bits published [constexpr-everything](https://github.com/trailofbits/constexpr-everything), a libclang tool that rewrites code to add `constexpr` wherever it can be evaluated. The repository is archived, its last commit is from 2022-03-01, and its README says it requires LLVM 9, 10 or 11. We did not run it.
+
+## What this has not been tested on
+
+- MSVC STL: not compiled. We do not know whether it diagnoses an out-of-range `operator[]` in constant evaluation.
+- libc++'s own precondition checks in constant evaluation: not isolated. The Clang runs with libc++ were rejected by core-language rules.
+- GCC and Clang only on Compiler Explorer (x86-64). The GCC 16.2 Docker image was used for the standard library header text and the `-O2` macro matrix; on its aarch64 build `divide(1, 0)` at run time returned `0` instead of raising SIGFPE.
+- Clang with its own libc++ at versions other than 23.1, and any version of GCC other than 16.2.
+- constexpr-everything: not run.
+
+The examples are in [cpp26-reflection-examples](https://github.com/wrocpp/cpp26-reflection-examples) under `posts/89-constexpr-catches-ub`.
+
+---
+
+**Sources**: [expr.const in the C++ working draft](https://eel.is/c++draft/expr.const) (draft commit c7015b4, fetched 2026-10-07) for paragraphs 2 and 4. libstdc++ `bits/c++config.h` as installed with GCC 16.2 for the assertion macros. [trailofbits/constexpr-everything](https://github.com/trailofbits/constexpr-everything) for the archive status, the last commit date and the LLVM versions. Compiler diagnostics and exit codes were measured on Compiler Explorer with `g162` and `clang2310`; the matrix was run once, and the stale values differ between runs.
