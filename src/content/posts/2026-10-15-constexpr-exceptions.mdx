@@ -14,30 +14,34 @@ relatedPosts: [erroneous-behavior, optional-ref]
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
-`constexpr` has spent four standards absorbing the rest of the language. C++20 brought virtual calls, dynamic allocation, `try` blocks (though a `throw` still could not execute), and much of the algorithm library. What stayed outside was actually throwing: reach a `throw` during constant evaluation and the expression was simply not a constant expression, so the build failed on the spot.
+The keyword `constexpr` has spent four standards absorbing the rest of the language. C++20 brought virtual calls, dynamic allocation, and much of the algorithm library. It also allowed `try` blocks, though a `throw` still could not execute. What stayed outside was actually throwing. Reaching a `throw` during constant evaluation meant the expression was not a constant expression, so the build failed on the spot.
 
-That mattered more than it sounds, because it split error handling in two. A function meant for both compile time and runtime could not use the language's own error mechanism; it needed a sentinel value, an `optional`, or a separate constexpr-only path.
+That mattered more than it sounds, because it split error handling in two. A function meant for both compile time and runtime could not use the language's own error mechanism. It needed a sentinel value, an `optional`, or a separate constexpr-only path.
 
 C++26 removes the split. **Exceptions can be thrown and caught during constant evaluation.** A throw that is caught within the same evaluation is fine. Only an exception that escapes to the top makes the expression non-constant.
 
+## A throw caught at compile time
+
 <GodboltEmbed id="rdYPorv3Y" gccOnly title="A throw caught at compile time, checked by static_assert" gcc_subtitle="x86-64 GCC 16.1 · -std=c++26 · runs live" />
 
-The demo is a checked division that throws `std::domain_error` on a zero divisor, wrapped by a function that catches it and returns a sentinel. Both `static_assert`s pass:
+The demo is a checked division that throws `std::domain_error` on a zero divisor. A wrapper function catches it and returns a sentinel. Both static assertions pass:
 
 ```cpp
 static_assert(try_div(10, 2) == 5);
 static_assert(try_div(10, 0) == -1);   // thrown AND caught during constant evaluation
 ```
 
-The second one is the interesting line. At compile time, `checked_div` throws, the `catch` in `try_div` handles it, evaluation continues, and the result is a perfectly ordinary constant. No runtime, no exception tables, nothing left in the binary.
+The second one is the interesting line. At compile time, `checked_div` throws and the handler in `try_div` catches it. Evaluation continues, and the result is a perfectly ordinary constant. There is no runtime, no exception tables, and nothing left in the binary.
 
 ## What it buys you
 
-The practical win is that one function now serves both worlds. A parser, a units conversion, a validation routine can `throw std::invalid_argument` and behave correctly whether it runs in a `static_assert` or at runtime, with no duplicated logic and no sentinel-value protocol invented per API.
+The practical win is that one function now serves both worlds. A parser, a units conversion, or a validation routine can throw `std::invalid_argument` and behave correctly whether it runs in a static assertion or at runtime. No logic is duplicated, and no sentinel-value protocol is invented per API.
 
-It also improves the failure message. A `throw` that escapes constant evaluation is a compile error, and the compiler can name the exception and the throw site, which is considerably better than the wall of instantiation noise a `static_assert` deep in a template usually produces.
+It also improves the failure message. A `throw` that escapes constant evaluation is a compile error, and the compiler can name the exception and the throw site. That is considerably better than the wall of instantiation noise a static assertion deep in a template usually produces.
 
-Two things to keep in mind. Catching by reference is what you want, as always; and this is about *constant evaluation*, so the exception never exists at runtime. If the same function runs at runtime, it throws in the ordinary way with the ordinary costs.
+Two things to keep in mind. Catching by reference is what you want, as always. And this is about *constant evaluation*, so the exception never exists at runtime. If the same function runs at runtime, it throws in the ordinary way with the ordinary costs.
+
+## Constexpr as plain C++
 
 C++26 has quietly finished a long project here. The rule used to be that constexpr code is a restricted dialect you have to write around. It is now close to plain C++ that happens to run early.
 
