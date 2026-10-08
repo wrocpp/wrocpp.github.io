@@ -25,13 +25,23 @@ contract_assert(i < v.size());
 int x = v[i];
 ```
 
-The first line after the declarations is a C++26 **contract assertion**. It is a statement. When the predicate is false, the implementation does what the evaluation semantic of the build says, and the access on the next line is either never reached or reached on purpose.
+The first line after the declarations is a C++26 **contract assertion**. It is a statement. When the predicate is false, the implementation does what the evaluation semantic of the build says. The access on the next line is then either never reached or reached on purpose.
 
-This post is the second in a series about checking undefined behavior one statement at a time. A reader question started the series, in [a comment from Zamfir Yonchev](https://www.facebook.com/wrocpp/posts/pfbid02snUq5XLSWrz81qkiZhXVSy9b5EkuNu7QU89LEe3x7rv16hc5NNBzKkCTh2kLz6qpl?comment_id=1655384732663723), and the first post, <PostLink slug="catch-undefined-behavior-with-constexpr">catching undefined behavior with constexpr</PostLink>, answered it with the tool the language already has. Contracts themselves are covered in [C++26 contracts](/posts/cpp26-contracts/) and [the contracts dispute](/posts/contracts-dispute/), and the library-side check in [the hardened standard library](/posts/hardened-stdlib-turn-it-on/). This one is about `contract_assert` as the per-statement tool.
+## In short
+
+- A contract assertion is a statement that checks one condition where you write it, for example in front of a vector access.
+- On GCC 16.2 the same source ignores, reports, or terminates on a failure, depending on `-fcontract-evaluation-semantic`. A debug and a release build differ by one flag.
+- With the report-only semantic at `-O2`, the build reports the violation and then goes on to read out of range.
+- The libstdc++ assertion macro `_GLIBCXX_ASSERTIONS` is a separate mechanism. It never calls the contract violation handler.
+- Clang's status page lists contracts as not supported, so the demos are GCC only.
+
+## Where this fits in the series
+
+This post is the second in a series about checking undefined behavior one statement at a time. A reader question started the series, in [a comment from Zamfir Yonchev](https://www.facebook.com/wrocpp/posts/pfbid02snUq5XLSWrz81qkiZhXVSy9b5EkuNu7QU89LEe3x7rv16hc5NNBzKkCTh2kLz6qpl?comment_id=1655384732663723). The first post, <PostLink slug="catch-undefined-behavior-with-constexpr">catching undefined behavior with constexpr</PostLink>, answered it with the tool the language already has. Contracts themselves are covered in [C++26 contracts](/posts/cpp26-contracts/) and [the contracts dispute](/posts/contracts-dispute/), and the library-side check in [the hardened standard library](/posts/hardened-stdlib-turn-it-on/). This one is about the contract assertion (`contract_assert`) as the per-statement tool.
 
 ## Running it
 
-The demo asserts `i < v.size()` for `i = 1` and `i = 5`, with the `observe` semantic so that it reports the violation and carries on:
+The demo asserts that the index is smaller than the vector size, once for `i = 1` and once for `i = 5`. It uses the `observe` semantic, so it reports the violation and carries on:
 
 <GodboltEmbed id="nabs7o6ad" gccOnly title="contract_assert in front of a vector index, observe semantic" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -fcontract-evaluation-semantic=observe -lstdc++exp · runs live" />
 
@@ -42,15 +52,21 @@ contract violation in function int main() at example.cpp:16: i < v.size()
 [assertion_kind: assert, semantic: observe, mode: predicate_false, terminating: no]
 ```
 
-The violation report goes to stderr and the other two lines to stdout, so the order depends on how the streams are merged. With stdout unbuffered, as the demo sets it, the report appears after the `i = 1` line and before the `i = 5` line when both go to a terminal or one pipe.
+The violation report goes to stderr and the other two lines to stdout, so the order depends on how the streams are merged. The demo sets stdout to unbuffered. Then, when both streams go to a terminal or one pipe, the report appears after the `i = 1` line and before the `i = 5` line.
 
-On GCC 16.2 `-std=c++26` is enough: `-fcontracts` is on by itself, `__cpp_contracts` is `202502L`, and `-fno-contracts` turns `contract_assert` into the error `'contract_assert' is only available with '-fcontracts'`. With `-std=c++23` the keyword is not recognised at all.
+On GCC 16.2 the option `-std=c++26` is enough:
 
-One link detail: the default violation handler lives in `libstdc++exp`. Passing `-fcontracts` explicitly makes the driver link it for you, but relying on the implicit `-std=c++26` default does not, so without `-lstdc++exp` the link fails with `undefined reference to handle_contract_violation(std::contracts::contract_violation const&)`. That reference is satisfied either by the library or by a handler you define yourself, shown below.
+- Contracts are on by themselves (`-fcontracts`).
+- The feature-test macro `__cpp_contracts` is `202502L`.
+- Turning contracts off with `-fno-contracts` gives the error `'contract_assert' is only available with '-fcontracts'`.
+
+With `-std=c++23` the keyword is not recognised at all.
+
+One link detail: the default violation handler lives in `libstdc++exp`. Passing `-fcontracts` explicitly makes the driver link that library for you. Relying on the implicit default from `-std=c++26` does not. Without `-lstdc++exp`, the link then fails with `undefined reference to handle_contract_violation(std::contracts::contract_violation const&)`. That reference is satisfied either by the library or by a handler you define yourself, shown below.
 
 ## The four semantics, measured
 
-The same `contract_assert_bounds.cpp`, built on GCC 16.2 with `-std=c++26 -Wall -Wextra` and only the semantic changed. The spellings are the ones the compiler accepts: `ignore`, `observe`, `enforce` and `quick_enforce`. `ignored` and `observed`, which appear in some online documentation, are rejected with `unrecognized contract evaluation semantic`.
+The same `contract_assert_bounds.cpp`, built on GCC 16.2 with `-std=c++26 -Wall -Wextra` and only the semantic changed. The table lists the four spellings the compiler accepts. Two other spellings, `ignored` and `observed`, appear in some online documentation. The compiler rejects them with `unrecognized contract evaluation semantic`.
 
 | `-fcontract-evaluation-semantic=` | output | exit |
 | --- | --- | --- |
@@ -63,7 +79,7 @@ Exit 134 is `SIGABRT`. Under `enforce` and `quick_enforce` the statement after t
 
 ## A handler of your own
 
-GCC 16.2 lets a program define `handle_contract_violation(const std::contracts::contract_violation&)` at global scope, and the linker takes it over the library's weak one. With this handler in place (`custom_handler.cpp`, no `-lstdc++exp` needed) and `contract_assert(i < 3)` with `i = 5`:
+GCC 16.2 lets a program define `handle_contract_violation(const std::contracts::contract_violation&)` at global scope, and the linker takes it over the library's weak one. With this handler in place, `custom_handler.cpp` needs no `-lstdc++exp`. It asserts `i < 3` with `i = 5`, and the results are:
 
 ```
 observe:       custom handler: i < 3 | semantic 2
@@ -89,20 +105,22 @@ The source file does not change between a checked build and an unchecked one. He
 | `-O2 observe` | contract report, then `v[5] = 0` | 0 |
 | `-O2 enforce` | contract report, then terminate | 134 |
 
-Two of the rows show the same program reaching an out-of-range read and printing `0`. `observe` with `-O2` is the build that reports the violation and then goes on to execute the undefined behavior the assertion was written to prevent.
+Two of the rows show the same program reaching an out-of-range read and printing `0`. Under `observe` at `-O2`, the build reports the violation. It then goes on to execute the undefined behavior the assertion was written to prevent.
 
 ## It is not the library check
 
-The libstdc++ check in the `-O0` rows above is `_GLIBCXX_ASSERTIONS`, which GCC enables by default at `-O0`. It is a separate mechanism from the contract assertion. Measured on `plain_index.cpp`, which has no `contract_assert`:
+The libstdc++ check in the `-O0` rows above is the library assertion macro `_GLIBCXX_ASSERTIONS`. GCC enables it by default at `-O0`. It is a separate mechanism from the contract assertion. Measured on `plain_index.cpp`, which has no `contract_assert`:
 
 | flags | what happened | exit |
 | --- | --- | --- |
 | `-O2` | `v[5] = 0` | 0 |
 | `-O2 -D_GLIBCXX_ASSERTIONS` | assertion message naming `stl_vector.h:1253`, then abort | 134 |
 
-And with both together, `-O2 -D_GLIBCXX_ASSERTIONS -fcontract-evaluation-semantic=observe` on `contract_assert_then_access.cpp`: the contract report is printed for the `contract_assert`, and then the libstdc++ assertion aborts the program at `v[5]`. The library's message is a plain assertion text, not a `contract_violation`, and changing the semantic flag does not change what the library check does.
+With both together, the contract report is printed for the assertion, and then the libstdc++ assertion aborts the program at `v[5]`. This was measured with `-O2 -D_GLIBCXX_ASSERTIONS -fcontract-evaluation-semantic=observe` on `contract_assert_then_access.cpp`. The library's message is a plain assertion text, not a `contract_violation`, and changing the semantic flag does not change what the library check does.
 
-The standard wording for the hardened library is different. [structure.specifications] says that the contract assertions for a hardened precondition are evaluated with a terminating semantic, and that in a non-hardened implementation a violated hardened precondition is undefined behavior ([eel.is](https://eel.is/c++draft/structure.specifications), read 2026-10-07). [P3878R1](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3878r1.html) argues for removing `observe` from hardened implementations, because a returning handler would leave the program in the undefined behavior the hardening exists to prevent; it describes checked-but-not-hardened modes as a vendor extension that cannot claim to be hardened. What GCC 16.2's libstdc++ does today is what the tables above show: its assertions do not go through the handler.
+The standard wording for the hardened library is different. [structure.specifications] says two things ([eel.is](https://eel.is/c++draft/structure.specifications), read 2026-10-07). The contract assertions for a hardened precondition are evaluated with a terminating semantic. In a non-hardened implementation, a violated hardened precondition is undefined behavior.
+
+[P3878R1](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3878r1.html) argues for removing the `observe` semantic from hardened implementations. A returning handler would leave the program in the undefined behavior the hardening exists to prevent. The paper describes checked-but-not-hardened modes as a vendor extension that cannot claim to be hardened. What GCC 16.2's libstdc++ does today is what the tables above show: its assertions do not go through the handler.
 
 ## What `contract_assert` is and is not
 
@@ -114,8 +132,23 @@ Clang's C++ status page lists Contracts (P2900) as not supported, read on 2026-1
 
 ## What this has not been tested on
 
-Everything above was measured on GCC 16.2.0 (Docker, aarch64) and on Compiler Explorer's `g162` (x86-64). Not tested: Clang (the page above lists no support), MSVC, other GCC versions (including 16.1, which the older contracts post used), `-O1` and `-O3`, `-fhardened`, libc++, and any build where the violating code is inlined into a caller that is itself checked. At `-O2` the demos were small enough that the compiler may have seen the constant index; a runtime-dependent index was not measured.
+Everything above was measured on GCC 16.2.0 (Docker, aarch64) and on Compiler Explorer's `g162` (x86-64). Not tested:
+
+- Clang (the page above lists no support).
+- MSVC.
+- Other GCC versions, including 16.1, which the older contracts post used.
+- `-O1` and `-O3`.
+- `-fhardened` and libc++.
+- Any build where the violating code is inlined into a caller that is itself checked.
+
+At `-O2` the demos were small enough that the compiler may have seen the constant index. A runtime-dependent index was not measured.
 
 ---
 
-**Sources**: [P2900R14, Contracts for C++](https://wg21.link/p2900r14) · [P3878R1](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3878r1.html) · [[structure.specifications]](https://eel.is/c++draft/structure.specifications) · [clang C++ status](https://clang.llvm.org/cxx_status.html) · GCC 16.2 behavior measured with the four example files in [wrocpp/cpp26-reflection-examples](https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/90-contract-assert-per-statement/examples) and the Godbolt demo above.
+**Sources**:
+
+- [P2900R14, Contracts for C++](https://wg21.link/p2900r14)
+- [P3878R1](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3878r1.html)
+- [[structure.specifications]](https://eel.is/c++draft/structure.specifications)
+- [clang C++ status](https://clang.llvm.org/cxx_status.html)
+- GCC 16.2 behavior measured with the four example files in [wrocpp/cpp26-reflection-examples](https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/90-contract-assert-per-statement/examples) and the Godbolt demo above.
