@@ -49,26 +49,31 @@ Same expression, same initializer, same `constexpr`. The only difference is that
 | named `constexpr` local | **rejected** | accepted |
 | identical expression inline | accepted | accepted |
 
-Clang takes both spellings and prints the same output either way, which is what you would expect: naming a constant expression does not stop it being one.
+Clang takes both spellings and prints the same output either way. Naming a constant expression does not stop it being one.
 
 ## Why it is worth knowing rather than filing away
 
-The named form is the one people write. You compute the member list once, give it a name that says what it is, and use it. Splitting a long expression out of a loop header is ordinary style, and here it turns a working program into a compile error with a message that sounds like your code is wrong.
+The named form is the one people write. You compute the member list once, give it a name that says what it is, and use it. Splitting a long expression out of a loop header is ordinary style. Here it turns a working program into a compile error. The message sounds as if your code is wrong.
 
-The workaround is unpleasant in proportion: inline the expression back into the `template for`, which is exactly the edit a reviewer would ask you to undo.
+The workaround is unpleasant in proportion. Inline the expression back into the `template for`. A reviewer would ask you to undo exactly that edit.
 
-If you are porting reflection code written against clang, this is the shape of breakage to expect. It is not that GCC lacks the feature. It is that GCC disagrees about when a `constexpr` variable is usable as an expansion range.
+If you are porting reflection code written against clang, expect this shape of breakage. GCC has the feature. It disagrees about when a `constexpr` variable is usable as an expansion range.
 
 ## A note on the reproducer
 
-The version in the examples repo switches between the two forms with a macro, and the first draft of it was wrong in a way worth repeating:
+The version in the examples repo switches between the two forms with a macro. The first draft was wrong in a way worth repeating:
 
 ```cpp
 #if FORM == named       // always true
 ```
 
-Undefined identifiers evaluate to `0` in a preprocessor condition, so `FORM == named` compares `0` with `0` whichever way you set it, and both branches take the same path. It looked like GCC rejecting the workaround too. Ask whether a macro is `defined` instead of comparing it to a bare word.
+Undefined identifiers evaluate to `0` in a preprocessor condition. So the test `FORM == named` is really `0 == 0` whichever way you set it, and both branches take the same path. It looked like GCC rejecting the workaround too. Instead of comparing a macro to a bare word, ask whether it is `defined`.
 
 ---
 
-**Sources**: reduced from the splicing example in the [reflection series](/posts/reflection-on-released-gcc/) · [P1306 "Expansion statements"](https://wg21.link/p1306) · [P2996 "Reflection for C++26"](https://wg21.link/p2996) · both compilers on Compiler Explorer, GCC 16.1 and clang-p2996.
+**Sources**:
+
+- reduced from the splicing example in the [reflection series](/posts/reflection-on-released-gcc/)
+- [P1306 "Expansion statements"](https://wg21.link/p1306)
+- [P2996 "Reflection for C++26"](https://wg21.link/p2996)
+- both compilers on Compiler Explorer, GCC 16.1 and clang-p2996

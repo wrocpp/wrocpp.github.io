@@ -14,14 +14,22 @@ relatedPosts: [p0963-constexpr-tuple-divergence, gcc-16-2-toolchain-status]
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
-Some string literals never become objects. The text in `static_assert`, `[[deprecated]]`, `[[nodiscard]]`, `extern "C"` and `asm` is read by the compiler and never encoded into anything at run time. C++26 calls these **unevaluated strings** and, via [P2361R6](https://wg21.link/p2361), makes two things ill-formed in them:
+Some string literals never become objects. The compiler reads them and never encodes them into anything at run time. They appear in five places:
+
+- `static_assert`
+- `[[deprecated]]`
+- `[[nodiscard]]`
+- `extern "C"`
+- `asm`
+
+C++26 calls these **unevaluated strings**. Through [P2361R6](https://wg21.link/p2361), it makes two things ill-formed in them:
 
 - an encoding prefix, as in `static_assert(true, u8"message")`
 - a numeric escape, as in `static_assert(true, "bell \x07 here")`
 
 Neither ever meant anything. There is no encoding to apply and no byte to escape into. Tightening this is the sort of cleanup that costs nobody anything.
 
-Except that the two compilers disagree about how much of it is in force.
+The two compilers, though, disagree about how much of it is in force.
 
 ## The same file, two answers
 
@@ -49,7 +57,7 @@ error: invalid escape sequence '\x07' in an unevaluated string literal
 | hex escape, `"\x07"` | **accepted** | rejected |
 | octal escape, `"\007"` | **accepted** | rejected |
 
-So GCC has the first half and not the second. Both compilers reject the prefix in `static_assert` and in `[[deprecated]]` alike, which is the part most likely to appear in real code, and only Clang follows through on escapes.
+So GCC has the first half and not the second. Both compilers reject the prefix in `static_assert` and in `[[deprecated]]` alike. Real code is most likely to hit the prefix case. Only Clang follows through on escapes.
 
 The diagnostics are worth comparing too. Clang names the concept:
 
@@ -63,19 +71,19 @@ GCC says:
 a wide string is invalid in this context
 ```
 
-which is true but leaves the reader to work out which context and why. The paper introduced a term precisely so that this error could use it.
+That message is true but leaves the reader to work out which context and why. The paper introduced a term precisely so that this error could use it.
 
 ## The other half of the cleanup
 
-[P1854R4](https://wg21.link/p1854), applied as a defect report, deals with the opposite case: literals that *are* evaluated but contain a character the execution encoding cannot represent. That used to be substituted silently, MSVC's habit of turning such a character into `?` being the best-known example. C++26 makes it ill-formed, so a literal either means what it says or fails to compile.
+[P1854R4](https://wg21.link/p1854), applied as a defect report, deals with the opposite case: literals that *are* evaluated but contain a character the execution encoding cannot represent. Compilers used to substitute such a character silently. MSVC's habit of turning it into `?` is the best-known example. C++26 makes it ill-formed, so a literal either means what it says or fails to compile.
 
 Nothing about evaluated literals changed otherwise. Every prefix and every escape still works exactly as before.
 
 ## Whether this matters
 
-Directly, barely. Writing `u8` on a `static_assert` message is not a thing people do on purpose, and a `\x07` in an assertion message is a typo rather than a technique.
+Directly, it barely matters. People do not write `u8` on a `static_assert` message on purpose. A `\x07` in an assertion message is a typo rather than a technique.
 
-Indirectly, it is a reminder worth having: a paper being in the standard, and having a feature-test macro, says nothing about how much of it your compiler implements. This is a two-clause rule that landed in the working paper years ago, and today one major compiler enforces one clause. Compile the thing you are relying on.
+Indirectly, it is a reminder worth having. A paper in the standard, even with a feature-test macro, says nothing about how much of it your compiler implements. This two-clause rule landed in the working paper years ago, and today one major compiler enforces one clause. Compile the thing you are relying on.
 
 ---
 

@@ -44,13 +44,13 @@ struct Nutshell {
 };
 ```
 
-The mechanism is easy to miss. Declaring the move operations **suppresses the copy operations**, so `Nutshell` has no eligible copy constructor and no eligible copy assignment at all. The standard's definition asks whether every *eligible* copy or move operation is trivial. Delete the copies and only the trivial moves are left, so the condition holds by having nothing left to fail.
+The mechanism is easy to miss. Declaring the move operations **suppresses the copy operations**. So `Nutshell` has no eligible copy constructor and no eligible copy assignment at all. The standard's definition asks whether every *eligible* copy or move operation is trivial. With the copies gone, only the trivial moves remain. The condition holds because nothing is left to fail.
 
 `Hamlet` is not trivially copyable. `Nutshell`, which contains one, is.
 
 ## The divergence, still live
 
-The paper reports that EDG and MSVC say true while Clang and GCC say false, and states plainly: "EDG+MSVC are certainly correct according to the Standard." That was May 2024. Two years on:
+The paper reports that EDG and MSVC say true and Clang and GCC say false. It states plainly: "EDG+MSVC are certainly correct according to the Standard." That was May 2024. Two years on:
 
 | | GCC 16.1 | Clang 22.1 | MSVC 19.51 |
 |---|---|---|---|
@@ -62,22 +62,26 @@ Two compilers give the answer people expect and the standard does not ask for. T
 
 ## What the retelling gets wrong
 
-This case travels as "a trivially copyable type with a non-trivially-copyable member", which makes it sound like any aggregate would do. It would not:
+This case travels as "a trivially copyable type with a non-trivially-copyable member". That makes it sound as if any aggregate would do. It would not:
 
 ```cpp
 struct PlainPair { Hamlet a; Hamlet b; };   // false on GCC, Clang AND MSVC
 ```
 
-A plain aggregate of non-trivially-copyable members is not trivially copyable anywhere, MSVC included. The defaulted move declarations do all the work, and dropping them from the example removes the effect entirely. Worth checking before repeating, because the short version is memorable and wrong.
+A plain aggregate of non-trivially-copyable members is not trivially copyable anywhere, MSVC included. The defaulted move declarations do all the work. Drop them from the example and the effect disappears. Check before repeating it, because the short version is memorable and wrong.
 
 ## Why the trait behaves this way
 
 `is_trivially_copyable` is not asking "can I copy this cheaply". It asks a structural question about which operations are eligible and whether those are trivial. A type with no copy operations at all passes on a technicality.
 
-O'Dwyer's proposal is to redefine the triviality traits so they mean what library authors read them to mean: that every supported value-semantic operation is trivial, phrased as implications rather than a list of eligibility conditions. Under that definition a type you cannot copy would not claim to be trivially copyable.
+O'Dwyer's proposal redefines the triviality traits to mean what library authors read them to mean. Every supported value-semantic operation must be trivial. The paper phrases this as implications rather than a list of eligibility conditions. Under that definition a type you cannot copy would not claim to be trivially copyable.
 
-The practical takeaway is smaller and more immediate. `is_trivially_copyable_v<T>` is not a licence to `memcpy` a `T` unless you have also checked that copying is something `T` supports. If you are dispatching on that trait in a container or a serialiser, pair it with `is_copy_constructible_v` and you will not care how the committee resolves this.
+The practical takeaway is smaller and more immediate. The trait `is_trivially_copyable_v` is not a licence to `memcpy` a value unless you have also checked that its type supports copying. If you dispatch on that trait in a container or a serialiser, pair it with `is_copy_constructible_v`. Then you will not care how the committee resolves this.
 
 ---
 
-**Sources**: [P3279R0 "CWG2463: What 'trivially fooable' should mean"](https://wg21.link/p3279), Arthur O'Dwyer, 15 May 2024 · behaviour verified on Compiler Explorer with GCC 16.1, clang 22.1.0 and MSVC v19.51 · brought to attention by a quantdev.blog post.
+**Sources**:
+
+- [P3279R0 "CWG2463: What 'trivially fooable' should mean"](https://wg21.link/p3279), Arthur O'Dwyer, 15 May 2024
+- behaviour verified on Compiler Explorer with GCC 16.1, clang 22.1.0 and MSVC v19.51
+- brought to attention by a quantdev.blog post

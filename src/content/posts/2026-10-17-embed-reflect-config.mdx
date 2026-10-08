@@ -14,7 +14,7 @@ relatedPosts: [embed-the-file, reflect-special-members]
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
-Two C++26 features that are individually neat and jointly useful. [`#embed`](/posts/embed-the-file/) pulls a file into the translation unit as data. Reflection enumerates a type's members. Put them together and a configuration file is parsed while the compiler is running, into a struct, with the field names doing double duty as the keys.
+Two C++26 features are neat alone and more useful together. [`#embed`](/posts/embed-the-file/) pulls a file into the translation unit as data. Reflection enumerates a type's members. Combine them and the compiler parses a configuration file into a struct. The field names double as the keys.
 
 <GodboltEmbed id="doWxGYhs8" gccOnly title="A config file parsed during compilation, keys taken from the struct" gcc_subtitle="x86-64 GCC 16.1 · -std=c++26 -freflection · runs live" />
 
@@ -45,7 +45,7 @@ consteval T parse_config(std::string_view text) {
 }
 ```
 
-`identifier_of` is what makes it work: the member's own name, available as a compile-time string, used as the lookup key. Add a field to `config` and it is looked up without touching the parser.
+The function `identifier_of` makes it work. It returns the member's own name as a compile-time string, and the parser uses that name as the lookup key. Add a field to `config` and the parser looks it up without any edit.
 
 ## The part that catches mistakes early
 
@@ -58,17 +58,22 @@ static_assert(!cfg.host.empty(), "config is missing host");
 static_assert(cfg.port == "8080");
 ```
 
-Delete a line from the config file and the build fails with that message. The alternative, which most programs still do, is to discover it when the service will not start, in an environment where the file is different from the one you tested with.
+Delete a line from the config file and the build fails with that message. Most programs still do the opposite. They discover the problem when the service will not start, in an environment whose file differs from the one you tested with.
 
-That is the real argument for doing it this way. Not speed, though there is no parsing at run time, and not elegance. It is that a configuration error becomes a compile error, and compile errors happen to the person who made them.
+That is the real argument for this approach. Speed is a side benefit, since nothing is parsed at run time. The point is that a configuration error becomes a compile error, and compile errors happen to the person who made them.
 
 ## Where it stops
 
-The format here is deliberately trivial, key equals value, because a full parser would be longer without being more instructive. The technique scales to anything you can parse in a `consteval` function, which since C++26 is a surprisingly large set, but every format you support is a parser you now maintain in constant-expression form.
+The format here is deliberately trivial: key equals value. A full parser would be longer without being more instructive. The technique scales to anything you can parse in a `consteval` function, which since C++26 is a surprisingly large set. Every format you support is a parser you now maintain in constant-expression form.
 
-It also only applies to configuration that is genuinely fixed at build time. A file the operator edits after deployment is not this. Feature flags, embedded schemas, route tables, build-stamped defaults: those are.
+It also only applies to configuration that is genuinely fixed at build time. A file the operator edits after deployment does not qualify. These do:
 
-Both halves work on a released compiler. GCC 16.1 takes this file with `-std=c++26 -freflection` and the standard `<meta>` header; the [clang-p2996 fork](https://github.com/bloomberg/clang-p2996) also builds it. Reflection is further along than "wait for the next standard" suggests.
+- feature flags
+- embedded schemas
+- route tables
+- build-stamped defaults
+
+Both halves work on a released compiler. GCC 16.1 takes this file with `-std=c++26 -freflection` and the standard `<meta>` header. The [clang-p2996 fork](https://github.com/bloomberg/clang-p2996) also builds it. Reflection is further along than "wait for the next standard" suggests.
 
 ---
 
