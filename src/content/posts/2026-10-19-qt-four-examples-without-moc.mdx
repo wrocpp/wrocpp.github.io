@@ -15,6 +15,16 @@ draft: false
 
 import PostLink from '../../components/PostLink.astro';
 
+## In short
+
+- Four examples from Qt 6.10.3 were rewritten by a migration tool and built with `AUTOMOC` off.
+- Each prints the same harness output as the moc build, with 0 warnings.
+- A build in which moc is replaced by a failing trap passes.
+- The tool left nothing for manual work in these four examples. That says little about other code.
+- The setup is GCC 16.2 and Qt 6.10.3 on Linux only, and the timings come from a loaded machine.
+
+## One class header, four examples
+
 This is the whole change to the header of `SlidersGroup`, the class in Qt's `sliders` example that declares one signal and six slots. It is copied from [`examples/qt/sliders/migration.diff`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/examples/qt/sliders/migration.diff):
 
 ```diff
@@ -36,13 +46,33 @@ This is the whole change to the header of `SlidersGroup`, the class in Qt's `sli
 +    [[=rqt::slot]] void setValue(int value);
 ```
 
-The rest of that diff is the same edit for five more slots, an include line, a second class with `RQT_OBJECT`, and a CMake block that turns `AUTOMOC` off. The program built from the result runs no moc. This post is about how I checked that for four examples and what the checks do and do not establish. The signal syntax comes from <PostLink slug="qt-signals-as-data-members">the post on signals as data members</PostLink>, and the library, reflect-moc, is [public now](https://github.com/wrocpp/reflect-moc).
+The rest of that diff holds:
+
+- the same edit for five more slots
+- an include line
+- a second class with `RQT_OBJECT`
+- a CMake block that turns `AUTOMOC` off
+
+The program built from the result runs no moc. This post is about how I checked that for four examples and what the checks do and do not establish. The signal syntax comes from <PostLink slug="qt-signals-as-data-members">the post on signals as data members</PostLink>. The library, reflect-moc, is [public now](https://github.com/wrocpp/reflect-moc).
 
 ## What proof by porting means
 
-A unit test shows that a class I wrote behaves like moc's output. It cannot show that the approach copes with code I did not write. So I took four examples from Qt itself, kept each unchanged as `original/`, and generated `ported/` from it with `tools/rqt-migrate`. Nobody edits a ported tree by hand. If the port is wrong, the tool or the library changes and the tree is regenerated ([`examples/qt/README.md`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/examples/qt/README.md)).
+A unit test shows that a class I wrote behaves like moc's output. It cannot show that the approach copes with code I did not write. So I took four examples from Qt itself. I kept each unchanged in an `original/` directory. I generated a `ported/` directory from it with the `tools/rqt-migrate` tool. Nobody edits a ported tree by hand. If the port is wrong, the tool or the library changes and the tree is regenerated ([`examples/qt/README.md`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/examples/qt/README.md)).
 
-The originals are Qt's. Every upstream file carries `LicenseRef-Qt-Commercial OR BSD-3-Clause`, and the repository uses them under BSD-3-Clause with the copyright headers unchanged ([`THIRD_PARTY_NOTICES.md`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/THIRD_PARTY_NOTICES.md), [license text](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/examples/qt/LICENSES/BSD-3-Clause.txt)). Ours are the `harness.cpp` in each example, the harness target appended to each `CMakeLists.txt`, `common/meta_dump.hpp`, the scripts, the generated `rqt_qml_types.hpp`, `migration.diff`, `unmigrated.md` and `expected_output.txt`. The sources are from tag v6.10.3 (qtbase [`7ddbc87`](https://github.com/qt/qtbase/commit/7ddbc87d8e14ce51d2957ea72d0a6077593d5ff4), qtdeclarative [`3a714ef`](https://github.com/qt/qtdeclarative/commit/3a714efe0672ae1ba06f09864f64957560c69b91)).
+The originals are Qt's. Every upstream file carries `LicenseRef-Qt-Commercial OR BSD-3-Clause`. The repository uses them under BSD-3-Clause with the copyright headers unchanged ([`THIRD_PARTY_NOTICES.md`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/THIRD_PARTY_NOTICES.md), [license text](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/examples/qt/LICENSES/BSD-3-Clause.txt)).
+
+Ours are these files:
+
+- the `harness.cpp` in each example
+- the harness target appended to each `CMakeLists.txt`
+- `common/meta_dump.hpp`
+- the scripts
+- the generated `rqt_qml_types.hpp`
+- `migration.diff`
+- `unmigrated.md`
+- `expected_output.txt`
+
+The sources are from tag v6.10.3 (qtbase [`7ddbc87`](https://github.com/qt/qtbase/commit/7ddbc87d8e14ce51d2957ea72d0a6077593d5ff4), qtdeclarative [`3a714ef`](https://github.com/qt/qtdeclarative/commit/3a714efe0672ae1ba06f09864f64957560c69b91)).
 
 ## The four examples
 
@@ -53,15 +83,34 @@ The originals are Qt's. Every upstream file carries `LicenseRef-Qt-Commercial OR
 | `sliders` (qtbase, widgets) | a `QGroupBox` subclass with a custom signal and six slots, and a signal used as the receiver of a pointer-to-member `connect` |
 | `queuedcustomtype` (qtbase, corelib/threads) | a custom metatype, `Block`, in a queued cross-thread signal, public and private slots |
 
-The shared `NOTIFY` is `shoeChanged` on `ShoeDescription`, which `size`, `color`, `brand` and `price` all name ([`person.h`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/examples/qt/birthdayparty/original/person.h)). The pointer-to-member case is line 31 of [`slidersgroup.cpp`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/examples/qt/sliders/original/slidersgroup.cpp): `connect(dial, &QDial::valueChanged, this, &SlidersGroup::valueChanged);`.
+In `birthdayparty`, four properties share one `NOTIFY`. The signal is `shoeChanged` on `ShoeDescription` ([person.h](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/examples/qt/birthdayparty/original/person.h)). The properties are size, color, brand and price.
+
+The pointer-to-member case is line 31 of [`slidersgroup.cpp`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/examples/qt/sliders/original/slidersgroup.cpp): `connect(dial, &QDial::valueChanged, this, &SlidersGroup::valueChanged);`.
 
 ## What the tool rewrote
 
-moc is the source of truth for the tool. It runs `moc --output-json` on each file with a `Q_OBJECT` in it, reads classes, signals, slots, properties and class info with their line numbers, and edits those spans. It does not parse C++ ([`tools/README.md`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/tools/README.md)). In the Qt-like style the class keeps `class C : public QObject`, the `signals:` and `slots:` sections, its constructors and its `emit` calls. `Q_OBJECT` becomes `RQT_OBJECT`, `Q_PROPERTY(...)` becomes `RQT_PROPERTY(...)` with the same text, each signal becomes a bodyless data member and each slot gets `[[=rqt::slot]]` ([`RESULTS.md`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/examples/qt/RESULTS.md)).
+moc is the source of truth for the tool. It runs `moc --output-json` on each file with a `Q_OBJECT` in it. It reads classes, signals, slots, properties and class info with their line numbers, and edits those spans. It does not parse C++ ([`tools/README.md`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/tools/README.md)). In the Qt-like style the class keeps these parts:
 
-Two things in `birthdayparty` go beyond a rename. `Q_CLASSINFO("DefaultProperty", "guests")` turns into a `[[=rqt::classinfo{...}]]` annotation on the class. And with moc gone, `qmltyperegistrar` has no metatypes to read, so the tool generates [`rqt_qml_types.hpp`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/examples/qt/birthdayparty/ported/rqt_qml_types.hpp) with seven `qmlRegister...` calls under the module's URI and adds `NO_GENERATE_QMLTYPES` to the two `qt_add_qml_module` targets. The `QML_ELEMENT` macros stay in the headers.
+- the line `class C : public QObject`
+- the `signals:` and `slots:` sections
+- its constructors and its `emit` calls
 
-`RESULTS.md` records two diff sizes per example, from `migration.diff`: a first pass in an annotation and mixin syntax, and the Qt-like style described above. The numbers are lines added and removed over all changed files, CMake included.
+The tool changes the rest:
+
+- `Q_OBJECT` becomes `RQT_OBJECT`
+- `Q_PROPERTY(...)` becomes `RQT_PROPERTY(...)` with the same text
+- each signal becomes a bodyless data member
+- each slot gets `[[=rqt::slot]]`
+
+The file [`RESULTS.md`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/examples/qt/RESULTS.md) records this.
+
+Two things in `birthdayparty` go beyond a rename. First, `Q_CLASSINFO("DefaultProperty", "guests")` turns into a `[[=rqt::classinfo{...}]]` annotation on the class.
+
+Second, moc is gone, so `qmltyperegistrar` has no metatypes to read. The tool therefore generates [`rqt_qml_types.hpp`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/examples/qt/birthdayparty/ported/rqt_qml_types.hpp) with seven `qmlRegister...` calls under the module's URI. It also adds `NO_GENERATE_QMLTYPES` to the two `qt_add_qml_module` targets. The `QML_ELEMENT` macros stay in the headers.
+
+### Diff sizes
+
+The file `RESULTS.md` records two diff sizes per example, from `migration.diff`. They are a first pass in an annotation and mixin syntax, and the Qt-like style described above. The numbers are lines added and removed over all changed files, CMake included.
 
 | example | annotation style | Qt-like style |
 |---|---|---|
@@ -74,33 +123,80 @@ The Qt-like diffs are smaller in every row. I re-counted the Qt-like column from
 
 ## What it could not migrate
 
-For these four, nothing. Each [`unmigrated.md`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/examples/qt/sliders/unmigrated.md) says "Nothing: every construct was migrated automatically", with 4, 12, 9 and 45 constructs migrated for mandelbrot, sliders, queuedcustomtype and birthdayparty, and 0 partial and 0 manual in each. That says something about these four classes and nothing about yours. The tool's own list of what it leaves in place and reports as manual is longer: `Q_PRIVATE_SLOT`, `Q_PRIVATE_PROPERTY`, `Q_PLUGIN_METADATA`, the `Q_NAMESPACE` family, invokable constructors, `QML_SINGLETON`, `QML_FOREIGN` and `QML_EXTENDED`, among others. Overloaded signals, and `BINDABLE` and similar property attributes, are migrated but reported as partial. The table is in `tools/README.md`.
+For these four, nothing. Each [`unmigrated.md`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/examples/qt/sliders/unmigrated.md) says "Nothing: every construct was migrated automatically". The reports count 4, 12, 9 and 45 migrated constructs for mandelbrot, sliders, queuedcustomtype and birthdayparty. Each has 0 partial and 0 manual.
 
-One library change came from the examples rather than from the tool. `sliders` failed in the first Qt-like build, on that pointer-to-member `connect` whose receiver is a signal. After the library let a data-member signal be that receiver, the same source line compiled unchanged. The same first build gave 5, 5 and 42 `-Wsubobject-linkage` warnings for mandelbrot, queuedcustomtype and birthdayparty, which the owner anchor from the previous posts removed.
+That says something about these four classes and nothing about yours. The tool's own list of what it leaves in place and reports as manual is longer. It includes, among others:
+
+- `Q_PRIVATE_SLOT`
+- `Q_PRIVATE_PROPERTY`
+- `Q_PLUGIN_METADATA`
+- the `Q_NAMESPACE` family
+- invokable constructors
+- `QML_SINGLETON`
+- `QML_FOREIGN`
+- `QML_EXTENDED`
+
+Overloaded signals, and `BINDABLE` and similar property attributes, are migrated but reported as partial. The table is in `tools/README.md`.
+
+One library change came from the examples rather than from the tool. The `sliders` example failed in the first Qt-like build, on that pointer-to-member `connect` whose receiver is a signal. After the library let a data-member signal be that receiver, the same source line compiled unchanged. The same first build gave 5, 5 and 42 `-Wsubobject-linkage` warnings for mandelbrot, queuedcustomtype and birthdayparty, which the owner anchor from the previous posts removed.
 
 ## Same output, and no moc anywhere
 
-Each example's app runs until its window closes, so each has a headless harness that prints every class's meta-object (methods with access and parameter names, properties with flags and `NOTIFY`, class info, enums) and then a trace of its signals and state. Nondeterministic parts are left out of the harness rather than masked: render timings, the party's start time and the random block positions. `check.sh ported` diffs the output with `expected_output.txt`, which was recorded from the moc build. All four are identical: 11, 54, 27 and 15 lines for mandelbrot, birthdayparty, sliders and queuedcustomtype, built with `-Wall -Wextra` and 0 warnings ([`RESULTS.md`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/examples/qt/RESULTS.md), [`check.sh`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/examples/qt/check.sh)).
+Each example's app runs until its window closes. So each example has a headless harness. The harness prints every class's meta-object and then a trace of its signals and state. The meta-object dump covers methods with access and parameter names, properties with flags and `NOTIFY`, class info and enums.
 
-Reading build logs for "moc" can miss things, so [`check_moc_trapped.sh`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/examples/qt/check_moc_trapped.sh) removes the possibility. In a throwaway container it renames every `moc` it finds and puts a script in its place that records the caller and exits with 99. Then it builds the four ported examples, two demos and the library tests, and checks that the trap was never called. Two positive controls guard it: the trap must record its own self-test call, and the differential test, the one target that runs real moc on purpose as its oracle, must fail to build. It does, and nothing else fails. CMake also calls `moc --version` once at configure time, because that target has `AUTOMOC` on, and the script accepts that call and nothing else. The script refuses to run outside a container because it renames the real moc.
+Nondeterministic parts are left out of the harness rather than masked: render timings, the party's start time and the random block positions. The script `check.sh ported` diffs the output with `expected_output.txt`, which was recorded from the moc build. All four are identical. They have 11, 54, 27 and 15 lines for mandelbrot, birthdayparty, sliders and queuedcustomtype. The builds use `-Wall -Wextra` and give 0 warnings. The sources are [`RESULTS.md`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/examples/qt/RESULTS.md) and [`check.sh`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/examples/qt/check.sh).
 
-The [CI workflow](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/.github/workflows/ci.yml) runs all of this on a GitHub x86_64 runner. [Run 37466622213](https://github.com/wrocpp/reflect-moc/actions/runs/37466622213) on `main` passed its core and Qt tests (70 tests), the tool tests, the four ported examples and the moc trap, and I read the step results and log lines from that run.
+### The moc trap
 
-That trap establishes one thing: in that image, building these examples and the library's tests runs no moc, except the test that is meant to. It does not show that the meta-objects are right (the harness output and the differential test do that), and it says nothing about other Qt versions or about tools such as `qmltyperegistrar`, whose input the tool replaced.
+Reading build logs for "moc" can miss things. So [`check_moc_trapped.sh`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/examples/qt/check_moc_trapped.sh) removes the possibility. In a throwaway container, it renames every `moc` it finds. It puts a script in its place that records the caller and exits with 99.
+
+Then it builds the four ported examples, two demos and the library tests, and checks that the trap was never called. Two positive controls guard it:
+
+- The trap must record its own self-test call.
+- The differential test must fail to build. It is the one target that runs real moc on purpose, as its oracle.
+
+Both controls hold, and nothing else fails. CMake also calls `moc --version` once at configure time, because that target has `AUTOMOC` on. The script accepts that call and nothing else. The script refuses to run outside a container because it renames the real moc.
+
+### What CI adds
+
+The [CI workflow](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/.github/workflows/ci.yml) runs all of this on a GitHub x86_64 runner. [Run 37466622213](https://github.com/wrocpp/reflect-moc/actions/runs/37466622213) on `main` passed its core and Qt tests (70 tests), the tool tests, the four ported examples and the moc trap. I read the step results and log lines from that run.
+
+That trap establishes one thing. In that image, building these examples and the library's tests runs no moc, except the test that is meant to. It does not show that the meta-objects are right. The harness output and the differential test do that. It also says nothing about other Qt versions or about tools such as `qmltyperegistrar`, whose input the tool replaced.
 
 The first x86_64 CI run failed on mandelbrot, on four image checksums. Its escape-time kernel is compiled to fused multiply-adds on aarch64 and not on x86-64, so pixels near the set boundary iterate differently. The fix was `-ffp-contract=off` for that example in `check.sh`, with the baseline re-recorded from the moc build. It is a property of the example's floating-point code, not of reflect-moc.
 
 ## Build time, size and object growth
 
-[`RESULTS.md`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/examples/qt/RESULTS.md) measured build time on a machine that was shared with other builds throughout, with load averages from 1.8 to 10 and a moc build that ranged from 17.9 s to 101.5 s on its own. It says not to quote a general ratio from the table, and I do not. Under steady load only two examples were measured: there the Qt-like build was 9 percent slower for sliders and 16 percent slower for queuedcustomtype, from three runs each.
+The file [`RESULTS.md`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/examples/qt/RESULTS.md) measured build time on a machine that was shared with other builds throughout. Load averages ran from 1.8 to 10, and a moc build alone ranged from 17.9 s to 101.5 s. The file says not to quote a general ratio from the table, and I do not.
 
-Size is steadier. Stripped, the Qt-like executables are within 0.2 percent of the moc ones in every example, for instance 69,088 bytes against 69,168 for sliders. The moc object file that disappears is 37,168 bytes there, and in the port the meta-object lives in the class's own objects.
+Under steady load only two examples were measured. There the Qt-like build was 9 percent slower for sliders and 16 percent slower for queuedcustomtype, from three runs each.
 
-A class pays at run time in memory. A plain `QObject` subclass is 16 bytes on aarch64 with GCC 16.2. With `RQT_OBJECT` and no signal it is 24, with one data-member signal 32 and with three 48: 8 bytes for the hidden first member and 8 per signal. A `static_signal` costs 0 bytes ([`docs/measurements.md`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/docs/measurements.md)).
+Size is steadier. Stripped, the Qt-like executables are within 0.2 percent of the moc ones in every example. For sliders, that is 69,088 bytes against 69,168. The moc object file that disappears is 37,168 bytes there, and in the port the meta-object lives in the class's own objects.
+
+A class pays at run time in memory. On aarch64 with GCC 16.2, the size of a class is:
+
+| class | bytes |
+|---|---|
+| a plain `QObject` subclass | 16 |
+| with `RQT_OBJECT` and no signal | 24 |
+| with one data-member signal | 32 |
+| with three data-member signals | 48 |
+
+The first 8 extra bytes are the hidden first member, and each signal adds 8 more. A `static_signal` costs 0 bytes ([`docs/measurements.md`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/docs/measurements.md)).
 
 ## Limits
 
-The library's README lists overloaded signals (they keep a function form), `Q_GADGET`, `Q_NAMESPACE`, `Q_PLUGIN_METADATA` and `QML_ELEMENT` as unsupported, and `BINDABLE` properties stop the build ([`README.md`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/README.md#limits)). The `QML_ELEMENT` entry sits beside the `birthdayparty` result: there the tool leaves the macro in place and registers the types through generated calls, and the harness loads `Main.qml` against them. It does not mean that Qt's QML type registration runs from the macro. Class templates with signals fail to build, and the code reaches into `QtPrivate::FunctionPointer`, which follows its shape in Qt 6.10.3.
+The library's README lists these as unsupported:
+
+- overloaded signals (they keep a function form)
+- `Q_GADGET`
+- `Q_NAMESPACE`
+- `Q_PLUGIN_METADATA`
+- `QML_ELEMENT`
+
+Properties with `BINDABLE` stop the build ([`README.md`](https://github.com/wrocpp/reflect-moc/blob/6145d942da78c9b5eb8d8e5f978a278e84597523/README.md#limits)).
+
+The `QML_ELEMENT` entry sits beside the `birthdayparty` result. There the tool leaves the macro in place and registers the types through generated calls. The harness loads `Main.qml` against them. It does not mean that Qt's QML type registration runs from the macro. Class templates with signals fail to build, and the code reaches into `QtPrivate::FunctionPointer`, which follows its shape in Qt 6.10.3.
 
 ## What this has not been tested on
 
@@ -112,4 +208,14 @@ The library's README lists overloaded signals (they keep a function form), `Q_GA
 
 ---
 
-**Sources** (checked 6 October 2026): reflect-moc at commit [`6145d94`](https://github.com/wrocpp/reflect-moc/tree/6145d942da78c9b5eb8d8e5f978a278e84597523), every link above pinned to it: `examples/qt/README.md`, `RESULTS.md`, `check.sh`, `check_moc_trapped.sh`, the four `migration.diff` and `unmigrated.md` files, `tools/README.md`, `THIRD_PARTY_NOTICES.md`, `docs/measurements.md`, `README.md` and `.github/workflows/ci.yml`; CI run 37466622213 and the message of commit `47f6756`. Upstream: qtbase `7ddbc87` and qtdeclarative `3a714ef` (tag v6.10.3).
+**Sources** (checked 6 October 2026): reflect-moc at commit [`6145d94`](https://github.com/wrocpp/reflect-moc/tree/6145d942da78c9b5eb8d8e5f978a278e84597523), with every link above pinned to it. The files used:
+
+- `examples/qt/README.md`
+- `RESULTS.md`
+- `check.sh` and `check_moc_trapped.sh`
+- the four `migration.diff` and `unmigrated.md` files
+- `tools/README.md` and `THIRD_PARTY_NOTICES.md`
+- `docs/measurements.md` and `README.md`
+- `.github/workflows/ci.yml`
+
+Also used: CI run 37466622213 and the message of commit `47f6756`. Upstream: qtbase `7ddbc87` and qtdeclarative `3a714ef` (tag v6.10.3).

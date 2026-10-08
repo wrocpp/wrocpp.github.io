@@ -16,35 +16,61 @@ draft: false
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 import PostLink from '../../components/PostLink.astro';
 
+## In short
+
+- Reflection can list a Qt signal but cannot write its body, so reflect-moc declares a signal as a data member.
+- Three designs failed: a callable member does not connect, a source-location tag gives every signal the same type, and a closure tag has internal linkage.
+- The design that held is a bodyless data member that finds its owner through a hidden first member. It costs 8 bytes per signal and 8 per class.
+- A static signal costs 0 bytes and has one silent pitfall: emitting through another instance fires on the current object.
+- A signal that writes its own one-line body costs nothing and is the only form for overloaded signals. Only GCC 16.2 was tried.
+
+## Why a signal became a data member
+
 A signal can be a callable data member, and Qt will not connect to it. GCC 16.2, with the Qt 6.10 headers on Compiler Explorer:
 
 ```text
 error: no type named 'Object' in 'struct QtPrivate::FunctionPointer<std::function<void(int)> A::*>'
 ```
 
-That is the first of three designs for signals that did not work, and the reason a signal in reflect-moc is declared as `rqt::signal<void(int)> valueChanged;`. This post covers the failures, the design that held, what it costs in bytes, and three alternatives I measured. It continues <PostLink slug="qt-metaobject-from-reflection">the previous post</PostLink>, where a reflected `QMetaObject` was accepted by stock Qt. The library is [published on GitHub](https://github.com/wrocpp/reflect-moc) (experimental: GCC 16.2, Qt 6.10.3, aarch64 Docker only).
+That is the first of three designs for signals that did not work. It is the reason a signal in reflect-moc is declared as `rqt::signal<void(int)> valueChanged;`. This post covers the failures, the design that held, what it costs in bytes, and three alternatives I measured. It continues <PostLink slug="qt-metaobject-from-reflection">the previous post</PostLink>, where stock Qt accepted a reflected `QMetaObject`. The library is [published on GitHub](https://github.com/wrocpp/reflect-moc) (experimental: GCC 16.2, Qt 6.10.3, aarch64 Docker only).
 
 ## What moc writes for a signal
 
-A signal is a member function that you declare and never define. moc defines it. The Qt wiki page on reflection and moc shows the generated body for `QWidget::windowTitleChanged` in Qt 6.10: one call, `QMetaObject::activate<void>(this, &staticMetaObject, 0, nullptr, _t1);`, with the signal's index and its arguments.
+A signal is a member function that you declare and never define. moc defines it. The Qt wiki page on reflection and moc shows the generated body for `QWidget::windowTitleChanged` in Qt 6.10. It is one call, `QMetaObject::activate<void>(this, &staticMetaObject, 0, nullptr, _t1);`, with the signal's index and its arguments.
 
-Reflection can list the signals. It cannot write that body. In P2996R13, `define_aggregate` takes descriptions of non-static data members (section 4.4.19), and the same section notes that the union support "allows implementing variant without having to further extend support in define_aggregate for member functions". The wiki page, last edited on 20 January 2026, puts it plainly: since signals are ordinary member functions, a definition cannot be injected, and token-sequence injection (P3294, "C++29 material at this point") would be needed. It also floats an escape close to the one this post takes, signals declared as something other than member functions (it guesses "a static data member"), and doubts that it is worth the break with Qt's history.
+Reflection can list the signals. It cannot write that body. In P2996R13, `define_aggregate` takes descriptions of non-static data members (section 4.4.19). The same section notes that the union support "allows implementing variant without having to further extend support in define_aggregate for member functions".
 
-A signal that is not a function needs two things a function gets for free: it has to know which object it belongs to, and which of the object's signals it is.
+The wiki page, last edited on 20 January 2026, puts it plainly. Signals are ordinary member functions, so a definition cannot be injected. Token-sequence injection (P3294, "C++29 material at this point") would be needed. The page also floats an escape close to the one this post takes. Declare signals as something other than member functions (it guesses "a static data member"). It doubts that the break with Qt's history is worth it.
+
+A signal that is not a function needs two things that a function gets for free. It must know which object owns it. It must also know which of that object's signals it is.
 
 ## Three designs that did not work
 
-**A callable data member.** The error above is the whole story. Qt reads the class of a signal from `QtPrivate::FunctionPointer<Func>::Object`, which exists for pointers to member functions. A `std::function` member has no such specialization. A `static constexpr auto` closure member fails the same way, with `FunctionPointer<const A::<lambda(int)>*>`. Both errors come from a compile-only run on Compiler Explorer (GCC 16.2, Qt 6.10.0 library). That session is quoted here and not embedded, because its output pane is red by design.
+### A callable data member
 
-**A tag from `std::source_location`.** To tell members apart, give each a distinct type. A default template argument that records the declaration's line looks like it would. It does not: the default is evaluated once, where the template is declared, so every member gets the same type. GCC 16.2 also refuses the raw object, with `'std::source_location' is not a valid type for a template non-type parameter because it is not structural`; the version below uses `.line()`, which compiles and gives one type for all members.
+The error above is the whole story. Qt reads the class of a signal from `QtPrivate::FunctionPointer<Func>::Object`. That type exists for pointers to member functions. A `std::function` member has no such specialization. A `static constexpr auto` closure member fails the same way, with `FunctionPointer<const A::<lambda(int)>*>`.
 
-**A tag from a closure.** `template <class Tag = decltype([] {})> struct sig` gives every member its own type, because every closure is a new type. The type has internal linkage, and in a header GCC says so:
+Both errors come from a compile-only run on Compiler Explorer (GCC 16.2, Qt 6.10.0 library). That session is quoted here and not embedded, because its output pane is red by design.
+
+### A tag from the source location
+
+To tell members apart, give each a distinct type. A default template argument that records the declaration's line looks like it would. It does not. The default is evaluated once, where the template is declared, so every member gets the same type.
+
+GCC 16.2 also refuses the raw `std::source_location` object, with `'std::source_location' is not a valid type for a template non-type parameter because it is not structural`. The version below uses `.line()`, which compiles and gives one type for all members.
+
+### A tag from a closure
+
+The declaration `template <class Tag = decltype([] {})> struct sig` gives every member its own type, because every closure is a new type. That type has internal linkage, and in a header GCC says so:
 
 ```text
 signal_header.h:4:8: warning: 'ByClosure' has a field 'sig_by_closure<> ByClosure::a' whose type has internal linkage [-Wsubobject-linkage]
 ```
 
-The second link reproduces that warning on Compiler Explorer; a line marker makes GCC treat the class as header code, which is where the warning applies. In the project's first Qt-like ports built with this design, the same warning appeared 5, 5 and 42 times for mandelbrot, queuedcustomtype and birthdayparty, once per signal member per translation unit ([`examples/qt/RESULTS.md`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/examples/qt/RESULTS.md), build 1). The fourth example, sliders, did not build at all in that run, so it has no count. It also makes the member type different in every translation unit that includes the header, an ODR hazard, so silencing the warning would hide a real problem.
+The second link reproduces that warning on Compiler Explorer. A line marker makes GCC treat the class as header code, which is where the warning applies.
+
+In the project's first Qt-like ports built with this design, the same warning appeared 5, 5 and 42 times for mandelbrot, queuedcustomtype and birthdayparty. It appeared once per signal member per translation unit ([`examples/qt/RESULTS.md`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/examples/qt/RESULTS.md), build 1). The fourth example, sliders, did not build at all in that run, so it has no count.
+
+The design also makes the member type different in every translation unit that includes the header. That is an ODR hazard, so silencing the warning would hide a real problem.
 
 <GodboltEmbed id="EPaa5zxYh" gccOnly gccLabel="GCC 16.2" title="A closure tag has internal linkage (compile only)" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -Wall -Wextra · prints two warnings" />
 
@@ -56,9 +82,13 @@ One form needs none of this. A signal can stay a member function with a one-line
 [[= rqt::signal_function]] void valueChanged(int v) { rqt::activate{this}(v); }
 ```
 
-`rqt::activate` finds the signal from `std::meta::current_function()` in a default argument, which is GCC only. Qt sees an ordinary member function, so connect works unchanged. It adds no data member to the object, and it is the only form for an overloaded signal, since two data members cannot share a name. What it does not do is remove the boilerplate: the user writes the body that moc used to write, once per signal, with the right argument list. That is the work I wanted the library to take over, so this is the fallback and not the default.
+The `rqt::activate` helper finds the signal from `std::meta::current_function()` in a default argument, which is GCC only. Qt sees an ordinary member function, so connect works unchanged. The form adds no data member to the object. It is the only form for an overloaded signal, since two data members cannot share a name.
+
+It does not remove the boilerplate. The user still writes the body that moc used to write, once per signal, with the right argument list. That is the work I wanted the library to take over, so this is the fallback and not the default.
 
 ## The data member that held
+
+### How a signal finds its owner
 
 ```cpp
 class Sensor : public QObject {
@@ -68,9 +98,11 @@ class Sensor : public QObject {
 };
 ```
 
-`RQT_OBJECT` declares a hidden first data member, the owner anchor. Its constructor takes its own address, subtracts its own offset (the compiler supplies it through `std::meta::offset_of`) and publishes the result as the owner. Each `rqt::signal` declared after it keeps that pointer, 8 bytes, and finds which signal it is by its own offset in a table of signal members that reflection builds. `rqt::signal<void(int), Owner>` is one type for every member of one signature, with external linkage, so a class in a header is the same type in every translation unit.
+The `RQT_OBJECT` macro declares a hidden first data member, the owner anchor. Its constructor takes its own address and subtracts its own offset. The compiler supplies the offset through `std::meta::offset_of`. The constructor then publishes the result as the owner.
 
-The Qt-free reduction below runs on Compiler Explorer. Three signals, two with the same signature, all told apart:
+Each `rqt::signal` declared after the anchor keeps that pointer, 8 bytes. It finds which signal it is by its own offset in a table of signal members that reflection builds. All members of one signature share one type, `rqt::signal<void(int), Owner>`, and it has external linkage. So a class in a header is the same type in every translation unit.
+
+The Qt-free reduction below runs on Compiler Explorer. It has three signals, two with the same signature, and tells all three apart:
 
 ```text
 non-static: emit Counter::valueChanged (offset 8)
@@ -80,7 +112,9 @@ non-static: emit Counter::done (offset 24)
 
 <GodboltEmbed id="997EMjhc3" gccOnly gccLabel="GCC 16.2" title="Signal identity: anchor, static signals and the zero-size trap (Qt-free)" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -Wall -Wextra · runs live" />
 
-For Qt, one specialization teaches `connect` what a pointer to such a member is:
+### Teaching Qt what the member is
+
+For Qt, one specialization teaches the `connect` function what a pointer to such a member is:
 
 ```cpp
 namespace QtPrivate {
@@ -94,9 +128,20 @@ struct FunctionPointer<rqt::signal<void(A...), Owner> Obj::*> {
 }
 ```
 
-With that, pointer-to-member and lambda `connect`, `QMetaMethod::fromSignal` and `QSignalSpy` accept `&Sensor::levelChanged`. A signal used as the receiver of a connect needed one more change: Qt passes the receiver as a plain `QObject*` for anything that is not a pointer to member function (`qobjectdefs_impl.h:547`), and the `sliders` example from Qt failed with `invalid conversion from 'QObject*' to 'SlidersGroup*'` until the specialization took a `QObject*` and cast it. `QtPrivate` is Qt's internal namespace, so this specialization follows Qt 6.10.3 and can break in another release.
+With that specialization, these places accept `&Sensor::levelChanged`:
 
-What the anchor design cost, from the project's [`docs/measurements.md`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/docs/measurements.md) (GCC 16.2.0, Qt 6.10.3, Linux aarch64 in Docker, on a Mac that was heavily loaded):
+- `connect` with a pointer to member
+- `connect` with a lambda
+- `QMetaMethod::fromSignal`
+- `QSignalSpy`
+
+A signal used as the receiver of a connect needed one more change. Qt passes the receiver as a plain `QObject*` for anything that is not a pointer to member function (`qobjectdefs_impl.h:547`). The `sliders` example from Qt failed with `invalid conversion from 'QObject*' to 'SlidersGroup*'`. The failure went away once the specialization took a `QObject*` and cast it.
+
+The `QtPrivate` namespace is internal to Qt, so this specialization follows Qt 6.10.3 and can break in another release.
+
+### What the anchor design costs
+
+The numbers come from the project's [`docs/measurements.md`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/docs/measurements.md). The setup was GCC 16.2.0, Qt 6.10.3, Linux aarch64 in Docker, on a Mac that was heavily loaded:
 
 | check | result |
 |---|---|
@@ -105,15 +150,25 @@ What the anchor design cost, from the project's [`docs/measurements.md`](https:/
 | `sizeof` of the benchmark class (3 signals, a `QObject`) | 24 bytes (closure tag, 1 byte per signal) to 48 bytes (anchor: 8 bytes per signal, 1 byte for the anchor, padding) |
 | emit connected to one lambda, `-O2`, 5 000 000 emits | anchor 52.6 / 87.7 / 39.1 ns; closure tag 261.8 / 49.7 / 51.3 ns over three runs |
 
-The emit numbers are the same within the noise of that machine: about 40 to 50 ns per emit, most of it inside Qt's own `QMetaObject::activate` and the functor call. I would not quote a ratio from them.
+The emit numbers agree within the noise of that machine. Each emit takes about 40 to 50 ns, most of it inside Qt's own `QMetaObject::activate` and the functor call. I would not quote a ratio from them.
 
 ## Two more ways to get the size back
 
 The 8 bytes per signal bothered me enough to try two ways to avoid them.
 
-**A non-static member that takes no space.** Mark each signal `[[no_unique_address]]`, make its type unique per member, and a signal is empty. The runtime tests (property, QML, queued, string connect, `qobject_cast`) passed, and `capability_signal_to_signal_connect` failed (spike 08 in the project's [`spikes/SPIKES.md`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/spikes/SPIKES.md)). A direct check shows why. With two such signals `first` and `second`, `connect(&o, &W::second, ...)` followed by `first(7)` ran the `second` handler (`h2=7`), and `QMetaMethod::fromSignal(&W::second).methodIndex()` returned 4 where `indexOfSignal("second(int)")` returned 5. The cause is in Qt. For a pointer-to-member connect, Qt passes the raw bytes of the pointer to data member into the meta-object's `IndexOfMethod` call, and `QtMocHelpers::indexOfMethod` in `qtmochelpers.h` compares those bytes with each signal's pointer. Two empty members can sit at the same offset, so their pointers have equal bytes and the first match wins. The Qt-free demo shows the two ingredients: `ZeroSize offsets: first 0, second 0` and `raw bytes of &ZeroSize::first and &ZeroSize::second equal: yes`. Deducing `this` recovers the owner of a call, but `o.first(1)` and `o.second(1)` deduce the same object and the same call shape, so it cannot tell them apart. A member with a size has its own offset, which is why the anchor design keeps a pointer per signal.
+### A non-static member that takes no space
 
-**A static member, identified by its address.** `static inline rqt::static_signal<void(int)> levelChanged{};` takes no space in any object, because there is one per class. Measured by `capability_static_signal_size` (`sizeof(QObject)` is 16):
+Mark each signal `[[no_unique_address]]` and make its type unique per member, and a signal is empty. The runtime tests (property, QML, queued, string connect, `qobject_cast`) passed. The test `capability_signal_to_signal_connect` failed (spike 08 in the project's [`spikes/SPIKES.md`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/spikes/SPIKES.md)).
+
+A direct check shows why. Take two such signals, `first` and `second`. Connecting a handler to the second signal and then firing the first ran that handler (`h2=7`). The calls were `connect(&o, &W::second, ...)` and `first(7)`. The two lookups also disagree. `QMetaMethod::fromSignal(&W::second).methodIndex()` returned 4, where `indexOfSignal("second(int)")` returned 5.
+
+The cause is in Qt. For a pointer-to-member connect, Qt passes the raw bytes of the pointer to data member into the meta-object's `IndexOfMethod` call. The function `QtMocHelpers::indexOfMethod` in `qtmochelpers.h` compares those bytes with each signal's pointer. Two empty members can sit at the same offset, so their pointers have equal bytes and the first match wins.
+
+The Qt-free demo shows the two ingredients: `ZeroSize offsets: first 0, second 0` and `raw bytes of &ZeroSize::first and &ZeroSize::second equal: yes`. Deducing `this` recovers the owner of a call. But `o.first(1)` and `o.second(1)` deduce the same object and the same call shape, so it cannot tell them apart. A member with a size has its own offset, which is why the anchor design keeps a pointer per signal.
+
+### A static member, identified by its address
+
+The declaration `static inline rqt::static_signal<void(int)> levelChanged{};` takes no space in any object, because there is one per class. The test `capability_static_signal_size` measures it (`sizeof(QObject)` is 16):
 
 | class | `sizeof` |
 |---|---|
@@ -123,16 +178,30 @@ The 8 bytes per signal bothered me enough to try two ways to avoid them.
 | 3 `rqt::static_signal`, `RQT_OBJECT` (the anchor stays) | 24 |
 | 1 non-static + 2 static, `RQT_OBJECT` | 32 |
 
-A non-static signal costs 8 bytes and the class 8 for the anchor. A static signal costs 0, and `RQT_OBJECT_STATIC` drops the anchor's 8. Stock `connect`, `fromSignal`, queued connections, QML and the differential test against moc all pass for static signals. Emit with no connection, 10 000 000 emits per run on the loaded Mac, three runs: 9.51 / 10.35 / 10.55 ns for the first non-static signal and 8.82 / 8.78 / 10.09 ns for the first static one. The project's own note says to read nothing into differences under about 2 ns.
+A non-static signal costs 8 bytes, and the class pays 8 more for the anchor. A static signal costs 0. The `RQT_OBJECT_STATIC` macro drops the anchor's 8. Static signals pass every check: stock `connect`, `fromSignal`, queued connections, QML and the differential test against moc.
 
-The catch is the firing syntax. A static member is one object for the whole class, so it cannot know which instance emits it. The compat header redefines `emit` as `::rqt::emitter{this},` and a comma operator fires the pending call:
+The timing covers an emit with no connection, 10 000 000 emits per run on the loaded Mac, over three runs. The first non-static signal took 9.51 / 10.35 / 10.55 ns and the first static one 8.82 / 8.78 / 10.09 ns. The project's own note says to read nothing into differences under about 2 ns.
+
+### Firing a static signal, and its one silent pitfall
+
+A static member is one object for the whole class, so it cannot know which instance emits it. The compat header redefines `emit` as `::rqt::emitter{this},`. A comma operator then fires the pending call:
 
 ```cpp
 void setLevel(int v) { emit levelChanged(v); }           // fires on this
 levelChanged(v).from(other);                             // fires on another object
 ```
 
-That works, and it has one silent failure. `emit other->levelChanged(v)`, where `other` is another instance of the same class, compiles and fires on `this`, because the static member discards `other`. Qt's own signals would fire on `other`. The library guards the other misuses at compile time (a bare `levelChanged(1);` is `-Werror=unused-result`, `emit` in a static member function is `'this' is unavailable for static member functions`, a const owner is refused) and the silent one with a lint, [`tools/rqt-lint-emit.py`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/tools/rqt-lint-emit.py), which flags the line. A lint is weaker than a compile error, and that is the price of the 8 bytes. Also, `static constexpr` does not work: Qt `reinterpret_cast`s the pointer through a non-const type, so the member must be `static inline` and non-const.
+That works, and it has one silent failure. Take another instance `other` of the same class. The statement `emit other->levelChanged(v)` compiles and fires on the current object, because the static member discards `other`. Qt's own signals would fire on `other`.
+
+The library guards the other misuses at compile time:
+
+- a bare `levelChanged(1);` is `-Werror=unused-result`
+- `emit` in a static member function is `'this' is unavailable for static member functions`
+- a const owner is refused
+
+It guards the silent one with a lint, [`tools/rqt-lint-emit.py`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/tools/rqt-lint-emit.py), which flags the line. A lint is weaker than a compile error, and that is the price of the 8 bytes.
+
+A `static constexpr` member does not work either. Qt casts the pointer through a non-const type with `reinterpret_cast`, so the member must be `static inline` and non-const.
 
 ## Choosing a form
 
@@ -143,16 +212,24 @@ That works, and it has one silent failure. `emit other->levelChanged(v)`, where 
 | `[[= rqt::signal_function]] void s(int v) { rqt::activate{this}(v); }` | no data member | none measured | yes | `s(v)` | the user writes the body; the only form for an overloaded signal |
 | non-static, no size | 0 | none | no (the wrong signal fires) | none | two signals can be reached as one |
 
-The last row is not shipped. I have not measured a class that uses only function-form signals, so the table makes no size claim for that row beyond "no data member".
+The last row is not shipped. I have not measured a class that uses only function-form signals. So the table makes no size claim for that row beyond "no data member".
 
 ## What this has not been tested on
 
-- GCC 16.2 only. On Compiler Explorer's `clang_bb_p2996` on 6 October 2026, `offset_of` compiled, while `std::meta::current_class` and `current_function` are not declared in its `<meta>`. The closure and `source_location` results above are GCC 16.2 results.
-- Qt 6.10.3, Linux aarch64 in Docker, offscreen platform plugin. CI on a GitHub x86_64 runner passed the core and Qt tests, the tool tests, the four ported Qt examples (built with no moc, output identical to the baseline) and the moc trap ([run 37466622213 on main on 6 October 2026](https://github.com/wrocpp/reflect-moc/actions/runs/37466622213)); the sizes, timings and ThreadSanitizer results in this post were measured on aarch64 only, and a pass on x86_64 does not show that they carry over. Not other Qt versions, not clang or MSVC. Compiler Explorer has no Qt it can link, so the Qt connect errors were seen in a compile-only run and are quoted, not embedded; the Qt-free demo is the part that runs there.
-- Sizes are `sizeof` results of the project's own tests. Timings come from one invocation of three runs on a heavily loaded Mac, and I read none of the emit differences as real.
-- ThreadSanitizer: [`scripts/tsan-qt.sh`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/scripts/tsan-qt.sh) ran three threaded tests (`capability_static_signal_queued`, `capability_queued_across_qthread`, `capability_signal_to_signal_connect`) with 0 reports, and its control, a real race, gave 1 report. That needs `TSAN_OPTIONS=ignore_noninstrumented_modules=1`, because without it TSan reports the copy of queued arguments in every test as a race (Qt hands them over through a futex mutex it cannot see). `capability_custom_metatype_queued` reports 8 races even with the option, since it reads plain members after a `QSemaphore::acquire`, so it was left out. A ThreadSanitizer build of Qt would remove both limits and was not tried.
+- GCC 16.2 only. On Compiler Explorer's `clang_bb_p2996` on 6 October 2026, `offset_of` compiled. Its library header does not declare `std::meta::current_class` or `std::meta::current_function`. The closure and source-location results above are GCC 16.2 results.
+- Qt 6.10.3, Linux aarch64 in Docker, offscreen platform plugin. Other Qt versions, clang and MSVC were not tried.
+- CI on a GitHub x86_64 runner passed the core and Qt tests and the tool tests. It also passed the four ported Qt examples and the moc trap ([run 37466622213 on main on 6 October 2026](https://github.com/wrocpp/reflect-moc/actions/runs/37466622213)). The examples were built with no moc, and their output was identical to the baseline. The sizes, timings and ThreadSanitizer results in this post were measured on aarch64 only. A pass on x86_64 does not show that they carry over.
+### Limits of the measurements
+
+- Compiler Explorer has no Qt it can link, so the Qt connect errors were seen in a compile-only run and are quoted, not embedded. The Qt-free demo is the part that runs there.
+- Sizes are `sizeof` results of the project's own tests. Timings come from one invocation of three runs on a heavily loaded Mac. I read none of the emit differences as real.
+- ThreadSanitizer: [`scripts/tsan-qt.sh`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/scripts/tsan-qt.sh) ran three threaded tests with 0 reports, and its control, a real race, gave 1 report. The three tests were:
+  - `capability_static_signal_queued`
+  - `capability_queued_across_qthread`
+  - `capability_signal_to_signal_connect`
+- ThreadSanitizer, continued: the run needs `TSAN_OPTIONS=ignore_noninstrumented_modules=1`. Without it, TSan reports the copy of queued arguments in every test as a race. Qt hands them over through a futex mutex that TSan cannot see. The test `capability_custom_metatype_queued` reports 8 races even with the option, because it reads plain members after a `QSemaphore::acquire`. It was left out. A ThreadSanitizer build of Qt would remove both limits and was not tried.
 - The `emit` macro of the compat header is untested with `-DQT_NO_KEYWORDS`. A class template with a signal member fails to build, with either data-member form.
 
 ---
 
-**Sources** (checked 2 October 2026): [Qt wiki, C++ reflection (P2996) and moc](https://wiki.qt.io/C++_reflection_(P2996)_and_moc), last edited 20 January 2026 · [P2996R13](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p2996r13.html) section 4.4.19. The compiler messages and the Qt-free demo were run on Compiler Explorer (GCC 16.2, `qt` library 6.10.0 for the connect errors) on 2 October 2026. The sizes, timings and ThreadSanitizer results are from the project's [`docs/measurements.md`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/docs/measurements.md) and [`spikes/SPIKES.md`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/spikes/SPIKES.md) (spikes 08 and 09, dated 2 October 2026), measured with GCC 16.2.0 and Qt 6.10.3 in Docker.
+**Sources** (checked 2 October 2026): [Qt wiki, C++ reflection (P2996) and moc](https://wiki.qt.io/C++_reflection_(P2996)_and_moc), last edited 20 January 2026 · [P2996R13](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p2996r13.html) section 4.4.19. Compiler Explorer (GCC 16.2) ran the compiler messages and the Qt-free demo on 2 October 2026. The connect errors used the `qt` library 6.10.0. The sizes, timings and ThreadSanitizer results are from the project's [`docs/measurements.md`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/docs/measurements.md) and [`spikes/SPIKES.md`](https://github.com/wrocpp/reflect-moc/blob/4fe8523bdf80342991df6d5f5f4774a5ee8c0cfd/spikes/SPIKES.md). They cover spikes 08 and 09, dated 2 October 2026, and were measured with GCC 16.2.0 and Qt 6.10.3 in Docker.

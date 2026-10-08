@@ -16,7 +16,7 @@ discussion: https://github.com/wrocpp/wrocpp.github.io/discussions/55
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
-The grand old way to get types out of a SQL database in C++ is ODB, a preprocessor that parses your headers, generates persistence glue, and integrates into the build system. It works, but it's a compiler alongside your compiler.
+The grand old way to get types out of a SQL database in C++ is ODB. It is a preprocessor that parses your headers, generates persistence glue, and integrates into the build system. It works, but it's a compiler alongside your compiler.
 
 With reflection, a tiny ORM becomes a one-header library:
 
@@ -96,7 +96,7 @@ Because `create_table_sql<T>` is `consteval`, the resulting string is computed a
 
 ## Generating DML
 
-`INSERT`, `UPDATE`, `SELECT`, `DELETE` all follow the same pattern: walk columns, emit SQL.
+The four statements (INSERT, UPDATE, SELECT and DELETE) all follow the same pattern: walk the columns, emit SQL.
 
 ```cpp
 template <typename T>
