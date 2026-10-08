@@ -12,6 +12,13 @@ draft: false
 relatedPosts: [modules-2026, cpp14-shims-deleted]
 ---
 
+## In short
+
+- Boost 1.92.0 adds C++20 module support to six libraries: Conversion, DLL, LexicalCast, PFR, Stacktrace and TypeIndex.
+- Building with the `BOOST_USE_MODULES` option set makes existing includes forward to the modules, so no source edit is needed.
+- The documentation calls support early stage, and names and flags may change.
+- 1.92 is the last release in which Heap and Lockfree support C++14.
+
 In June the [state of modules](/posts/modules-2026) here came down to one sentence: `import std;` works, and `import boost;` is coming. Boost 1.92.0, released on 12 August, is the first instalment of the second half.
 
 Six libraries gained C++20 module support: Conversion, DLL, LexicalCast, PFR, Stacktrace and TypeIndex. Out of roughly 180 Boost libraries, that is a rounding error. The mechanism they chose is what makes it worth writing about.
@@ -40,11 +47,11 @@ and there is a path for people not using CMake, precompiling the `.cppm` directl
 clang++ -I ../include -std=c++20 --precompile -x c++-module boost_type_index.cppm
 ```
 
-The include-forwarding trick is the part worth stealing. Modules have a genuine adoption problem that has nothing to do with whether they work: a large codebase cannot flip from includes to imports incrementally without ending up in a half-migrated state where both spellings are live and the build system has to cope with each. Making the macro do the switch turns that from a source migration into a build-flag experiment. Turn it on, measure, turn it off if it disappoints.
+The include-forwarding trick is the part worth stealing. Modules have an adoption problem that has nothing to do with whether they work. A large codebase cannot move from includes to imports step by step. It ends up half migrated, with both spellings live and a build system that has to cope with each. Letting a macro do the switch turns a source migration into a build-flag experiment. Turn it on, measure, turn it off if it disappoints.
 
 ## What the documentation is careful to say
 
-Boost is not overselling this. The TypeIndex module page says support is at an early stage and that targets, flags and behaviour may change. It also notes that for the best compile times you want `import std;` available when building the module, which quietly restates the dependency that has held modules back everywhere else: the payoff arrives when the whole chain is modularised, not when one link is.
+Boost is not overselling this. The TypeIndex module page says support is at an early stage and that targets, flags and behaviour may change. It also notes that the best compile times need `import std;` available when building the module. That quietly restates the dependency that has held modules back everywhere else. The payoff arrives when the whole chain is modularised, not when one link is.
 
 Stacktrace and TypeIndex are both tested with and without `import std;`, which suggests the maintainers expect a long stretch where neither assumption is safe.
 
@@ -52,33 +59,29 @@ Stacktrace and TypeIndex are both tested with and without `import std;`, which s
 
 Nowhere dramatic yet, and it would be dishonest to pretend otherwise. Six libraries, an early-stage flag, and an explicit warning that the interface may move. Nobody should be rewriting a build on this.
 
-What changed is the shape of the problem. A year ago the honest answer about Boost and modules was that the work had not started in a form you could try. Now there is a flag, a documented module name, and a migration story that does not require touching source. The next question is whether the remaining libraries follow the same pattern, because six libraries each inventing their own module naming and their own opt-in macro would be considerably worse than none.
+What changed is the shape of the problem. A year ago the honest answer about Boost and modules was that the work had not started in a form you could try. Now there is a flag, a documented module name, and a migration story that does not require touching source. The next question is whether the remaining libraries follow the same pattern. Six libraries that each invent their own module naming and opt-in macro would be considerably worse than none.
 
 One caveat about evidence. As of 6 October 2026 Compiler Explorer carries Boost 1.92, but this post has no clickable demonstration attached. Everything above is from the release notes and the library documentation rather than from a build I ran. A working `import boost.type_index;` is worth a follow-up.
 
 ## What else is in 1.92
 
-Modules are the headline but not the release. Nothing new joined the collection this
-time, and the changes that matter are inside libraries people already depend on.
+Modules are the headline but not the release. Nothing new joined the collection this time. The changes that matter are inside libraries people already depend on:
 
-Container gained a `hub` container, and unchecked variants of `emplace_back` and
-`push_back` for vectors that skip the capacity test when you have already
-guaranteed it. Lockfree gained two queues, `mpsc_weak_queue` and
-`bounded_ticket_queue`. Asio picked up scheduler configuration parameters and
-`io_uring` tuning knobs. Unordered learned C++20 ranges, so `insert_range` and
-construction from a range now work. Graph added Louvain community detection and
-dropped its dependency on Boost.StaticAssert.
+| Library | What changed |
+|---|---|
+| Container | A new `hub` container, plus unchecked variants of `emplace_back` and `push_back` for vectors that skip the capacity test when you have already guaranteed it |
+| Lockfree | Two queues, `mpsc_weak_queue` and `bounded_ticket_queue` |
+| Asio | Scheduler configuration parameters and `io_uring` tuning knobs |
+| Unordered | C++20 ranges, so `insert_range` and construction from a range now work |
+| Graph | Louvain community detection, and no more dependency on Boost.StaticAssert |
 
-Two deprecations are worth diarising. Filesystem's templated `initial_path()`
-overloads are deprecated and go away in v4. More consequentially, 1.92 is the last
-release in which Heap and Lockfree support C++14; both require C++17 from the next
-one. That is narrower than the C++14 sunset it is sometimes reported as, since it
-binds those two libraries rather than Boost as a whole, but if you are pinned to
-C++14 and use either, this release is your ceiling.
+Two deprecations are worth diarising. Filesystem's templated `initial_path()` overloads are deprecated and go away in v4. More consequentially, 1.92 is the last release in which Heap and Lockfree support C++14, and both require C++17 from the next one.
+
+That is narrower than the C++14 sunset it is sometimes reported as, because it binds those two libraries rather than Boost as a whole. If you are pinned to C++14 and use either, this release is your ceiling.
 
 The `hub` container deserves its own piece rather than a paragraph here. As of 6
 October 2026 Compiler Explorer carries Boost 1.92, so it can be built and run there.
 
 ---
 
-**Sources**: [Boost 1.92.0 release notes](https://www.boost.org/releases/1.92.0/) · [Boost.TypeIndex C++20 module documentation](https://www.boost.org/doc/libs/latest/doc/html/boost_typeindex/c_20_module.html) · Compiler Explorer library versions checked on 6 October 2026 (newest Boost: 1.92.0).
+**Sources**: [Boost 1.92.0 release notes](https://www.boost.org/releases/1.92.0/) · [TypeIndex module documentation](https://www.boost.org/doc/libs/latest/doc/html/boost_typeindex/c_20_module.html) · Compiler Explorer versions checked on 6 October 2026 (newest Boost: 1.92.0).
