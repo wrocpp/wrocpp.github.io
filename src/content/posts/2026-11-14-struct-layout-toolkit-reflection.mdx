@@ -17,14 +17,30 @@ relatedPosts: [reflect-soa, define-aggregate, annotations]
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 import PostLink from '../../components/PostLink.astro';
 
+## In short
+
+- Two structs with the same four fields are 32 and 24 bytes. The difference is padding.
+- A small header reports padding as a byte map and builds a reordered copy of a type. It also fails the build when a layout goes over a budget. It was run on GCC 16.2 only.
+- The reordered copy is a different type. Positional initialisation and structured bindings change meaning without a diagnostic, so it suits hot data that you build by name.
+- Sorting by alignment gave the minimum size in all 2,992 multisets I searched, but not once members are over-aligned.
+- In the benchmark, only a pass that streams 320 MB without branching got faster, at about 0.85 times the time. A branchy pass and arrays that fit in cache showed nothing.
+
+## Same fields, different size
+
 ```cpp
 struct OrderBad  { std::uint64_t price; char side; std::uint64_t quantity; bool active; };
 struct OrderGood { std::uint64_t price; std::uint64_t quantity; char side; bool active; };
 ```
 
-The two structs have the same four fields. `sizeof(OrderBad)` is 32 and `sizeof(OrderGood)` is 24, because `quantity` in the first one has to start on an 8-byte boundary and the compiler fills the gap after `side` with seven bytes of nothing. Of those bytes, 18 hold data (two integers, `side` and `active`), and the other 6 or 14 are padding.
+The two structs have the same four fields. `sizeof(OrderBad)` is 32 and `sizeof(OrderGood)` is 24. In the first one, `quantity` has to start on an 8-byte boundary. The compiler fills the gap after `side` with seven bytes of nothing. Of those bytes, 18 hold data: two integers, `side` and `active`. The other 6 or 14 are padding.
 
-Herik Lima's LinkedIn post ["Cache-Friendly Structs"](https://lnkd.in/p/ebpCcSxN) asks "Have you ever improved performance significantly just by reorganizing struct fields?" It made me want to know what C++26 reflection can do about that question, and how much of an answer a measurement gives. This post is that attempt: a small header that reports where the padding is, builds a reordered copy of a type, and fails the build when a layout goes over a budget. The last section is a benchmark, and its result is smaller than the question suggests.
+Herik Lima's LinkedIn post ["Cache-Friendly Structs"](https://lnkd.in/p/ebpCcSxN) asks "Have you ever improved performance significantly just by reorganizing struct fields?" It made me want to know what C++26 reflection can do about that question, and how much of an answer a measurement gives. This post is that attempt. It is a small header that does three things:
+
+- reports where the padding is
+- builds a reordered copy of a type
+- fails the build when a layout goes over a budget
+
+The last section is a benchmark, and its result is smaller than the question suggests.
 
 ## A byte map of the padding
 
@@ -45,26 +61,38 @@ OrderGood: 24 bytes, align 8, 6 padding bytes (6 of them tail)
   legend: a=price b=quantity c=side d=active
 ```
 
-(The rows of the second report are shortened here.) `OrderBad` has 14 padding bytes: 7 between `side` and `quantity` and 7 after `active`. `OrderGood` has 6, all at the end.
+(The rows of the second report are shortened here.) `OrderBad` has 14 padding bytes. Of those, 7 sit between `side` and `quantity`. The other 7 follow `active`. `OrderGood` has 6, all at the end.
 
-The report is computed in a `consteval` function from three queries: `nonstatic_data_members_of` for the members, `offset_of` and `size_of` for the byte range each one covers, and `alignment_of` for its alignment. Padding is the bytes no member covers. Because it is a constant, it can sit in a `static_assert`:
+The report is computed in a `consteval` function from three kinds of query:
+
+- `nonstatic_data_members_of` returns the members.
+- `offset_of` and `size_of` give the byte range each member covers.
+- `alignment_of` gives its alignment.
+
+Padding is the bytes no member covers. Because it is a constant, it can sit in a `static_assert`:
 
 ```cpp
 static_assert(sizeof(OrderBad) == 32 && layout::padding_bytes<OrderBad> == 14);
 static_assert(layout::tail_padding<OrderBad> == 7 && layout::tail_padding<OrderGood> == 6);
 ```
 
-Here is the whole demo on Compiler Explorer. It prints the reports above, the reordered type, a hot-group budget, conversions with a `std::string` and a `std::unique_ptr` member, and a hot/cold split, and every line comes from a `printf`:
+Here is the whole demo on Compiler Explorer. Every line it prints comes from a `printf`. It prints these things:
+
+- the reports above
+- the reordered type
+- a hot-group budget
+- conversions with a `std::string` and a `std::unique_ptr` member
+- a hot/cold split
 
 <GodboltEmbed id="anofj4aa9" gccOnly gccLabel="GCC 16.2" title="Padding report, reordered type, budgets and split" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -Wall -Wextra -Werror · runs live" />
 
-The type names read `long unsigned int` there and `long long unsigned int` on my Mac, since `display_string_of` gives the spelling of the platform's `uint64_t` and aliases are lost. The column widths follow, and the `interference sizes` line says 64 and 64 on x86-64 where my Mac says 256 and 64. Every size, offset and padding count is the same on both.
+In that demo the type names read `long unsigned int`. On my Mac they read `long long unsigned int`. The `display_string_of` function gives the spelling of the platform's `uint64_t`, and aliases are lost. The column widths follow. The `interference sizes` line says 64 and 64 on x86-64, where my Mac says 256 and 64. Every size, offset and padding count is the same on both.
 
-One gap: `size_of` and `alignment_of` throw on a bit-field (`reflection not suitable for size_of`). The toolkit uses `bit_size_of` and `offset_of(m).bits` for those, and the alignment of the member's type.
+One gap: `size_of` and `alignment_of` throw on a bit-field. The message is `reflection not suitable for size_of`. For those, the toolkit uses `bit_size_of` and `offset_of(m).bits`. It takes the alignment from the member's type.
 
 ## Building the reordered type
 
-`define_aggregate` can declare the members of a struct from a list of `data_member_spec`s, so a type with the same members in another order is a short function. The members are sorted by descending alignment, with ties kept in declaration order:
+The `define_aggregate` function can declare the members of a struct from a list of `data_member_spec` values. So a type with the same members in another order is a short function. The members are sorted by descending alignment, with ties kept in declaration order:
 
 ```cpp
 consteval std::vector<info> by_descending_alignment(info t) {  // stable: ties keep declaration order
@@ -83,18 +111,27 @@ struct reordered_holder {
 template <class T> using reordered = reordered_holder<T>::type;
 ```
 
-The holder is needed because `define_aggregate` has to run in a `consteval` block inside the class that declares the type, as the <PostLink slug="define-aggregate">define_aggregate post</PostLink> covers. `layout::reordered<OrderBad>` is 24 bytes with members `price, quantity, side, active`, the same map as `OrderGood`. A second function predicts the size from `size_of` and `alignment_of` alone, and a `static_assert` checks that the prediction equals `sizeof`.
+The holder is needed because `define_aggregate` has to run in a `consteval` block inside the class that declares the type. The <PostLink slug="define-aggregate">define_aggregate post</PostLink> covers this. The type `layout::reordered<OrderBad>` is 24 bytes, with members `price, quantity, side, active`. It has the same map as `OrderGood`. A second function predicts the size from `size_of` and `alignment_of` alone. A `static_assert` checks that the prediction equals `sizeof`.
 
-The rest of the toolkit is plumbing. `layout::to_reordered(x)` and `layout::from_reordered(r)` copy a value between the two types member by member, by name. From an rvalue they move: in the demo a `Job` with a `std::string` and a `std::unique_ptr` goes from 64 to 56 bytes, the string's heap buffer and the pointer's target are the same afterwards, and the source string is empty.
+The rest of the toolkit is plumbing. The functions `layout::to_reordered(x)` and `layout::from_reordered(r)` copy a value between the two types member by member, by name. From an rvalue they move. In the demo, a `Job` with a `std::string` member and a unique-pointer member goes from 64 to 56 bytes. Afterwards the string's heap buffer and the pointer's target are the same, and the source string is empty.
 
-The header refuses what it cannot rebuild, with a message naming the member and the reason. Bit-fields (moving one changes how the bits pack), default member initializers (`define_aggregate` drops them), base classes, mutable and private members, unions and a type-level `alignas` are all errors, and `limits.cpp` has one failing case for each. A `[[no_unique_address]]` member is detected only by the way its byte range overlaps another member's, because `<meta>` has no query for the attribute. A member of that kind that overlaps nothing would slip through, and I did not test one.
+The header refuses what it cannot rebuild, with a message naming the member and the reason. These cases are errors, and `limits.cpp` has one failing case for each:
+
+- bit-fields, because moving one changes how the bits pack
+- default member initializers, because `define_aggregate` drops them
+- base classes
+- mutable and private members
+- unions
+- a type-level `alignas`
+
+A `[[no_unique_address]]` member is detected only when its byte range overlaps another member's. The `<meta>` header has no query for the attribute. A member of that kind that overlaps nothing would slip through, and I did not test one.
 
 ## Is sorting by alignment enough?
 
 I wanted to know whether descending alignment always reaches the minimum size, so I checked it by search rather than by argument.
 
 - With members of 1, 2, 4 and 8 bytes there are 24 orderings. I built all 24 as real structs with `define_aggregate`. The minimum is 16 bytes, 8 of the 24 orderings reach it, and the sorted one is 16.
-- Over every multiset of 2 to 5 members drawn from a catalogue of 10 types whose sizes are multiples of their alignments (up to 24 bytes), 2,992 multisets in all, the sorted order was always a minimum. No counterexample.
+- Take every multiset of 2 to 5 members from a catalogue of 10 types, whose sizes are multiples of their alignments (up to 24 bytes). That is 2,992 multisets in all. The sorted order was always a minimum, with no counterexample.
 - With over-aligned members added (a member whose alignment is larger than its size, such as `alignas(16) int`), 11,613 multisets gave 1,578 counterexamples.
 
 The smallest real counterexample:
@@ -104,11 +141,11 @@ struct Ce { alignas(16) int a; std::uint64_t b; char c; };   // 32 bytes
 // layout::reordered<Ce> is also 32 bytes; the order (a, c, b) is 16
 ```
 
-The `char` fits into the 12 bytes that follow the 4-byte `a`, and sorting by alignment puts the 8-byte `b` there first. So descending alignment is minimal in the cases I enumerated when every size is a multiple of its alignment, and I did not prove that. Once a member is over-aligned it is a heuristic, and an exact answer needs a search over orders (120 for five members) or a bin-packing step. `layout.hpp` does the sort and stops there.
+The `char` fits into the 12 bytes that follow the 4-byte `a`. Sorting by alignment puts the 8-byte `b` there first. So descending alignment is minimal in the cases I enumerated when every size is a multiple of its alignment. I did not prove that. Once a member is over-aligned, sorting is a heuristic. An exact answer needs a search over orders (120 for five members) or a bin-packing step. The header `layout.hpp` does the sort and stops there.
 
 ## The copy is a different type
 
-P1112R5, [Language support for class layout control](https://wg21.link/p1112r5), proposes an opt-in way to change where members sit in memory while declaration order and initialisation order stay as written. It also has a section, "Reflection will not solve this", on why a reflection-built copy with swapped members is not the same thing: it changes the declaration order and triggers the related problems. I measured how different. This is `reordered<OrderBad>` against `OrderBad`, from `p1112.cpp`:
+P1112R5, [Language support for class layout control](https://wg21.link/p1112r5), proposes an opt-in way to change where members sit in memory. Declaration order and initialisation order stay as written. It also has a section, "Reflection will not solve this". That section explains why a reflection-built copy with swapped members is not the same thing: it changes the declaration order and triggers the related problems. I measured how different. This is `reordered<OrderBad>` against `OrderBad`. The program is `p1112.cpp`:
 
 | Observable | `OrderBad` | `reordered<OrderBad>` |
 |---|---|---|
@@ -124,11 +161,19 @@ P1112R5, [Language support for class layout control](https://wg21.link/p1112r5),
 
 The positional row is the dangerous one. The same four tokens compile against both types and mean different things, with no diagnostic. A designated initialiser in the old order, on the other hand, is a compile error, which is the useful behaviour.
 
-So the honest scope of this tool is a layout for hot data that you construct by name with `to_reordered`. It is not a drop-in re-declaration of an existing struct, because anything that depends on the declaration order of the original (aggregate initialisation, bindings, a defaulted comparison, a serialised representation, an ABI) breaks or changes meaning. P1112R5 proposes layout control that leaves the declaration order alone, which a library-built copy cannot do.
+So the honest scope of this tool is a layout for hot data that you construct by name with `to_reordered`. It is not a drop-in re-declaration of an existing struct. Anything that depends on the declaration order of the original breaks or changes meaning. That includes:
+
+- aggregate initialisation
+- bindings
+- a defaulted comparison
+- a serialised representation
+- an ABI
+
+P1112R5 proposes layout control that leaves the declaration order alone, which a library-built copy cannot do.
 
 ## Budgets that fail the build
 
-A layout you fixed once can drift when someone adds a member. The Linux kernel handles that with `__cacheline_group_begin` and `__cacheline_group_end` markers inside a struct and `CACHELINE_ASSERT_GROUP_SIZE` in a build-time check. The same idea here works from an annotation. A padding budget is a `static_assert` with a message that carries the report:
+A layout you fixed once can drift when someone adds a member. The Linux kernel handles that with group markers inside a struct, `__cacheline_group_begin` and `__cacheline_group_end`. A build-time check, `CACHELINE_ASSERT_GROUP_SIZE`, enforces the size. The same idea here works from an annotation. A padding budget is a `static_assert` with a message that carries the report:
 
 ```cpp
 static_assert(layout::padding_bytes<OrderBad> <= 8, layout::padding_report<OrderBad, 8>);
@@ -145,13 +190,22 @@ OrderBad: 32 bytes, align 8, 14 padding bytes (7 of them tail)
 
 <GodboltEmbed id="edsGKqjej" gccOnly gccLabel="GCC 16.2" title="A padding budget the build refuses" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -Wall -Wextra -Werror · compile only, shows the error" />
 
-A group budget works on members annotated `[[=layout::hot]]` (the annotations are the kind the <PostLink slug="annotations">annotations post</PostLink> describes). It measures the span from the first hot member to the end of the last one, and the payload inside it, against a size you pick, here the constructive interference size. With two hot members 144 bytes apart:
+A group budget works on members annotated `[[=layout::hot]]`. The annotations are the kind the <PostLink slug="annotations">annotations post</PostLink> describes. The budget measures the span from the first hot member to the end of the last one, and the payload inside it. It compares them against a size you pick, here the constructive interference size. With two hot members 144 bytes apart:
 
 ```text
 layout budget: group 'layout::hot_t' of Wide spans 144 bytes [0, 144) with 16 payload bytes in 2 members; budget 64
 ```
 
-The values it checks against depend on the target. `std::hardware_constructive_interference_size` is 64 on every setup I tried. `std::hardware_destructive_interference_size` is 256 on GCC 16.2 for arm64 darwin and on Apple clang 21 (compile only, since its link step failed on my machine), and 64 on Compiler Explorer's x86-64. GCC also warns about both constants in a header: `-Winterference-size` is silent in a `.cpp` and an error under `-Werror` in a header, even with `-isystem`. The note it prints suggests `--param hardware_destructive_interference_size=256`, and GCC rejects that spelling. The accepted ones are `--param=destructive-interference-size=N` and `-Wno-interference-size`. `layout.hpp` silences the warning around its two uses with a `#pragma GCC diagnostic`.
+### Interference sizes
+
+The values it checks against depend on the target:
+
+| constant | value |
+|---|---|
+| `std::hardware_constructive_interference_size` | 64 on every setup I tried |
+| `std::hardware_destructive_interference_size` | 256 on GCC 16.2 for arm64 darwin and on Apple clang 21 (compile only, since its link step failed on my machine); 64 on Compiler Explorer's x86-64 |
+
+GCC also warns about both constants in a header. The warning `-Winterference-size` is silent in a `.cpp` file. It is an error under `-Werror` in a header, even with `-isystem`. The note it prints suggests `--param hardware_destructive_interference_size=256`, and GCC rejects that spelling. The accepted ones are `--param=destructive-interference-size=N` and `-Wno-interference-size`. The header `layout.hpp` silences the warning around its two uses with a `#pragma GCC diagnostic`.
 
 The second compile-only embed is the designated-initialiser error from the table above, if you want to see the exact text:
 
@@ -159,21 +213,53 @@ The second compile-only embed is the designated-initialiser error from the table
 
 ## A hot/cold split saves less than it sounds
 
-`layout::split<T>` takes the annotations further and defines two structs, `hot` and `cold`, with `layout::split_table<T>` holding two parallel vectors indexed by the same `i`. Unannotated members are cold. For `Cached` (`price`, `quantity` and `active` hot, `side` cold) the hot struct is 24 bytes, 17 of payload and 7 of tail padding, and the cold one is 1 byte. The split saves the one byte of `side` compared with `OrderGood`, and costs a second stream when a pass needs every field. For these four fields it does not pay.
+The `layout::split<T>` template takes the annotations further. It defines two structs, `hot` and `cold`. The table `layout::split_table<T>` holds two parallel vectors indexed by the same `i`. Unannotated members are cold. The `Cached` example splits like this:
+
+| member | group |
+|---|---|
+| `price` | hot |
+| `quantity` | hot |
+| `active` | hot |
+| `side` | cold |
+
+The hot struct is 24 bytes, 17 of payload and 7 of tail padding, and the cold one is 1 byte. The split saves the one byte of `side` compared with `OrderGood`, and costs a second stream when a pass needs every field. For these four fields it does not pay.
 
 ## What the benchmark found
 
 Sorting the fields removes 8 bytes per element. Whether that is faster depends on what the loop does, so I timed three passes over the same data:
 
-- `if`: `if (active) s += price * quantity;`, which compiles to a real branch (`tbz` in the assembly) on random data with about half the elements active.
+- `if`: a real branch, `if (active) s += price * quantity;`. In the assembly it is a `tbz` instruction, on random data with about half the elements active.
 - `mask`: `s += price * quantity * active;`, the same sum without a branch.
 - `all`: every field is read, so nothing can be skipped.
 
-The layouts are `OrderBad` (32 B), `OrderGood` (24 B), `reordered<OrderBad>` (24 B), `reordered<OrderGood>` as a control (the same layout as `OrderGood`, so any difference between those two is noise), the hot/cold split, and a struct of arrays that reads 17 bytes per element (the layouts <PostLink slug="reflect-soa">the reflect_soa post</PostLink> discusses). The checksums of all layouts are compared inside the program before timing.
+### The layouts
 
-**Setup.** Apple M2 Max, 12 cores, 32 GB, shared with other work. L1D is 64 KiB, `hw.l2cachesize` reports 4 MB (the performance cluster has 16 MB of L2 shared by 4 cores), cache line 128 bytes. GCC 16.2.0 from Homebrew, `-std=c++26 -freflection -O2`, and a second set with `-O2 -fno-tree-vectorize`. N is 1,000, 100,000 and 10,000,000 elements (320 MB for the 32-byte layout). Each cell is 3 separate processes with 7 samples each, 21 in all, each sample at least 50 ms, after a warm-up. The table gives the median of the three per-process medians, in wall nanoseconds per element, with the ratio against `OrderBad`.
+The layouts are:
 
-**The machine was not quiet.** The load average was 20 to 47 at every batch, above the limit of 4 that the script waits for, after three retries of 30 seconds, so every batch is labelled NOISY in the logs. The spread inside a cell is small (wall and thread CPU time agree to about 1%), but read each number as one sample from a busy machine. There are no performance counters.
+- `OrderBad` (32 B)
+- `OrderGood` (24 B)
+- `reordered<OrderBad>` (24 B)
+- `reordered<OrderGood>` as a control. It has the same layout as `OrderGood`, so any difference between those two is noise.
+- the hot/cold split
+- a struct of arrays that reads 17 bytes per element, as in the layouts <PostLink slug="reflect-soa">the reflect_soa post</PostLink> discusses
+
+The checksums of all layouts are compared inside the program before timing.
+
+### Setup and noise
+
+**Setup.**
+
+- Machine: Apple M2 Max, 12 cores, 32 GB, shared with other work.
+- Caches: L1D is 64 KiB, and `hw.l2cachesize` reports 4 MB (the performance cluster has 16 MB of L2 shared by 4 cores). The cache line is 128 bytes.
+- Compiler: GCC 16.2.0 from Homebrew, with `-std=c++26 -freflection -O2`, and a second set with `-O2 -fno-tree-vectorize`.
+- Sizes: N is 1,000, 100,000 and 10,000,000 elements (320 MB for the 32-byte layout).
+- Samples: each cell is 3 separate processes with 7 samples each, 21 in all. Each sample is at least 50 ms, after a warm-up.
+
+The table gives the median of the three per-process medians, in wall nanoseconds per element, with the ratio against `OrderBad`.
+
+**The machine was not quiet.** The load average was 20 to 47 at every batch. The script waits for a load below the limit of 4, and it gave up after three retries of 30 seconds. So every batch is labelled NOISY in the logs. The spread inside a cell is small, and wall and thread CPU time agree to about 1%. Still, read each number as one sample from a busy machine. There are no performance counters.
+
+### The numbers
 
 | Pass, N | `OrderBad` 32 B | `OrderGood` 24 B | `reordered<OrderBad>` 24 B | control 24 B | split hot 24 B | SoA 17 B |
 |---|---|---|---|---|---|---|
@@ -184,47 +270,71 @@ The layouts are `OrderBad` (32 B), `OrderGood` (24 B), `reordered<OrderBad>` (24
 | `mask`, 1e7 | 0.561 | 0.489 | 0.473 | 0.485 | 0.476 | 0.402 |
 | `all`, 1e7 | 0.669 | 0.633 | 0.635 | not run | 0.650 | 0.652 |
 
-What the table says:
+### What the table says
 
-- In the `if` pass the layout makes no measurable difference. About 3 ns per element at 100,000 and 10,000,000 is branch misprediction on the random `active` flag. 32 against 24 bytes differs by 2% at 10 million elements (3.159 against 3.08 to 3.10), which this machine could not separate from noise. At 1,000 elements the branch pattern is learned and every layout takes 0.76 to 0.78 ns.
-- In the `mask` pass at 10 million elements, far beyond the cache, the 24-byte layouts take 0.84 to 0.87 times the time of the 32-byte one (0.561 against 0.473 to 0.489 ns). A 25% cut in bytes gives a 13 to 16% cut in time, so it is not a pure bandwidth effect. The 32-byte cell is also the noisiest: its samples run from 0.549 to 0.877 ns, against 0.468 to 0.494 for the reordered one.
-- The effect goes away inside the cache. At 1,000 elements the 32-byte and the 24-byte layouts match (0.507 against 0.495 to 0.500). At 100,000 elements (3.2 MB against 2.4 MB, inside the L2) the 24-byte layouts are 4 to 5% slower (0.478 against 0.497 to 0.500). I did not investigate why.
+- In the `if` pass the layout makes no measurable difference. About 3 ns per element at 100,000 and 10,000,000 is branch misprediction on the random `active` flag. The 32-byte and 24-byte layouts differ by 2% at 10 million elements (3.159 against 3.08 to 3.10). This machine could not separate that from noise. At 1,000 elements the branch pattern is learned and every layout takes 0.76 to 0.78 ns.
+- At 10 million elements the data is far beyond the cache. In the `mask` pass there, the 24-byte layouts take 0.84 to 0.87 times as long as the 32-byte one. The values are 0.561 ns against 0.473 to 0.489 ns. A 25% cut in bytes gives a 13 to 16% cut in time, so it is not a pure bandwidth effect. The 32-byte cell is also the noisiest. Its samples run from 0.549 to 0.877 ns, against 0.468 to 0.494 for the reordered one.
+### Inside the cache
+
+- The effect goes away inside the cache. At 1,000 elements the 32-byte and the 24-byte layouts match (0.507 against 0.495 to 0.500). At 100,000 elements the 24-byte layouts are 4 to 5% slower (0.478 against 0.497 to 0.500). The arrays are 3.2 MB against 2.4 MB, inside the L2. I did not investigate why.
 - The control sits where `OrderGood` does in every cell (`mask` at 1e7: 0.485 against 0.489). That is also a measure of the noise floor, 1 to 3%.
-- In the `all` pass at 10 million elements the 24-byte layouts are about 0.95 times (0.633 against 0.669), because the padding is streamed too. Splitting and SoA need two or more streams and are no better than the 24-byte struct.
+- In the `all` pass at 10 million elements the 24-byte layouts take about 0.95 times as long (0.633 against 0.669). The reason is that the padding is streamed too. Splitting and SoA need two or more streams and are no better than the 24-byte struct.
 
-The assembly is no help in explaining this with vectorisation: at `-O2` on aarch64 GCC emitted no NEON instruction for any loop, and `-fno-tree-vectorize` produced the same file but for the operand order of one `cmp`. The 24-byte `mask` loop reads `price` and `quantity` with one `ldp` and steps by 24.
+### Assembly and the supported claim
 
-So the supported claim is narrow. On this machine, with this compiler and these flags, one pass that streams through a 320 MB array without branching took about 0.85 times as long with the 24-byte layout. A pass with a data-dependent branch showed nothing, and neither did arrays that fit in cache. I am not claiming a general speedup,.
+The assembly gives no vectorisation explanation. At `-O2` on aarch64, GCC emitted no NEON instruction for any loop. The flag `-fno-tree-vectorize` produced the same file but for the operand order of one `cmp`. The 24-byte `mask` loop reads the price and quantity fields with one `ldp` and steps by 24.
 
-The benchmark does not run on Compiler Explorer, which is a shared machine with no timing guarantees, and none of the embeds above times anything. It lives in the examples repository: [`bench.cpp`](https://github.com/wrocpp/cpp26-reflection-examples/blob/87cde93/posts/88-layout-toolkit/examples/bench.cpp) and [`kernels.hpp`](https://github.com/wrocpp/cpp26-reflection-examples/blob/87cde93/posts/88-layout-toolkit/examples/kernels.hpp), with the raw samples, the machine description and the load before and after each batch in [`bench_logs`](https://github.com/wrocpp/cpp26-reflection-examples/tree/87cde93/posts/88-layout-toolkit/examples/bench_logs).
+So the supported claim is narrow. On this machine, with this compiler and these flags, one pass took about 0.85 times as long with the 24-byte layout. That pass streams through a 320 MB array without branching. A pass with a data-dependent branch showed nothing, and neither did arrays that fit in cache. I am not claiming a general speedup.
+
+### Where the benchmark lives
+
+The benchmark does not run on Compiler Explorer, which is a shared machine with no timing guarantees. None of the embeds above times anything. The benchmark lives in the examples repository: [`bench.cpp`](https://github.com/wrocpp/cpp26-reflection-examples/blob/87cde93/posts/88-layout-toolkit/examples/bench.cpp) and [`kernels.hpp`](https://github.com/wrocpp/cpp26-reflection-examples/blob/87cde93/posts/88-layout-toolkit/examples/kernels.hpp). The raw samples, the machine description and the load before and after each batch are in [`bench_logs`](https://github.com/wrocpp/cpp26-reflection-examples/tree/87cde93/posts/88-layout-toolkit/examples/bench_logs).
 
 ## Other tools, and other people's measurements
 
 None of this is new. Reporting padding and suggesting an order is old, and several tools do it well:
 
-- Rust's default representation may reorder fields; the [reference](https://doc.rust-lang.org/reference/type-layout.html) says the order "does not have to be the same as the order in which the fields are specified", and `repr(C)` keeps declaration order.
+- Rust's default representation may reorder fields. The [reference](https://doc.rust-lang.org/reference/type-layout.html) says the order "does not have to be the same as the order in which the fields are specified". The `repr(C)` attribute keeps declaration order.
 - `pahole --reorganize` ([man page](https://man.archlinux.org/man/pahole.1)) suggests a field order from DWARF debug information.
-- clang's static analyzer has [`optin.performance.Padding`](https://clang.llvm.org/docs/analyzer/checkers.html), which warns when a struct has more padding than a threshold (24 bytes by default) and says to order fields by decreasing alignment.
+- clang's static analyzer has [`optin.performance.Padding`](https://clang.llvm.org/docs/analyzer/checkers.html), which warns when a struct has more padding than a threshold (24 bytes by default). It says to order fields by decreasing alignment.
 - Go has the [`fieldalignment`](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/fieldalignment) analyzer, which reports structs that would use less memory with their fields sorted.
-- LLVM has [`OptimizedStructLayout.h`](https://github.com/llvm/llvm-project/blob/main/llvm/include/llvm/Support/OptimizedStructLayout.h), an interface that lays fields out to keep a struct small, including fields with fixed offsets and sizes that are not multiples of their alignments. Its header says it does not guarantee a minimal result. I read that header and not the algorithm, and my toolkit does not use it.
-- The Linux kernel has the [`__cacheline_group_begin`, `__cacheline_group_end` and `CACHELINE_ASSERT_GROUP_SIZE`](https://github.com/torvalds/linux/blob/master/include/linux/cache.h) macros, which are in `cache.h` since Linux 6.8. The group budget above is modelled on them.
-- Stream HPC's [Kernel Development + C++26 Reflection](https://streamhpc.com/blog/2026-07-08/kernel-development-c26-reflection-%f0%9f%a7%a1/) (8 July 2026) uses reflection to check that host and device structs have the same layout and to generate SoA types, and mentions reflection sorting members before emitting them.
+- LLVM has [`OptimizedStructLayout.h`](https://github.com/llvm/llvm-project/blob/main/llvm/include/llvm/Support/OptimizedStructLayout.h), an interface that lays fields out to keep a struct small. It handles fields with fixed offsets and sizes that are not multiples of their alignments. Its header says it does not guarantee a minimal result. I read that header and not the algorithm, and my toolkit does not use it.
+- The Linux kernel has [cacheline group macros](https://github.com/torvalds/linux/blob/master/include/linux/cache.h) in `cache.h` since Linux 6.8. The group budget above is modelled on them.
+- Stream HPC's [Kernel Development + C++26 Reflection](https://streamhpc.com/blog/2026-07-08/kernel-development-c26-reflection-%f0%9f%a7%a1/) (8 July 2026) uses reflection to check that host and device structs have the same layout. It also generates SoA types, and mentions reflection sorting members before emitting them.
 - P1112R5, above.
 
-Compared with these, the toolkit is close to the clang checker plus `pahole`, with the check written as a `static_assert` in your own source and a copy type you can use. It does not change the original type.
+### Compared with these
 
-Two cases where the layout was the measured cause, neither mine. In fast_float, a performance report ([#418](https://github.com/fastfloat/fast_float/issues/418)) traced a slowdown to a struct that had grown from 64 to 72 bytes when a `parse_error` field was added at the end; the reporter measured 19.9 ns per float before and 11.2 ns after a fix on MSVC with `canada.txt`, and the fix ([#419](https://github.com/fastfloat/fast_float/pull/419), merged 4 October 2026) moves the field next to the booleans and adds a `static_assert` that the struct stays at 64 bytes. I re-read both pages on 6 October 2026 and did not reproduce the timing. In Linux, the commit [`5d4cc87414c5`](https://github.com/torvalds/linux/commit/5d4cc87414c5) regrouped the fields of `struct sock` into read-mostly and read-write groups, and its message says "Results on TCP_RR benchmarks seem to show a gain (4 to 5 %)". That commit is in Linux 6.9, a release after the macros arrived in 6.8. The `static_assert` in the fast_float fix is the kind of check the budgets above are for.
+Compared with these, the toolkit is close to the clang checker plus `pahole`. The check is written as a `static_assert` in your own source, and you get a copy type you can use. It does not change the original type.
+
+### Two measured cases
+
+Two cases where the layout was the measured cause, neither mine.
+
+In fast_float, a performance report ([#418](https://github.com/fastfloat/fast_float/issues/418)) traced a slowdown to a struct that had grown from 64 to 72 bytes. A `parse_error` field had been added at the end. The reporter measured 19.9 ns per float before and 11.2 ns after a fix on MSVC with `canada.txt`. The fix ([#419](https://github.com/fastfloat/fast_float/pull/419), merged 4 October 2026) moves the field next to the booleans. It also adds a `static_assert` that the struct stays at 64 bytes. I re-read both pages on 6 October 2026 and did not reproduce the timing.
+
+In Linux, the commit [`5d4cc87414c5`](https://github.com/torvalds/linux/commit/5d4cc87414c5) regrouped the fields of `struct sock` into read-mostly and read-write groups. Its message says "Results on TCP_RR benchmarks seem to show a gain (4 to 5 %)". That commit is in Linux 6.9, a release after the macros arrived in 6.8.
+
+The `static_assert` in the fast_float fix is the kind of check the budgets above are for.
 
 ## What this has not been tested on
 
-- GCC 16.2 only. Not clang-p2996, not GCC trunk. Some names (`display_string_of`, `parent_of`, `is_mutable_member`) are P2996's, and I cannot say how another implementation spells or behaves them.
-- The demo ran on Linux x86-64 only through Compiler Explorer's g162, and the full check script (`build.sh`) ran in the `gcc:16.2` Docker image on Linux aarch64. The spike's earlier run of the same checks used Homebrew GCC 16.2 on macOS arm64. I did not run it on an x86-64 machine of my own.
+- GCC 16.2 only. Not clang-p2996, not GCC trunk. Some names are P2996's, for example `display_string_of` and `parent_of`. I cannot say how another implementation spells or behaves them. The same holds for `is_mutable_member`.
+- The demo ran on Linux x86-64 only through Compiler Explorer's g162. The full check script (`build.sh`) ran in the `gcc:16.2` Docker image on Linux aarch64. The spike's earlier run of the same checks used Homebrew GCC 16.2 on macOS arm64. I did not run it on an x86-64 machine of my own.
+### Benchmark and search limits
+
 - The benchmark ran on one Apple M2 Max under heavy load, with GCC and two flag sets. Other CPUs, x86, clang, performance counters, a quiet machine and a branchy pass over predictable data are all untried.
 - The exact-minimum claim covers multisets of 2 to 5 members from a catalogue of 10 types. A struct with many members and an exact search I did not try.
-- A `[[no_unique_address]]` member that overlaps nothing, a nested struct (it is moved as one block and not reordered inside), and real code: I used no struct from a production code base.
+- Untried: a `[[no_unique_address]]` member that overlaps nothing, a nested struct, and real code. A nested struct is moved as one block and not reordered inside. I used no struct from a production code base.
 - Whether a hot/cold split helps a non-trivial workload. For these four fields it did not.
 - Nothing here claims that reordering is the main cause of any slowness in your program. The one measurement above is one pass on one machine.
 
 ---
 
-**Sources** (checked 6 October 2026): the examples at commit [`87cde93`](https://github.com/wrocpp/cpp26-reflection-examples/tree/87cde93/posts/88-layout-toolkit/examples), checked with `sh build.sh` in the `gcc:16.2` Docker image (Linux aarch64); permalinks `anofj4aa9`, `edsGKqjej` and `xh73GvjoE` (g162, the first run live, the other two compile only); the macOS benchmark logs and the Apple clang interference-size values are from my own runs; the benchmark logs are in the examples directory. Linked pages were fetched the same day: [P1112R5](https://wg21.link/p1112r5), the Rust reference, the `pahole` man page, the clang analyzer checker list, the `fieldalignment` package page. Herik Lima's post was read through its LinkedIn short link, for its question only.
+**Sources** (checked 6 October 2026):
+
+- The examples at commit [`87cde93`](https://github.com/wrocpp/cpp26-reflection-examples/tree/87cde93/posts/88-layout-toolkit/examples). I checked them with `sh build.sh` in the `gcc:16.2` Docker image (Linux aarch64).
+- The permalinks are all g162. The first, `anofj4aa9`, runs live. The other two, `edsGKqjej` and `xh73GvjoE`, compile only.
+- The macOS benchmark logs and the Apple clang interference-size values are from my own runs. The benchmark logs are in the examples directory.
+- Linked pages were fetched the same day: [P1112R5](https://wg21.link/p1112r5), the Rust reference, the `pahole` man page, the clang analyzer checker list, and the `fieldalignment` package page.
+- Herik Lima's post was read through its LinkedIn short link, for its question only.

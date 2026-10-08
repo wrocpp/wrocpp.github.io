@@ -21,13 +21,21 @@ rpc::client<Api> client{.rpc_transport = {send_to_server}};
 int sum = client.add(2, 3);
 ```
 
-`Api` declares `add` and never defines it. `rpc::client<Api>` has no member function called `add` either. It has a data member called `add`, and that member has an `operator()`. The call serializes `2` and `3`, sends them through the transport, and reads an `int` back. This post builds that client and a mock out of the same primitive, on GCC 16.2, and lists what the primitive cannot do. It is the replacement that the correction at the top of <PostLink slug="auto-mocks">the auto-mocks post</PostLink> promised for code that is generic over its interface.
+The interface `Api` declares `add` and never defines it. The client has no member function called `add` either. It has a data member with that name, and the member has a call operator. The call serializes the arguments 2 and 3, sends them through the transport, and reads an `int` back. This post builds that client and a mock out of the same primitive, on GCC 16.2, and lists what the primitive cannot do. It is the replacement that the correction at the top of <PostLink slug="auto-mocks">the auto-mocks post</PostLink> promised for code that is generic over its interface.
+
+## In short
+
+- A class made with `define_aggregate` holds data members and no member functions, but a data member with a call operator is called like a function.
+- One empty member per interface method gives an RPC client with no IDL, and a mock for code that is generic over its clock.
+- Each member finds its owner by subtracting its offset from `this`. With the attribute `[[no_unique_address]]` the client is 32 bytes, and without it 40.
+- Overloaded methods, const methods and a virtual reference slot do not work, and the errors are quoted below.
+- Everything builds and runs on GCC 16.2 only.
 
 ## Why a data member
 
-<PostLink slug="define-aggregate">`define_aggregate`</PostLink> completes a class by giving it non-static data members. It cannot add a member function, and it cannot add a base class: GCC 16.2 refuses `.is_base`, and a data member of an abstract type is an error (the exact messages are in the auto-mocks correction). So a class generated from an interface cannot be an implementation of that interface.
+<PostLink slug="define-aggregate">`define_aggregate`</PostLink> completes a class by giving it non-static data members. It cannot add a member function or a base class. GCC 16.2 refuses `.is_base`, and a data member of an abstract type is an error. The exact messages are in the auto-mocks correction. So a class generated from an interface cannot be an implementation of that interface.
 
-A data member of class type can still be called. If its type has an `operator()`, `c.add(2, 3)` is `c.add.operator()(2, 3)`, and the name `add` comes from `identifier_of` on the method it stands for. The type of each member is a template instantiated with the reflection of its method, so one template, `method<Owner, ^^Api::add>`, becomes a different class for every method and carries the method's signature.
+A data member of class type can still be called. If its type has a call operator, then `c.add(2, 3)` means `c.add.operator()(2, 3)`. The member name comes from the `identifier_of` function, applied to the method it stands for. The type of each member is a template instantiated with the reflection of its method. So one template, `method<Owner, ^^Api::add>`, becomes a different class for every method and carries that method's signature.
 
 ## The RPC client
 
@@ -48,7 +56,7 @@ template <info Owner, info M, class R, class... A> struct method<Owner, M, R(A..
 };
 ```
 
-The generator declares the class and fills it in a `consteval` block, one transport member and then one member per method of `Api`:
+The generator declares the class and fills it in a `consteval` block. It adds one transport member, then one member per method of `Api`:
 
 ```cpp
 template <class Api> struct client_gen {
@@ -67,7 +75,7 @@ template <class Api> struct client_gen {
 template <class Api> using client = typename client_gen<Api>::type;
 ```
 
-The demo also has a server. It reflects `Api`, finds the method whose name arrives on the wire, decodes the arguments and calls a real `ApiImpl`, so the whole round trip is in one file. The wire format is a toy: integers as text and strings with a length prefix. Here is the run on Compiler Explorer (g162, x86-64):
+The demo also has a server. It reflects `Api` and finds the method whose name arrives on the wire. It then decodes the arguments and calls a real `ApiImpl`, so the whole round trip is in one file. The wire format is a toy, with integers as text and strings with a length prefix. Here is the run on Compiler Explorer (g162, x86-64):
 
 <GodboltEmbed id="v4TTrdbss" gccOnly gccLabel="GCC 16.2" title="An RPC client with no IDL: one callable data member per method" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -Wall -Wextra · runs live" />
 
@@ -75,15 +83,22 @@ The demo also has a server. It reflects `Api`, finds the method whose name arriv
 add=5 greet=hello wro pings=2 sizeof(client)=32 sizeof(transport)=32
 ```
 
-Adding a method to `Api` adds a member to the client and a case to the server, with no other edit. Removing `greet` from `ApiImpl` while `Api` still declares it stops the build with `uncaught exception of type 'std::meta::exception'; 'what()': 'rpc: Impl lacks a method of Api'`.
+Adding a method to `Api` adds a member to the client and a case to the server, with no other edit. Now remove `greet` from `ApiImpl`, while the interface still declares it. The build stops with `uncaught exception of type 'std::meta::exception'; 'what()': 'rpc: Impl lacks a method of Api'`.
 
 ## How a member finds the object it belongs to
 
-The call operator needs the transport, which lives in the client, and a member object does not know its owner. The code above recovers it. `member_of_type` walks `nonstatic_data_members_of` the owner and returns the member whose type is `method<Owner, M>`. `offset_of` of that member is a constant expression, and the owner is `this` minus that offset. It is a `reinterpret_cast` from a member subobject to the enclosing object, with no pointer stored in the member. `Owner` is `^^type`, passed as a template argument while the class is still incomplete, which is why the lookup is deferred into the call operator.
+The call operator needs the transport, which lives in the client, and a member object does not know its owner. The code above recovers it in these steps:
 
-The lookup is by type, so every member of a class needs a type of its own. Here the type carries `^^Api::add`, so it is unique. Two members of one type cannot be told apart from `this`. A probe on GCC 16.2.0, not part of the demo, made that concrete with two empty members of one type: they were at offsets 0 and 1, and a lookup by type returned 0 for both. The same shape with two different types, `cell<0>` and `cell<1>`, found the right one.
+- The `member_of_type` helper walks the owner's non-static data members and returns the one whose type is `method<Owner, M>`.
+- The `offset_of` function gives that member's offset, which is a constant expression.
+- The owner is `this` minus that offset. This is a `reinterpret_cast` from a member subobject to the enclosing object, and no pointer is stored in the member.
+- The `Owner` parameter is `^^type`, passed as a template argument while the class is still incomplete. That is why the lookup is deferred into the call operator.
 
-Because the members are empty, they can share an address. With `[[no_unique_address]]`, `client<Api>` is 32 bytes, the size of its `std::function` transport, and all four members sit at offset 0. Without the attribute it is 40 bytes with the methods at 32, 33 and 34. [`member_offsets_single_file.cpp`](https://github.com/wrocpp/cpp26-reflection-examples/blob/6964dd0/posts/84-callable-members/examples/member_offsets_single_file.cpp) generates the client both ways and calls through each:
+The lookup is by type, so every member of a class needs a type of its own. Here the type carries `^^Api::add`, so it is unique. Two members of one type cannot be told apart from `this`. A probe on GCC 16.2.0, not part of the demo, made that concrete. Two empty members of one type were at offsets 0 and 1, and a lookup by type returned 0 for both. The same shape with two different types, `cell<0>` and `cell<1>`, found the right one.
+
+### Sharing an address
+
+Because the members are empty, they can share an address. With the attribute `[[no_unique_address]]`, the client is 32 bytes, the size of its `std::function` transport, and all four members sit at offset 0. Without the attribute it is 40 bytes, with the methods at 32, 33 and 34. The demo [`member_offsets_single_file.cpp`](https://github.com/wrocpp/cpp26-reflection-examples/blob/6964dd0/posts/84-callable-members/examples/member_offsets_single_file.cpp) generates the client both ways and calls through each:
 
 <GodboltEmbed id="zv69ea14K" gccOnly gccLabel="GCC 16.2" title="Where the callable members sit, with and without no_unique_address" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -Wall -Wextra · runs live" />
 
@@ -92,11 +107,17 @@ with [[no_unique_address]]   : sizeof=32  rpc_transport@0  add@0  greet@0  ping@
 without [[no_unique_address]]: sizeof=40  rpc_transport@0  add@32  greet@33  ping@34  add=5 pings=1
 ```
 
-The same recovery works at both layouts, because the arithmetic goes through `offset_of` and does not assume offset 0. The same attribute is what made signals unusable in Qt's `connect`, a trap described in <PostLink slug="qt-signals-as-data-members">the post on signals as data members</PostLink>. There the members must have distinct addresses, because Qt compares the raw pointer-to-member bytes. Nothing here compares them.
+The same recovery works at both layouts, because the arithmetic goes through the `offset_of` function and does not assume offset 0. The same attribute made signals unusable in Qt's `connect`, a trap described in <PostLink slug="qt-signals-as-data-members">the post on signals as data members</PostLink>. There the members must have distinct addresses, because Qt compares the raw pointer-to-member bytes. Nothing here compares them.
 
 ## A mock for code that is generic over its clock
 
-The second use needs no owner. Each member of `Mock<IClock>` holds its own state: a programmed return value, a call counter and the recorded arguments. `IClock` is only read for names and signatures:
+The second use needs no owner. Each member of `Mock<IClock>` holds its own state:
+
+- a programmed return value
+- a call counter
+- the recorded arguments
+
+The `IClock` interface is only read for names and signatures:
 
 ```cpp
 template <info M, class R, class... A> struct method<M, R(A...)> {
@@ -132,7 +153,7 @@ m.label.returns(std::string("MOCK"));
 Sut<mock::Mock<IClock>> s2{m};
 ```
 
-[`mock_single_file.cpp`](https://github.com/wrocpp/cpp26-reflection-examples/blob/6964dd0/posts/84-callable-members/examples/mock_single_file.cpp) runs both, checks the call counts with `verify_called` and checks the recorded argument tuples (`sleep_for` got `10`, `label` got `true` as its second argument):
+The demo [`mock_single_file.cpp`](https://github.com/wrocpp/cpp26-reflection-examples/blob/6964dd0/posts/84-callable-members/examples/mock_single_file.cpp) runs both. It checks the call counts with `verify_called`. It also checks the recorded argument tuples: `sleep_for` got 10, and `label` got true as its second argument:
 
 <GodboltEmbed id="jTeq8erGx" gccOnly gccLabel="GCC 16.2" title="Mock<IClock> next to a real clock in the same generic Sut" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -Wall -Wextra · runs live" />
 
@@ -155,20 +176,20 @@ Each row is one misuse, compiled with the macro named in the demo's source (for 
 | `c.now(5)` | `no match for call to '(mock::method<^^IClock::now()>) (int)'` |
 | `c.sleep_for("soon")` | `no match for call to '(mock::method<^^IClock::sleep_for(int)>) (const char [5])'` |
 
-Because the member's type is named through its reflection, the first line carries the method, its expected signature and the arguments that were given. The cost is the synthesized owner name. `rpc::client<Api>` appears only as `{aka ...}`, and the type you see is `rpc::detail::client_gen<Api>::type`.
+Because the member's type is named through its reflection, the first line carries the method, its expected signature and the arguments that were given. The cost is the synthesized owner name. The alias `rpc::client<Api>` appears only inside `{aka ...}`. The type you see is `rpc::detail::client_gen<Api>::type`.
 
 ## What does not work
 
-- **Overloaded methods.** A class cannot have two data members with one name. For an `Api` with `add(int, int)` and `add(int, int, int)`, GCC 16.2 stops with `name 'add' used in multiple data member descriptions`. A renaming scheme would be needed, and I did not try one.
+- **Overloaded methods.** A class cannot have two data members with one name. Give `Api` two overloads of `add`, one with two parameters and one with three. GCC 16.2 stops with `name 'add' used in multiple data member descriptions`. A renaming scheme would be needed, and I did not try one.
 - **A virtual reference slot.** `int use_interface(IClock& c)` called with the mock fails with `invalid initialization of reference of type 'IClock&' from expression of type 'mock::Mock<IClock>'`.
-- **`const` and `noexcept` methods.** The `method` specialization matches `R(A...)` only. In a probe on GCC 16.2.0, `int get() const;` and `int get() noexcept;` in the interface both end in `'define_aggregate' argument data member description without complete type`, and the message names neither method nor cause.
+- **`const` and `noexcept` methods.** The `method` specialization matches `R(A...)` only. In a probe on GCC 16.2.0, the declarations `int get() const;` and `int get() noexcept;` in the interface both ended in the same error. The error is `'define_aggregate' argument data member description without complete type`, and it names neither method nor cause.
 - **Two members of one type.** The owner lookup is by type, as above.
 
 The first two are properties of the technique. The third is a gap in my demo that more specializations would close, and I have not written them.
 
 ## Compile time and memory
 
-The spike measured compile cost with `-c -O0`, three runs each, on one Apple machine with Homebrew GCC 16.2.0, and the spread between runs was large (one 2.11 s outlier among three runs at 100 methods). I did not repeat these for this post, so read them as orders of magnitude. The "server" is the reflection-driven dispatch in the demo.
+The spike measured compile cost with `-c -O0`, three runs each, on one Apple machine with Homebrew GCC 16.2.0. The spread between runs was large, with one 2.11 s outlier among three runs at 100 methods. I did not repeat these for this post, so read them as orders of magnitude. The "server" is the reflection-driven dispatch in the demo.
 
 | translation unit | real seconds | peak RSS |
 |---|---|---|
@@ -178,19 +199,27 @@ The spike measured compile cost with `-c -O0`, three runs each, on one Apple mac
 | client and server, 20 methods | 1.91 to 2.92 | 148 MB |
 | client and server, 100 methods | 5.59 to 6.17 | 266 to 280 MB |
 
-The client costs little. The server's `template for` instantiates a decode path for every method, and that is where the time goes. With a precompiled header for `<meta>` and the standard headers the same rows were lower (client and server at 100 methods: 4.65 to 5.81 s), and the client alone at 100 methods took 0.59 to 0.79 s.
+The client costs little. The server's `template for` instantiates a decode path for every method, and that is where the time goes. With a precompiled header for `<meta>` and the standard headers the same rows were lower. At 100 methods, client and server took 4.65 to 5.81 s, and the client alone took 0.59 to 0.79 s.
 
-A two-translation-unit build of the same `client<Api>` with `-O2 -flto -Wodr -Wlto-type-mismatch -Werror` linked and ran with no warning, which is the usual worry for a type that exists only because a `consteval` block defined it.
+A two-translation-unit build of the same client linked and ran with no warning under `-O2 -flto -Wodr -Wlto-type-mismatch -Werror`. Linking is the usual worry for a type that exists only because a `consteval` block defined it.
 
 ## What this has not been tested on
 
-- GCC 16.2 only: the Homebrew build on aarch64 macOS (the spike and its timings), the `gcc:16.2` Docker image on aarch64 Linux, and Compiler Explorer's g162 on x86-64 (the three demos here, which I re-ran for this post). Not clang-p2996, which I did not try for this primitive, and not GCC trunk or another 16.x.
-- Argument and return types are `int`, `std::string` and `std::string_view`, in a toy text format. Nothing with ownership, nesting or a variable layout went through the wire.
-- No `const`, `noexcept` or ref-qualified methods (shown above), no `Api` that inherits from another, and no overloads.
+- GCC 16.2 only, on three setups:
+  - the Homebrew build on aarch64 macOS (the spike and its timings)
+  - the `gcc:16.2` Docker image on aarch64 Linux
+  - Compiler Explorer's g162 on x86-64 (the three demos here, which I re-ran for this post)
+- Not clang-p2996, which I did not try for this primitive, and not GCC trunk or another 16.x.
+- Argument and return types are `int` and two string types. The string types are `std::string` and `std::string_view`, in a toy text format. Nothing with ownership, nesting or a variable layout went through the wire.
+- No const, `noexcept` or ref-qualified methods (shown above). No `Api` that inherits from another, and no overloads.
 - No optimized (`-O2`) compile times, and no measurement of the alternative of storing an owner pointer in each member, which this design avoids.
 - The mock is a recorder with one programmed return value per method. It has no matchers, no sequences and no per-call returns, and it replaces nothing that needs an `IClock&`.
-- The owner recovery is a `reinterpret_cast` from a member to its enclosing object. It is right for the layouts above, and I have not checked it against a class with a base or a virtual member, because the generated aggregate has neither.
+- The owner recovery is a `reinterpret_cast` from a member to its enclosing object. It is right for the layouts above. I have not checked it against a class with a base or a virtual member, because the generated aggregate has neither.
 
 ---
 
-**Sources** (checked 6 October 2026): the three demos in [`posts/84-callable-members/examples`](https://github.com/wrocpp/cpp26-reflection-examples/tree/6964dd0/posts/84-callable-members/examples) at commit `6964dd0`, compiled with `-std=c++26 -freflection -Wall -Wextra -Werror` on `gcc:16.2` (Docker, aarch64) and run on Compiler Explorer g162; the error texts, the same-type probe and the `const` and `noexcept` probe, compiled on that image; the sizes, offsets and compile-time table from the callable-members spike results of 5 October 2026 on Homebrew GCC 16.2.0 (aarch64 macOS), of which the sizes and offsets were reproduced on Docker and Compiler Explorer.
+**Sources** (checked 6 October 2026):
+
+- The three demos in [`posts/84-callable-members/examples`](https://github.com/wrocpp/cpp26-reflection-examples/tree/6964dd0/posts/84-callable-members/examples) at commit `6964dd0`. They were compiled with `-std=c++26 -freflection -Wall -Wextra -Werror` on `gcc:16.2` (Docker, aarch64) and run on Compiler Explorer g162.
+- The error texts, the same-type probe and the `const` and `noexcept` probe, compiled on that image.
+- The sizes, offsets and compile-time table, from the callable-members spike results of 5 October 2026 on Homebrew GCC 16.2.0 (aarch64 macOS). The sizes and offsets were reproduced on Docker and Compiler Explorer.
