@@ -14,9 +14,9 @@ relatedPosts: [function-wrapper-explosion, flat-map]
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
-`std::priority_queue` is a heap, and a heap is only a heap while its ordering invariant holds. If you could mutate the top element in place you could change the very key the heap is organised by, so `top()` returns a **`const_reference`**. That is a sound design decision.
+`std::priority_queue` is a heap, and a heap is only a heap while its ordering invariant holds. If you could mutate the top element in place, you could change the very key the heap is organised by. So the accessor `top()` returns a **`const_reference`**. That is a sound design decision.
 
-It also means you cannot get a move-only element back out. `Task t = pq.top();` selects the copy constructor, and if `Task` holds a `unique_ptr` there is no copy constructor to select, so the line does not compile. There is no `extract()` on `priority_queue` the way there is on the associative containers, and no move-aware `pop()` that hands you the element.
+It also means you cannot get a move-only element back out. The line `Task t = pq.top();` selects the copy constructor. If `Task` holds a `unique_ptr`, there is no copy constructor to select, so the line does not compile. There is no `extract()` on a priority queue the way there is on the associative containers. There is also no move-aware `pop()` that hands you the element.
 
 The accepted workaround is to cast the const away:
 
@@ -32,7 +32,7 @@ The queue holds `Task`s carrying a `unique_ptr<std::string>`, and each one is mo
 
 ## Why this particular const_cast is defensible
 
-Casting away const is usually where bugs come from, so it is worth being precise about why this instance is not one. `const_cast` is undefined behavior only when you **modify an object that was originally declared const**. The elements inside the queue's underlying `vector` are not const objects; they are ordinary objects that `top()` merely hands you a const view of. Removing that view's constness is legal.
+Casting away const is usually where bugs come from, so it is worth being precise about why this instance is not one. The `const_cast` operator is undefined behavior only when you **modify an object that was originally declared const**. The elements inside the queue's underlying `vector` are not const objects. They are ordinary objects, and `top()` merely hands you a const view of one. Removing the constness of that view is legal.
 
 What makes it *safe* rather than merely legal is the line that follows:
 
@@ -41,9 +41,15 @@ Task t = std::move(const_cast<Task&>(pq.top()));  // cast, then
 pq.pop();                                          // pop immediately
 ```
 
-After the move, the top element is in a valid but unspecified state, which would be a genuine problem if the heap ever compared it again. `pop()` destroys it before that can happen. The two lines are effectively one operation, and **anything inserted between them is a bug**: an early `return`, a `continue`, or a throw between the move and the pop leaves a moved-from element sitting at the root of the heap.
+After the move, the top element is in a valid but unspecified state. That would be a genuine problem if the heap ever compared it again. The call to `pop()` destroys the element before that can happen. The two lines are effectively one operation, and **anything inserted between them is a bug**. An early `return`, a `continue`, or a throw between the move and the pop leaves a moved-from element sitting at the root of the heap.
 
-If that makes you uncomfortable, the alternative is to stop using `priority_queue` and keep a `std::vector` with `std::make_heap`, `push_heap` and `pop_heap`. It is the same algorithm with the guardrails removed: `pop_heap` moves the top to the back and you take it from there with no cast at all. `priority_queue` is a convenience wrapper, and this is one of the places where the wrapper costs more than it saves.
+If that makes you uncomfortable, stop using `priority_queue` and keep a `std::vector` with the standard heap algorithms:
+
+- `std::make_heap`
+- `push_heap`
+- `pop_heap`
+
+It is the same algorithm with the guardrails removed. The function `pop_heap` moves the top to the back, and you take it from there with no cast at all. A `priority_queue` is a convenience wrapper, and this is one of the places where the wrapper costs more than it saves.
 
 ---
 
