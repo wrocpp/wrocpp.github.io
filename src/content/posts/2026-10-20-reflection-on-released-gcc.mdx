@@ -14,7 +14,7 @@ relatedPosts: [reflect-special-members, gcc-16-2-toolchain-status]
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
-If you have read about C++26 reflection, you have probably read that trying it means fetching the Bloomberg clang fork. That was true for a long time and it is not true now. GCC 16.1, released at the end of April, implements enough of P2996 to run real code, behind one flag.
+You have probably read that trying C++26 reflection means fetching the Bloomberg clang fork. That was true for a long time. It is not true now. GCC 16.1, released at the end of April, implements enough of P2996 to run real code behind one flag.
 
 Daniel Lemire posted a small program that prints values alongside their types. It is a good test case because it uses three C++26 features at once:
 
@@ -37,11 +37,17 @@ int main() {
 }
 ```
 
-An expansion statement over a heterogeneous pack, the `^^` reflection operator, and range formatting for the vector. Compile it with `g++ -std=c++26 -freflection` and it runs.
+Those three features are:
+
+- an expansion statement over a heterogeneous pack
+- the reflection operator `^^`
+- range formatting for the vector
+
+Compile it with `g++ -std=c++26 -freflection` and it runs.
 
 <GodboltEmbed id="ffPeocK34" gccOnly title="Reflection, expansion statements and print, on released GCC" gcc_subtitle="x86-64 GCC 16.1 · -std=c++26 -freflection · runs live" />
 
-Note the header is `<meta>`, the standard spelling, not `<experimental/meta>`. GCC only accepts the former, the fork accepts both, so `<meta>` is what to write.
+The header is `<meta>`, the standard spelling, not `<experimental/meta>`. GCC accepts only the former and the fork accepts both. Write `<meta>`.
 
 ## The two implementations do not agree
 
@@ -58,11 +64,11 @@ Same source, same output structure, different strings:
 
 GCC qualifies the name and elides the defaulted allocator. The fork does neither, and spaces the pointer differently. Both are defensible renderings of the same type.
 
-The practical consequence: **do not parse what `display_string_of` returns.** It is for humans reading diagnostics and log lines. If you need something stable, `identifier_of` gives you the declared name, and comparing reflections beats comparing their printed forms.
+The practical consequence: **do not parse what `display_string_of` returns.** It is for humans reading diagnostics and log lines. If you need something stable, call `identifier_of` for the declared name. Comparing reflections also beats comparing their printed forms.
 
 ## What still needs the fork
 
-Not everything. Feeding GCC a range through a named `constexpr` local rather than inline trips it:
+Not everything. GCC rejects a range that passes through a named `constexpr` local:
 
 ```cpp
 constexpr auto members = std::define_static_array(
@@ -72,14 +78,23 @@ template for (constexpr auto m : members) { ... }   // GCC: 'members' is not a c
 
 Write the same expression inline in the `template for` and GCC takes it. That one has [its own post](/posts/gcc-expansion-named-range/), because the reduced case is short and the workaround is a one-line edit.
 
-Beyond that, the demos in this series that were written against the fork run unchanged on GCC once the header is fixed: [Hinnant's table verified by reflection](/posts/reflect-special-members/), [a config file parsed at compile time](/posts/embed-reflect-config/), and [filling a struct from regex captures](/posts/ctre-reflection/).
+Beyond that, the demos in this series that were written against the fork run unchanged on GCC once the header is fixed. Three examples:
+
+- [Hinnant's table verified by reflection](/posts/reflect-special-members/)
+- [a config file parsed at compile time](/posts/embed-reflect-config/)
+- [filling a struct from regex captures](/posts/ctre-reflection/)
 
 ## Why this matters more than it sounds
 
-Reflection has had a reputation problem. "It is in C++26" and "you need a research fork to try it" are different statements, and the second one is what stops people looking. A feature you can reach with a flag on the compiler your distribution ships is a feature people will actually experiment with.
+Reflection has had a reputation problem. "It is in C++26" and "you need a research fork to try it" are different statements. The second one stops people looking. A feature you can reach with a flag on the compiler your distribution ships is a feature people will actually experiment with.
 
-GCC 16.2 arrived in August and Fedora 45 has an accepted change to make it the system toolchain. That puts a working reflection implementation on ordinary machines, which is the point at which a language feature stops being a conference topic.
+GCC 16.2 arrived in August and Fedora 45 has an accepted change to make it the system toolchain. That puts a working reflection implementation on ordinary machines. A language feature stops being a conference topic at that point.
 
 ---
 
-**Sources**: Daniel Lemire's `print_all` snippet, which prompted this · [P2996 "Reflection for C++26"](https://wg21.link/p2996) · [GCC 16 release notes](https://gcc.gnu.org/gcc-16/changes.html) · behaviour verified on Compiler Explorer with GCC 16.1 and clang-p2996.
+**Sources**:
+
+- Daniel Lemire's `print_all` snippet, which prompted this
+- [P2996 "Reflection for C++26"](https://wg21.link/p2996)
+- [GCC 16 release notes](https://gcc.gnu.org/gcc-16/changes.html)
+- behaviour verified on Compiler Explorer with GCC 16.1 and clang-p2996
