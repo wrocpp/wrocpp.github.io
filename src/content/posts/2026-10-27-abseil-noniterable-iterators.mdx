@@ -14,6 +14,13 @@ relatedPosts: [cpp14-shims-deleted, hardened-stdlib-turn-it-on]
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
+## In short
+
+- Abseil LTS 20260817.0 makes the iterators returned from hash table insert and emplace non-iterable.
+- Nothing changes at compile time. A loop that walked from such an iterator now visits no elements.
+- The iterator points at a static two-byte array: one full byte, then a sentinel.
+- Search for increments and `std::next` on insert results before you upgrade.
+
 Abseil's LTS 20260817.0 landed on 18 August with a short breaking-changes list. One entry:
 
 > Hashtable iterators returned from `insert`/`emplace` are now non-iterable (any prior use of iteration was likely a bug).
@@ -22,7 +29,7 @@ That parenthesis is doing a lot of work.
 
 ## What insert hands you
 
-`insert` and `emplace` on a hash map return `pair<iterator, bool>`. The bool tells you whether anything was added; the iterator points at the element, which is how you get at it without a second lookup:
+The insert and emplace member functions of a hash map return `pair<iterator, bool>`. The bool tells you whether anything was added. The iterator points at the element, so you reach it without a second lookup:
 
 ```cpp
 auto [it, inserted] = m.emplace(99, "value-99");
@@ -37,7 +44,7 @@ The problem is that the thing you were handed was an ordinary table iterator, an
 for (auto walk = it; walk != m.end(); ++walk) { /* ... */ }
 ```
 
-and it does something. What it does is walk from wherever the key happened to hash to, through whatever the table's internal layout puts after it, to the end of the storage. The order is unspecified. The starting point is a hash artefact. Insert one more element, trigger a rehash, and the set of elements that walk visits changes completely. It has the shape of a sensible range and none of the properties of one.
+and it does something. It walks from wherever the key happened to hash, through whatever the table's internal layout puts after it, to the end of the storage. The order is unspecified. The starting point is a hash artefact. Insert one more element, trigger a rehash, and the set of elements that walk visits changes completely. It has the shape of a sensible range and none of the properties of one.
 
 You can watch the old behaviour, because Compiler Explorer's Abseil predates the change:
 
@@ -56,7 +63,7 @@ The fix is smaller than you would guess. Abseil did not introduce a new iterator
 ABSL_DLL extern const ctrl_t kInsertIteratorControl[2];
 ```
 
-A Swiss table iterator carries a pointer into the control bytes that describe which slots are occupied. Normally that points into the table. For an iterator returned by `insert`, it points at that two-byte constant instead: one byte saying "there is an element here", then a sentinel, which is the same marker that terminates a normal traversal.
+A Swiss table iterator carries a pointer into the control bytes that describe which slots are occupied. Normally that points into the table. An iterator returned by insertion points at that two-byte constant instead. The first byte says "there is an element here". The second is a sentinel, the same marker that terminates a normal traversal.
 
 So dereferencing finds the element. Incrementing steps onto the sentinel, which is what `end()` compares as. The header says so directly:
 
@@ -73,13 +80,19 @@ Consider what a caller sees. The return type is the same. The signature is the s
 
 It just stops doing anything. The loop body runs zero times where it used to run some unpredictable number of times.
 
-Abseil's position is defensible, and the release note states it: this was almost certainly a bug wherever it appeared, so the new behaviour turns unpredictable results into no results. If your loop was accumulating something, you now get an empty accumulation instead of an arbitrary one.
+Abseil's position is defensible, and the release note states it. This was almost certainly a bug wherever it appeared. The new behaviour turns unpredictable results into no results. If your loop was accumulating something, you now get an empty accumulation instead of an arbitrary one.
 
 Both are wrong. Only one of them is quiet in a way that survives your tests, and which one that is depends on what the tests assert. A test checking "we processed at least one thing" fails loudly. A test checking a total that was always arbitrary now passes with zero.
 
-This is worth contrasting with the deprecations covered [when Boost and Abseil started deleting their C++14 shims](/posts/cpp14-shims-deleted). `absl::void_t` going away produces a deprecation warning: the compiler tells you, you fix it, you move on. This change produces nothing. It is the same project, in the same release, choosing a silent behavioural change for one thing and a noisy compile-time one for the other, because in the first case there was a type to attach a warning to and in the second there was not.
+## A noisy change in the same release
 
-The search that catches this is short: `++` or `std::next` applied to whatever `insert` or `emplace` handed back. In most codebases it turns up nothing at all, which is exactly why it is worth running before the upgrade rather than after.
+The deprecations covered [when Boost and Abseil started deleting their C++14 shims](/posts/cpp14-shims-deleted) make a useful contrast. The removal of `absl::void_t` produces a deprecation warning. The compiler tells you, you fix it, you move on. This change produces nothing.
+
+It is the same project, in the same release, with a noisy compile-time change for one thing and a silent behavioural change for the other. The removed alias was a type that could carry a warning. The iterator change had no type to attach one to.
+
+## Finding it before the upgrade
+
+The search that catches this is short. Look for an increment or a call to `std::next` on anything that an insert or emplace handed back. In most codebases it turns up nothing at all, which is exactly why it is worth running before the upgrade rather than after.
 
 ---
 
