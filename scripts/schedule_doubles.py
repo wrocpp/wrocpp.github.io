@@ -69,6 +69,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # post of the day.
     "2026-10-12": {"slug": "qt-object-that-never-names-its-class", "hour": 16,
                    "why": "reflect-moc series episode 3 alongside the evergreen post"},
+    # A reactive GCC trunk short on a coroutine promise with both return_value
+    # and return_void (P3950R1), beside the evergreen optional-ref post.
+    "2026-10-14": {"slug": "coroutine-return-void-and-value", "hour": 16,
+                   "why": "GCC trunk coroutine news short alongside the evergreen post"},
     # Fourth episode of the reflect-moc series (signals, slots and thread affinity
     # in the Qt-free core, with the ThreadSanitizer results). It runs beside the
     # evergreen post of the day.

@@ -1,0 +1,93 @@
+---
+title: "GCC trunk accepts a coroutine promise with return_value and return_void"
+slug: "coroutine-return-void-and-value"
+pubDate: 2026-10-14
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, cpp29, gcc, coroutines]
+summary: "GCC 16.2 rejects a coroutine promise type that declares both return_value and return_void. GCC trunk accepted it from 3 October 2026, implementing P3950R1 as a defect report, and now reports __cpp_impl_coroutine as 202606L. The same program on Compiler Explorer shows both results."
+draft: false
+relatedPosts: [cpp29-mode-is-open, gcc-16-2-toolchain-status]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+A coroutine can now use `co_return;` and `co_return 42;` in the same body on GCC trunk. GCC 16.2 stops at a hard error for the same promise type. I ran one program on both on Compiler Explorer on 10 October 2026.
+
+## The program
+
+The promise declares both members. The coroutine returns early with no value or finishes with a value.
+
+```cpp
+struct promise_type {
+    int value = -1;
+    void return_value(int v) { value = v; }
+    void return_void()       { value = 0; }
+    // get_return_object, initial_suspend, ... as usual
+};
+
+Task compute(bool early) {
+    if (early) co_return;
+    co_return 42;
+}
+```
+
+The full file also prints the feature-test macro and both results. It needs only `-std=c++20`.
+
+## What each compiler does
+
+| compiler | `-std=c++20` and `-std=c++26` |
+| --- | --- |
+| GCC 16.2 | error |
+| GCC trunk, 17.0.0 20261010 | compiles |
+
+GCC 16.2 prints this error, once for `compute`, with notes pointing at both member functions:
+
+```text
+error: the coroutine promise type 'std::__n4861::__coroutine_traits_impl<Task, void>::promise_type'
+{aka 'Task::promise_type'} declares both 'return_value' and 'return_void'
+```
+
+On trunk I ran the `-std=c++20` build. It exits 0 and prints three lines.
+
+```text
+__cpp_impl_coroutine = 202606L
+co_return;    -> 0
+co_return 42; -> 42
+```
+
+The trunk build reports `gcc version 17.0.0 20261010 (experimental) (Compiler-Explorer-Build-gcc-a02e2004cb707155d5b9b0a82dd428ded0ee2f6f-binutils-2.44)`. That build is 188 commits after commit 4bf11aca, the change described below.
+
+<GodboltEmbed id="bEbdqzn1q" compilerLabel="GCC trunk" gcc_id="41WYr7ada" gccLabel="GCC 16.2" title="One promise, two return members" gcc_subtitle="-std=c++20 · fails to compile · exact error shown" subtitle="-std=c++20 · runs live" />
+
+## The commit and the paper
+
+Jakub Jelinek committed the change on 2026-10-03, titled "Implement C++29 P3950R1 - return_value & return_void Are Not Mutually Exclusive paper as DR [PR125830]". Jason Merrill reviewed it. The commit removes the diagnostic and raises `__cpp_impl_coroutine` from 201902L to 202606L.
+
+P3950R1 is by Robert Leahy, dated 2026-06-11, with audience CWG. Its wording drops the rule that finding both names makes the program ill-formed. Flowing off the end now depends on whether overload resolution for `p.return_void()` succeeds. EWG polled 12/18/3/0/0 to forward the first revision to CWG for C++29 on 2026-03-25.
+
+The paper does not call itself a defect report. That label comes from the commit title.
+
+## A second GCC change on 7 October
+
+Jason Merrill's commit "P1811: relaxing redefinition restrictions [PR99000]" lets a translation unit redefine an imported global module entity. GCC skips the tokens of the repeated definition. The commit adds the `-fmodule-include-translate` option and says it wrongly accepts several redefinitions after an import. I did not run it.
+
+## What this has not been tested on
+
+- clang and MSVC.
+- GCC 16.3 and any trunk build other than 20261010.
+- Optimization levels: both builds used no `-O` flag.
+- Flowing off the end of a coroutine.
+
+The Bugzilla page for PR125830 returned a bot-protection page, so I did not read its status or milestone.
+
+---
+
+**Sources**, all read on 10 October 2026:
+
+- [gcc-mirror commit 4bf11aca](https://github.com/gcc-mirror/gcc/commit/4bf11aca586c9eef753b6f76d29ae19e1b505694) (message and diff, through the GitHub API)
+- [gcc-mirror commit 13920d00](https://github.com/gcc-mirror/gcc/commit/13920d004da35b536d6ef07b0a32c0d3acc4c889) (message)
+- [P3950R1](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3950r1.pdf) and the [2026 paper index](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/)
+- Compiler Explorer compile API, compilers `g162` and `gsnapshot`
