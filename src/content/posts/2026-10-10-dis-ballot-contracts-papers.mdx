@@ -14,15 +14,32 @@ relatedPosts: [cpp26-contracts, wg21-2026-08-mailing]
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
-The [August mailing post](/posts/wg21-2026-08-mailing/) ended with "Búzios decides". Three papers in the September mailing, listed on wg21.link under 19 September 2026 (P4381R0) and 22 September 2026 (the other two), concern the C++26 contracts feature. One of them, P4238R1, asks the national bodies how to vote in their ballot on the C++26 draft international standard (DIS); the other two are addressed to EWG. This post reports what they say and who says it. It takes no side on contracts. For how the feature works in GCC 16, see [the first contracts post](/posts/cpp26-contracts/).
+## In short
+
+- Three papers in the September 2026 WG21 mailing return to the C++26 contracts dispute: P4238R1, P4381R0 and P4272R0.
+- P4238R1 asks the national bodies to vote No on the C++26 DIS ballot, with technical comments. The other two are addressed to EWG and ask for no vote.
+- I could not confirm when the ISO ballot closes or how it went. The section on the ballot lists what I checked.
+- A short GCC 16.2 demo shows one `pre` assertion under three evaluation semantics.
+
+The [August mailing post](/posts/wg21-2026-08-mailing/) ended with "Búzios decides". Three papers in the September mailing concern the C++26 contracts feature. Wg21.link lists P4381R0 under 19 September 2026 and the other two under 22 September 2026. This post reports what they say and who says it. It takes no side on contracts. For how the feature works in GCC 16, see [the first contracts post](/posts/cpp26-contracts/).
 
 ## What each paper asks
 
-**P4238R1, "Returning C++26 for the Evaluation It Skipped"**, title page dated 1 September 2026. Authors: Vinnie Falco, Ville Voutilainen, José Daniel García Sánchez and John Spicer. It says it states the position of the C++ Alliance, whose president is Falco, and discloses that García Sánchez is Head of Delegation for Spain. It asks the national bodies to "vote No on the C++26 DIS ballot, with technical comments", which it says would cost one ballot cycle, and asks the convener to say that no one will be penalized for that vote. It requests no committee action. It also states that trivial relocation (P2786) was removed from C++26 after national body objections; I did not check that against the minutes.
+**P4238R1, "Returning C++26 for the Evaluation It Skipped"**, title page dated 1 September 2026. Authors: Vinnie Falco, Ville Voutilainen, José Daniel García Sánchez and John Spicer. It says it states the position of the C++ Alliance, whose president is Falco. It also discloses that García Sánchez is Head of Delegation for Spain.
+
+What the paper asks and states:
+
+- It asks the national bodies to "vote No on the C++26 DIS ballot, with technical comments". The DIS is the draft international standard.
+- It says a No vote would cost one ballot cycle.
+- It asks the convener to say that no one will be penalized for that vote.
+- It requests no committee action.
+- It states that trivial relocation (P2786) was removed from C++26 after national body objections; I did not check that against the minutes.
 
 **P4381R0, "Chairing SG21 and then objecting to Contracts"**, John Spicer, 19 September 2026, audience EWG. Spicer chaired SG21, the contracts study group. The paper is an account of how he did that and why he now objects. Its summary line is "I chaired SG21. I also object to C++26 contracts." It names no vote and asks for no action.
 
-**P4272R0, "Addressed but Unresolved"**, Vinnie Falco, title page dated 3 September 2026, audience EWG. It checks the eighteen responses in P3846R1, the paper by Timur Doumler, Joshua Berne and others that answers objections to contracts. Its abstract: "Sixteen of the eighteen objections to C++26 contract assertions were never settled." It says it does not ask whether the objections are correct, only whether they were settled, and it rates none of P3846R1's responses Unsupported (two Supported, six Substantially Supported, ten Mixed).
+**P4272R0, "Addressed but Unresolved"**, Vinnie Falco, title page dated 3 September 2026, audience EWG. It checks the eighteen responses in P3846R1, the paper by Timur Doumler, Joshua Berne and others that answers objections to contracts. Its abstract: "Sixteen of the eighteen objections to C++26 contract assertions were never settled."
+
+The paper says it does not ask whether the objections are correct. It asks only whether they were settled. It rates none of the responses in P3846R1 Unsupported: two Supported, six Substantially Supported, ten Mixed.
 
 ## What I could not confirm about the ballot
 
@@ -32,13 +49,16 @@ As of 5 October 2026 I do not know when the DIS ballot closes or how it went. Wh
 - A blog post by Derek Jones, dated 9 August 2026, says the ballot closes on 27 September. I found that date on no WG21 or ISO page I could open.
 - The only 23 October I found is the deadline for the pre-Búzios mailing, which has nothing to do with the ballot.
 - The ISO page for the draft returned 403 to me on both URLs I tried.
-- Herb Sutter's March trip report says the draft was being sent out for the ballot, with no dates, and his blog's front page listed no post about a result when I looked.
+- Herb Sutter's March trip report says the draft was being sent out for the ballot, with no dates.
+- His blog's front page listed no post about a result when I looked.
 
 If you know the dates or the result from a primary source, tell me and I will correct this post.
 
 ## One function under three semantics
 
-The evaluation semantic, which decides what a violated contract assertion does, comes up in two of the papers. P4272R0 follows an objection about who controls it across a module boundary, and P4381R0 mentions assertions that can be selected at build time and need not agree across translation units. P4238R1 does not use the phrase. The demo below shows only the build-time choice on GCC 16.2: the same source, with a `pre` and an ordinary `if` on the same condition, built three ways. The table shows what the call `per_item(100, 0)`, which violates the `pre`, does under each semantic.
+The evaluation semantic decides what a violated contract assertion does. It comes up in two of the papers. P4272R0 follows an objection about who controls it across a module boundary. P4381R0 mentions assertions that can be selected at build time and need not agree across translation units. P4238R1 does not use the phrase.
+
+The demo below shows only the build-time choice on GCC 16.2. It is the same source, with a `pre` and an ordinary `if` on the same condition, built three ways. The table shows what the call `per_item(100, 0)`, which violates the `pre`, does under each semantic.
 
 <GodboltEmbed id="EreEWq4MW" gccOnly title="One pre, one if, three evaluation semantics" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -fcontracts · observe · runs live" />
 
@@ -50,4 +70,16 @@ The evaluation semantic, which decides what a violated contract assertion does, 
 
 ---
 
-**Sources**, all read on 5 October 2026: [P4238R1](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4238r1.pdf) (full text), [P4381R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4381r0.html) (full text), [P4272R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4272r0.pdf) (title page, abstract and extracts), [wg21.link index](https://wg21.link/index.txt) (mailing dates), [WG21 news](https://www.open-std.org/jtc1/sc22/wg21/) (the 23 October mailing deadline), [N5056](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/n5056.pdf) (text extracted and searched for "ballot"), [Derek Jones, 9 August 2026](https://shape-of-code.com/2026/08/09/2026-in-the-programming-language-standards-world/) (secondary source), [Herb Sutter, 29 March 2026](https://herbsutter.com/2026/03/29/c26-is-done-trip-report-march-2026-iso-c-standards-meeting-london-croydon-uk/). Not read: [iso.org/standard/91179.html](https://www.iso.org/standard/91179.html) (403). The demo and the table were run on GCC 16.2 through Compiler Explorer on 5 October 2026.
+All sources were read on 5 October 2026.
+
+- [P4238R1](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4238r1.pdf): full text.
+- [P4381R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4381r0.html): full text.
+- [P4272R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4272r0.pdf): title page, abstract and extracts.
+- [wg21.link index](https://wg21.link/index.txt): mailing dates.
+- [WG21 news](https://www.open-std.org/jtc1/sc22/wg21/): the 23 October mailing deadline.
+- [N5056](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/n5056.pdf): text extracted and searched for "ballot".
+- [Derek Jones, 9 August 2026](https://shape-of-code.com/2026/08/09/2026-in-the-programming-language-standards-world/): secondary source.
+- [Herb Sutter, 29 March 2026](https://herbsutter.com/2026/03/29/c26-is-done-trip-report-march-2026-iso-c-standards-meeting-london-croydon-uk/): trip report.
+- Not read: [iso.org/standard/91179.html](https://www.iso.org/standard/91179.html) (403).
+
+The demo and the table were run on GCC 16.2 through Compiler Explorer on 5 October 2026.
