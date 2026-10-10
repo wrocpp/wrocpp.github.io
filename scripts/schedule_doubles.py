@@ -82,6 +82,11 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # beside the evergreen memory-safety post.
     "2026-10-16": {"slug": "span-initializer-list-removed", "hour": 16,
                    "why": "C++26 stdlib news short alongside the evergreen post"},
+    # libstdc++ on GCC trunk now rejects a dangling std::pair or std::tuple in
+    # every language mode, and two libstdc++ security fixes landed in the same
+    # weeks. The short runs beside the evergreen post of the day.
+    "2026-10-17": {"slug": "libstdcxx-dangling-pair-tuple", "hour": 16,
+                   "why": "libstdc++ trunk and security-fix news alongside the evergreen post"},
     # The pre-Buzios mailing closes on 23 October, so the calendar short
     # runs beside the evergreen post (reflection-on-released-gcc) on the
     # 20th while a paper author can still act on the date.
