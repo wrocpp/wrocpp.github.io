@@ -1,0 +1,55 @@
+---
+title: "Read what the EU CRA reporting rules say, now that they apply"
+slug: "cra-reporting-live-qt-declaration"
+pubDate: 2026-10-23
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, security, regulation, qt]
+summary: "Reporting of actively exploited vulnerabilities and severe incidents under the EU Cyber Resilience Act has applied since 11 September 2026. This post quotes the 24 hour, 72 hour and final report deadlines from Article 14, says what the text says about open-source software stewards, and reads the Declaration of Conformity that Qt ships with commercial Qt 6.12 LTS. It is not legal advice."
+draft: false
+relatedPosts: [cpp-safety-state-of-the-union-may-2026]
+---
+
+Article 14 of Regulation (EU) 2024/2847, the Cyber Resilience Act, has applied since 11 September 2026. It sets a 24 hour clock for manufacturers that learn of an actively exploited vulnerability in a product with digital elements. This post reports what the sources say and gives no legal advice.
+
+C++ is not singled out. A C++ product made available in the EU is covered the same way as a product in any other language.
+
+## What Article 14 sets
+
+The European Commission's [CRA reporting page](https://digital-strategy.ec.europa.eu/en/policies/cra-reporting) says manufacturers report two things: actively exploited vulnerabilities and severe incidents. Each report goes through one platform, which ENISA built under Article 16.
+
+Article 71(2) gives the dates. The Regulation applies from 11 December 2027, and Article 14 applies from 11 September 2026.
+
+| Step | Actively exploited vulnerability | Severe incident |
+| --- | --- | --- |
+| Early warning | within 24 hours of becoming aware | within 24 hours of becoming aware |
+| Notification | within 72 hours | within 72 hours |
+| Final report | 14 days after a corrective or mitigating measure is available | one month after the notification |
+
+Article 14(1) and 14(3) name the recipients: the CSIRT designated as coordinator, and ENISA. Article 3 defines a manufacturer as a person who develops a product, or has it developed, and markets it under their own name. Payment is not required.
+
+## Open-source software stewards
+
+Article 3 defines a steward as a legal person, other than a manufacturer, that systematically supports specific open-source products intended for commercial activities. Article 24(3) applies the Article 14(1) duty to stewards to the extent that they are involved in development of those products.
+
+The Commission page gives 11 December 2027 as the start for stewards. The text of Article 71(2) that I read names no separate steward date. I did not resolve that difference.
+
+## What Qt ships
+
+The [Qt 6.12 announcement](https://www.qt.io/blog/qt-6.12-released) of 30 September 2026 says the commercial Qt 6.12 LTS is compliant with the CRA. Qt 6.12 comes with a Declaration of Conformity.
+
+Qt states the limit itself: the declaration "doesn't make your product automatically CRA-compliant". Its own wording is that every team still has to do its own CRA work, and that the declaration covers Qt's part of a product.
+
+## What this has not been tested on
+
+I read the Commission page, the Regulation text and the Qt announcement on 10 October 2026. I did not read:
+
+- national transposition or market surveillance guidance
+- the ENISA platform documentation
+- the harmonised standards
+- the Qt blog post on Qt's first declared release, or the declaration itself
+- how any given product is classified
+
+Whether a product, a library or a steward falls under a duty is a question for the Regulation and for legal advice. Read the earlier [safety overview from May](/posts/cpp-safety-state-of-the-union-may-2026/) for the wider context.
