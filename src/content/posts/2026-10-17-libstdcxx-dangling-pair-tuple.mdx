@@ -1,0 +1,66 @@
+---
+title: "libstdc++ on GCC trunk rejects a pair that binds a temporary"
+slug: "libstdcxx-dangling-pair-tuple"
+pubDate: 2026-10-17
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, gcc, stdlib]
+summary: "On GCC trunk, building a std::pair or std::tuple whose reference member binds to a temporary is an error from C++11 to C++26. GCC 16.2 rejects it only from C++20 on. The same weeks brought a libstdc++ fix for CVE-2026-102010, now on the GCC 14, 15 and 16 branches, and a std::bitset fix that is on trunk only. Compiler Explorer runs show 16.2 and trunk side by side."
+draft: false
+relatedPosts: [span-initializer-list-removed, const-cast-priority-queue]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+On GCC trunk, a `std::pair` or `std::tuple` that binds a reference to a temporary no longer compiles in any language mode. GCC 16.2 rejects it from C++20 on and accepts it in C++17 and lower.
+
+```cpp
+std::pair<const std::string&, int> p("x", 1);   // "x" becomes a temporary string
+std::tuple<const std::string&, int> t("x", 2);  // the reference dangles at once
+```
+
+## What the libstdc++ commit changes
+
+The commit "Enable dangling checks in std::pair and std::tuple" is by Jonathan Wakely. It fixes PR108822 and reached master on 28 September 2026 at 23:16 UTC. Before it, the check was always on from C++20, but in C++17 and lower only under `_GLIBCXX_DEBUG`. The commit deletes that condition from `stl_pair.h` and `tuple`.
+
+The message gives the reason: "I'm not aware of problems caused by making it ill-formed". It advises programs that never run such code to remove it, or to use `std::declval` in unevaluated contexts.
+
+I compiled the lines above on Compiler Explorer on 10 October 2026. Trunk was `17.0.0 20261010`, built from a commit that contains the change.
+
+| mode | GCC 16.2 | GCC trunk |
+| --- | --- | --- |
+| C++11, 14, 17 | compiles, no warning | error: static assertion failed |
+| C++20, 23, 26 | error: use of deleted function | error: use of deleted function |
+
+Trunk prints `static assertion failed: std::pair constructor creates a dangling reference`, and the same for `std::tuple`. GCC 16.2 gives that error in C++17 only with `-D_GLIBCXX_DEBUG`.
+
+<GodboltEmbed id="xoq7hMT3o" compilerLabel="GCC 16.2, GCC trunk" gcc_subtitle="-std=c++17 · add -DSHOW_DANGLING for the rejected lines · runs live" title="A pair and a tuple that bind a temporary" />
+
+The first two lines of the demo bind to a named string, which trunk still accepts. The commit is on master only. The `releases/gcc-16` branch still has the debug-only condition.
+
+## Two security fixes in the same weeks
+
+CVE-2026-102010 is a use-after-free in the `erase_if` member of the pb_ds binary heap, tracked as PR127656. After reallocating, the code left its entries pointer dangling and leaked the new storage. The fix adds one line, `m_a_entries = new_entries;`. The CVE record, published by Red Hat on 28 September, gives CVSS 3.1 base score 7.0 and Red Hat severity Moderate.
+
+The fix is on the GCC 14, 15 and 16 release branches, committed 29 and 30 September. The bug comments say "Fixed for 14.5, 15.4, 16.3 and 17". The GCC 16 page lists no release after 16.2 of 7 August, so 16.2 still has the bug.
+
+PR124370 is stack corruption in `operator>>` for `std::bitset` on a wide stream. The `alloca` size did not account for the size of wide characters. The fix reached master on 2 October. The bug is still open, and the 14, 15 and 16 branches have no fix yet.
+
+<GodboltEmbed id="5nKdWeThz" compilerLabel="GCC 16.2, GCC trunk" gcc_subtitle="-std=c++20 -O1 -fsanitize=address · -DCASE_HEAP or -DCASE_BITSET · runs live" title="Both fixes under AddressSanitizer" />
+
+On 16.2, AddressSanitizer reports `heap-use-after-free` for the heap and `dynamic-stack-buffer-overflow` for the bitset. Trunk prints its result and exits 0.
+
+## What this has not been tested on
+
+Only GCC 16.2 and trunk of 10 October ran. I did not try clang with libc++, MSVC, GCC 16.3 or the branch snapshots. The AddressSanitizer runs used `-O1`. The bitset crash at `-O2` without a sanitizer is a segmentation fault on 16.2. I did not test other optimization levels.
+
+---
+
+**Sources**, all read on 10 October 2026:
+
+- [gcc-mirror commit 98847dc](https://github.com/gcc-mirror/gcc/commit/98847dc641b95a29fe470b90e4fec034daa4300b), [aaa8351](https://github.com/gcc-mirror/gcc/commit/aaa8351f4d2e636f9680a1f0a8ebc2f0a60611e6) and [5d419c6](https://github.com/gcc-mirror/gcc/commit/5d419c69ce2e6b86d7da75f18736904885674219) (messages and diffs)
+- GCC Bugzilla [108822](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=108822), [127656](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=127656) and [124370](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=124370) (comments, branch commits)
+- [CVE-2026-102010](https://www.cve.org/CVERecord?id=CVE-2026-102010) (CVE record and NVD entry)
+- [GCC 16 release series](https://gcc.gnu.org/gcc-16/) and the GCC 14, 15 and 16 release branches on GitHub
