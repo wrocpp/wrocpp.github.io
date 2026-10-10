@@ -102,6 +102,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # (gcc-expansion-named-range) on the 21st.
     "2026-10-21": {"slug": "replay-qt-bridges-meta-objects-against-moc", "hour": 16,
                    "why": "Qt Bridges meta-object analysis alongside the evergreen post"},
+    # A toolchain-news short on how Microsoft, the Rust Foundation and Swift 6.4
+    # describe working with C++, beside the evergreen post of the day.
+    "2026-10-22": {"slug": "rust-swift-cpp-interop-toolchains", "hour": 16,
+                   "why": "Rust and Swift interop news alongside the evergreen post"},
 }
 
 
