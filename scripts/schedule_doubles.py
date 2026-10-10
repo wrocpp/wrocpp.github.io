@@ -106,6 +106,11 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # describe working with C++, beside the evergreen post of the day.
     "2026-10-22": {"slug": "rust-swift-cpp-interop-toolchains", "hour": 16,
                    "why": "Rust and Swift interop news alongside the evergreen post"},
+    # Reporting under the EU Cyber Resilience Act has applied since 11 September
+    # 2026, and Qt shipped a declaration with 6.12 LTS on 30 September, so the
+    # fact-only short runs beside the evergreen portable-simd post.
+    "2026-10-23": {"slug": "cra-reporting-live-qt-declaration", "hour": 16,
+                   "why": "EU CRA reporting news short alongside the evergreen post"},
 }
 
 
