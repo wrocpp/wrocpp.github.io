@@ -1,0 +1,75 @@
+---
+title: "simdjson 5.0 reads a struct from JSON keys in any order"
+slug: "simdjson-5-reflection-supported"
+pubDate: 2026-10-18
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, cpp26, p2996, simdjson, json, deserialization, libraries]
+summary: "simdjson 5.0.0 (28 Sep 2026) lists static reflection as an officially supported feature. A struct with a string, an int, a bool, a nested struct and a vector read from JSON with shuffled keys on GCC 16.2 and simdjson 5.0.2, and an integer of exactly 2^64 is now a big integer. The 1.8x speedup in the release notes covers parsing escaped Unicode."
+draft: false
+relatedPosts: [simdjson-reflection, json-deserialize]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+On Compiler Explorer, GCC 16.2 and simdjson 5.0.2 read a struct from a JSON object with shuffled keys. The program exits with 0 and prints every field. The [June post](</posts/simdjson-reflection/>) covered the writing side, `sb << my_struct`. This one covers reading.
+
+## What the 5.0 release notes say
+
+I read the [simdjson release page](https://github.com/simdjson/simdjson/releases) for 5.0.0 to 5.0.3 on 10 October 2026. Three points matter here.
+
+- Reflection "is no longer guarded and is an officially supported feature". simdjson detects a reflection-enabled compiler by itself.
+- Deserializing a struct through reflection uses key selectors by default. It reads the object in a single pass, whatever the order of the keys.
+- A positive integer in the range from 2^64 up to 10^20 is now a big integer instead of a malformed number.
+
+The patch releases 5.0.1 (28 Sep), 5.0.2 (4 Oct) and 5.0.3 (8 Oct) list only fixes.
+
+## Requirements
+
+The documentation for 5.0.3 builds with `g++ -std=c++26 -freflection` on GCC 16. The June post enabled reflection with a define, while the notes now say simdjson detects it. Key selectors need C++20.
+
+## Reading shuffled keys
+
+The struct has a string, an int, a bool, a nested struct and a vector. The JSON lists the keys in an order that matches none of them. The program also asks for the number type of 2^64 - 1 and of 2^64.
+
+<GodboltEmbed id="re9PchT14" compilerLabel="GCC 16.2 + simdjson 5.0.2" gcc_subtitle="-std=c++26 -freflection -O2 · simdjson 5.0.2 · runs live" title="Reading a struct from shuffled JSON keys" />
+
+The run prints this, with exit code 0:
+
+```text
+name=Ada age=42 active=true
+home=Wroclaw 50001
+tags=2 cpp,json
+18446744073709551615 -> uint64
+18446744073709551616 -> big_integer
+```
+
+The output shows correct fields. It does not show a single pass, which rests on the documentation.
+
+## What the documentation adds
+
+The page says the key-selector path builds a compile-time perfect hash from the member names. It falls back to one lookup per member for names over 63 characters. It adds that neither path is a universal speedup, and the per-member path "can edge ahead" when keys follow declaration order.
+
+The same page still labels `simdjson::from` and key selectors experimental.
+
+## What the 1.8x figure measures
+
+The notes report a 1.8x speedup for parsing a file full of escaped Unicode, from 1.59 to 2.85 GB/s. The author compared simdjson 4.0 and 5.0 on DOM parsing, using GCC 16.1 at `-O3` on one Xeon Gold 6548N core. It is not a reflection result.
+
+## What this has not been tested on
+
+- clang-p2996 or any other compiler than GCC 16.2.
+- simdjson 5.0.0, 5.0.1 or 5.0.3. The demo uses the 5.0.2 package on Compiler Explorer.
+- My own hardware: the demo ran on Compiler Explorer only.
+- Performance: I measured nothing, and the 1.8x figure above is the author's.
+- Annotations. The June post sketched `[[simdjson::rename("x")]]`. The 5.0.0 notes show `[[= simdjson::rename<"KEY">]]`, and I did not run either form.
+
+---
+
+**Sources**, all read on 10 October 2026:
+
+- [simdjson releases](https://github.com/simdjson/simdjson/releases): v5.0.0 (28 Sep 2026), v5.0.1 (28 Sep), v5.0.2 (4 Oct), v5.0.3 (8 Oct)
+- [doc/basics.md at v5.0.3](https://github.com/simdjson/simdjson/blob/v5.0.3/doc/basics.md): static reflection, order-independent reflective deserialization, big integers
+- [Compiler Explorer](https://godbolt.org/z/re9PchT14): g162, simdjson library version 5.0.2
