@@ -2,23 +2,26 @@
 title: "Three September 2026 WG21 papers return to the C++26 contracts dispute"
 slug: "dis-ballot-contracts-papers"
 pubDate: 2026-10-10
+updatedDate: 2026-10-10
 author: filip-sajdak
 language: en
 kind: short
 audience: working-cpp
 tags: [news, wg21, contracts]
-summary: "The September 2026 WG21 mailing carries P4238R1, P4272R0 and P4381R0, three papers about the C++26 contracts feature and how it was reviewed. This post says who wrote each, when, and what it asks. It could not confirm the ISO ballot's closing date or result, and says where it looked."
+summary: "The September 2026 WG21 mailing carries P4238R1, P4272R0 and P4381R0, three papers about the C++26 contracts feature and how it was reviewed. This post says who wrote each, when, and what it asks. Corrected on 10 October 2026: the ISO ballot closes around 23 October, not 27 September."
 draft: false
 relatedPosts: [cpp26-contracts, wg21-2026-08-mailing]
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
+*Correction, 10 October 2026. This post first repeated Derek Jones' date of 27 September for the ballot close and said no page gave one. Two pages do. The ISO record shows the DIS ballot started on 2026-07-31 and runs 12 weeks. DIN lists a public enquiry until 2026-10-23. The ballot therefore closes around 23 October, and I found no result. The rest is unchanged.*
+
 ## In short
 
 - Three papers in the September 2026 WG21 mailing return to the C++26 contracts dispute: P4238R1, P4381R0 and P4272R0.
 - P4238R1 asks the national bodies to vote No on the C++26 DIS ballot, with technical comments. The other two are addressed to EWG and ask for no vote.
-- I could not confirm when the ISO ballot closes or how it went. The section on the ballot lists what I checked.
+- The ISO ballot started on 2026-07-31 and runs 12 weeks, so it closes around 23 October. I found no result. The section on the ballot lists the sources.
 - A short GCC 16.2 demo shows one `pre` assertion under three evaluation semantics.
 
 The [August mailing post](/posts/wg21-2026-08-mailing/) ended with "Búzios decides". Three papers in the September mailing concern the C++26 contracts feature. Wg21.link lists P4381R0 under 19 September 2026 and the other two under 22 September 2026. This post reports what they say and who says it. It takes no side on contracts. For how the feature works in GCC 16, see [the first contracts post](/posts/cpp26-contracts/).
@@ -41,18 +44,18 @@ What the paper asks and states:
 
 The paper says it does not ask whether the objections are correct. It asks only whether they were settled. It rates none of the responses in P3846R1 Unsupported: two Supported, six Substantially Supported, ten Mixed.
 
-## What I could not confirm about the ballot
+## When the ballot closes
 
-As of 5 October 2026 I do not know when the DIS ballot closes or how it went. What I found:
+As of 10 October 2026 the ballot is still open. The sources I found:
 
+- The ISO page for the draft, ISO/IEC DIS 14882, lists the stage "DIS ballot initiated: 12 weeks" on 2026-07-31. Its "Close of voting" row has no date. Twelve weeks after 31 July is 23 October.
+- DIN, the German national body, lists the same draft with a public enquiry period until 2026-10-23.
 - The convener's report [N5056](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/n5056.pdf), dated 28 July 2026, says the next 14882 edition "is now in DIS ballot on schedule to be completed in 2026". It gives no dates.
-- A blog post by Derek Jones, dated 9 August 2026, says the ballot closes on 27 September. I found that date on no WG21 or ISO page I could open.
-- The only 23 October I found is the deadline for the pre-Búzios mailing, which has nothing to do with the ballot.
-- The ISO page for the draft returned 403 to me on both URLs I tried.
-- Herb Sutter's March trip report says the draft was being sent out for the ballot, with no dates.
-- His blog's front page listed no post about a result when I looked.
+- A blog post by Derek Jones, dated 9 August 2026, says the ballot closes on 27 September. The ISO and DIN dates do not support it.
+- The 23 October mailing deadline on the WG21 home page is a separate deadline that falls on the same day.
+- Herb Sutter's March trip report says the draft was being sent out for the ballot, with no dates. His blog's front page listed no post about a result when I looked.
 
-If you know the dates or the result from a primary source, tell me and I will correct this post.
+I found no result, and the ISO page lists none. The ISO page at iso.org returned 403 to my tools; I read the same record on committee.iso.org.
 
 ## One function under three semantics
 
@@ -70,7 +73,7 @@ The demo below shows only the build-time choice on GCC 16.2. It is the same sour
 
 ---
 
-All sources were read on 5 October 2026.
+All sources were read on 5 October 2026, except the ISO and DIN pages, which I read on 10 October 2026.
 
 - [P4238R1](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4238r1.pdf): full text.
 - [P4381R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4381r0.html): full text.
@@ -78,8 +81,10 @@ All sources were read on 5 October 2026.
 - [wg21.link index](https://wg21.link/index.txt): mailing dates.
 - [WG21 news](https://www.open-std.org/jtc1/sc22/wg21/): the 23 October mailing deadline.
 - [N5056](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/n5056.pdf): text extracted and searched for "ballot".
-- [Derek Jones, 9 August 2026](https://shape-of-code.com/2026/08/09/2026-in-the-programming-language-standards-world/): secondary source.
+- [Derek Jones, 9 August 2026](https://shape-of-code.com/2026/08/09/2026-in-the-programming-language-standards-world/): secondary source, the 27 September date.
+- [ISO/IEC DIS 14882 record](https://committee.iso.org/standard/91179.html): stage table, read 10 October 2026.
+- [DIN listing of ISO/IEC DIS 14882](https://www.din.de/en/getting-involved/standards-committees/nia/drafts/wdc-beuth:din21:405119259): public enquiry until 2026-10-23, read 10 October 2026.
 - [Herb Sutter, 29 March 2026](https://herbsutter.com/2026/03/29/c26-is-done-trip-report-march-2026-iso-c-standards-meeting-london-croydon-uk/): trip report.
-- Not read: [iso.org/standard/91179.html](https://www.iso.org/standard/91179.html) (403).
+- [iso.org/standard/91179.html](https://www.iso.org/standard/91179.html): 403 to my tools, so not read.
 
 The demo and the table were run on GCC 16.2 through Compiler Explorer on 5 October 2026.
