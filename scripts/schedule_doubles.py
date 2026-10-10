@@ -87,6 +87,11 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # weeks. The short runs beside the evergreen post of the day.
     "2026-10-17": {"slug": "libstdcxx-dangling-pair-tuple", "hour": 16,
                    "why": "libstdc++ trunk and security-fix news alongside the evergreen post"},
+    # A library-release short on simdjson 5.0 (reflection officially supported,
+    # key selectors, big integers) with a Compiler Explorer demo, beside the
+    # evergreen post of the day.
+    "2026-10-18": {"slug": "simdjson-5-reflection-supported", "hour": 16,
+                   "why": "simdjson 5.0 library news short alongside the evergreen post"},
     # The pre-Buzios mailing closes on 23 October, so the calendar short
     # runs beside the evergreen post (reflection-on-released-gcc) on the
     # 20th while a paper author can still act on the date.
