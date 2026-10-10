@@ -1,0 +1,52 @@
+---
+title: "Read what three September pages say about Rust and Swift meeting C++"
+slug: "rust-swift-cpp-interop-toolchains"
+pubDate: 2026-10-22
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, interop, rust, swift]
+summary: "Three September 2026 pages describe toolchain work at the Rust and Swift boundary with C++: a Microsoft guest post, a Rust Foundation interop update and the Swift 6.4 release post. This post says what each page states, what it leaves out, and that the Swift page names no compiler flags."
+draft: false
+---
+
+Three pages from September 2026 describe how Rust and Swift toolchains now deal with C++. I read each primary page on 10 October 2026. This post reports what they say and what they leave out.
+
+## Microsoft: a Rust backend on the MSVC code generator
+
+Victor Ciura published [a guest post](https://rustfoundation.org/media/guest-post-rust-is-tier-1-language-at-microsoft/) on the Rust Foundation site on 10 September. He is a principal engineer on Microsoft's Rust tooling team.
+
+The post calls Rust a "Tier-1 language" at Microsoft. That is an internal support label, not a Rust compiler target tier. The post says it means a supported path from local development to production.
+
+It describes `rustc_codegen_utc` as a code generation backend for rustc. It connects rustc to the MSVC backend, which Microsoft calls UTC. The post says it has been production-ready since early 2026 and that more than 100 Microsoft repositories build with it.
+
+The post also says "C++ still dominates after decades of development". It gives no numbers for that sentence.
+
+## Rust Foundation: forty interop problems
+
+The [progress update](https://rustfoundation.org/?p=120753) of 4 September comes from the Foundation's Rust/C++ Interop Initiative. It says Google funds the work and gives no amount.
+
+It reports 40 tracked interop problems and use cases, with 8 analysed in more detail. A support matrix compares rustc, Crubit, cxx and Zngur. The page calls the matrix a draft living document.
+
+The update also describes an experiment with function overloading in Rust, using argument splatting. The page says it is incomplete but usable on nightly Rust. It describes this as Rust overloading, not as a C++ overloading experiment. It gives no results and no stabilization date.
+
+## Swift 6.4: std::span and Span
+
+The [Swift 6.4 release post](https://swift.org/blog/swift-6.4-released/) is dated 15 September. It says Swift 6.4 bridges C++20's `std::span` with Swift's `Span`. The page says a Swift span can be passed to a C++ API that expects one. A C++ span can come back as a Swift `Span`.
+
+The release post names no compiler flags and no lifetime annotations. The separate [safe interop documentation](https://www.swift.org/documentation/cxx-interop/safe-interop/) describes the mapping for Swift 6.2: a non-const `std::span<T>` becomes `MutableSpan<T>`, and only top-level spans are transformed. It says the overloads need enough lifetime annotations and an experimental feature flag on the 6.2 branch. I could not tell from these pages what applies in 6.4.
+
+## What this has not been tested on
+
+- I did not read the Swift compiler documentation beyond these two pages, and I did not compile any Swift.
+- I did not read the Crubit, cxx or Zngur projects, so I cannot say how they differ.
+- I did not read Microsoft's internal plans. The guest post is the only source for `rustc_codegen_utc`.
+- I did not run the Rust nightly overloading experiment.
+
+| Page | Date | Fetched |
+| --- | --- | --- |
+| Rust Foundation guest post | 10 Sep 2026 | 10 Oct 2026 |
+| Rust/C++ Interop update | 4 Sep 2026 | 10 Oct 2026 |
+| Swift 6.4 release post | 15 Sep 2026 | 10 Oct 2026 |
+| Swift safe interop documentation | undated | 10 Oct 2026 |
