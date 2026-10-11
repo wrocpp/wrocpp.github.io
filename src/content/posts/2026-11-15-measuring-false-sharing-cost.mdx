@@ -1,13 +1,13 @@
 ---
-title: "Measuring how much false sharing costs a counter on Apple silicon"
+title: "Measuring what false sharing costs a counter on three machines"
 slug: "measuring-false-sharing-cost"
 pubDate: 2026-11-15
 author: filip-sajdak
 language: en
 kind: flagship
 audience: working-cpp
-tags: [performance, cache, threads, atomics, false-sharing, benchmark, cpp23, apple-silicon]
-summary: "Eight threads that each increment their own atomic counter took 176 ns per increment when the counters sat next to each other, and 2.11 ns when each was padded to its own block, on an Apple M2 Max with GCC 16.2. A Linux aarch64 Docker VM on the same Mac gave 195 and 2.22. Padding to 64 bytes was not enough on this chip, one shared counter cost as much as the packed layout, and thread_local counters shared cache lines on macOS. One Mac, no x86-64, not a quiet machine."
+tags: [performance, cache, threads, atomics, false-sharing, benchmark, cpp23, apple-silicon, x86-64]
+summary: "Eight threads that each incremented their own atomic counter ran 13 to 88 times slower when the counters sat 8 bytes apart than when each was padded to its own block: 13.5 times on an x86-64 laptop CPU (hyperthread pairs included), 83 times on an Apple M2 Max with GCC 16.2, and 88 times in a Linux aarch64 Docker VM on the same Mac. On the Mac, padding to 64 bytes was not enough, one shared counter cost as much as the packed layout, and thread_local counters shared cache lines on macOS. Three machines, frequency not controlled on any, and the x86-64 host was shared."
 draft: false
 relatedPosts: [struct-layout-toolkit-reflection]
 ---
@@ -18,11 +18,10 @@ import PostLink from '../../components/PostLink.astro';
 ## In short
 
 - False sharing means threads write different variables that sit in one cache line. The line moves between cores, so every write waits for it.
-- Eight threads, one atomic counter each, on an Apple M2 Max with GCC 16.2. Packed counters took 176 ns per increment. Counters padded to the interference size took 2.11 ns. A Linux aarch64 Docker VM on the same Mac gave 195 and 2.22.
-- Padding to 64 bytes was not enough here. The Mac reports a 128-byte cache line, and 128 and 256 bytes behaved alike.
-- One shared counter (true sharing) cost as much as the packed layout. Padding cannot help it.
-- A `thread_local` counter shared cache lines with other threads on macOS with GCC 16.2. Accumulating in a stack local variable and merging once matched the padded layout on both systems.
-- The numbers come from one Mac that was not quiet. There are no x86-64 numbers.
+- Eight threads, one atomic counter each, counters 8 bytes apart against padded to the interference size. The packed layout ran 13 to 88 times slower on three machines. The ratio was 13.5 on an x86-64 laptop CPU with hyperthread pairs. It was 83 on an Apple M2 Max and 88 in a Docker VM on that Mac.
+- On the M2 Max, packed took 176 ns per increment and padded 2.11 ns. Padding to 64 bytes was not enough there, because the Mac reports a 128-byte cache line. On x86-64 the interference size is 64, so that gap does not appear.
+- One shared counter (true sharing) cost as much as the packed layout, and padding cannot help it. A `thread_local` counter shared cache lines on macOS with GCC 16.2 but not on Linux. A stack local variable merged once matched the padded layout everywhere.
+- The frequency was not controlled on any machine, the Mac was not quiet, and the x86-64 host was shared. Compare the ratios between machines, never the nanoseconds.
 
 ## What false sharing is
 
@@ -123,7 +122,7 @@ Every number carries the seven fields that the [usamahz/cpu-performance-engineer
 | Baseline | The padded-to-256 layout at the same thread count, and every layout at one thread. | The same. |
 | Method | Spin barrier, wall clock, 11 runs, one discarded round, layouts interleaved. No thread affinity exists on macOS, and I could not tell which core type a thread ran on. | The same, with pinning. |
 
-The Mac was not quiet. The load average was 4.68 when the run started and 3.55 before the Docker run. A background process, `suggestd`, used 96% to 97% of one core in both listings. I did not close other applications, and other sessions were running on this machine. The 1-minute load after the Mac run read 28, which includes the benchmark's own 12 threads.
+The Mac was not quiet. The load average was 4.68 when the run started and 3.55 before the Docker run. A background process, `suggestd`, used 96% to 97% of one core in both listings. I did not close other applications, and other sessions were running on this machine. The 1-minute load after the Mac run read 28, which includes the benchmark's own 12 threads. The x86-64 machine has its own table in the x86-64 section below.
 
 ## Atomic counters on the Mac
 
@@ -204,6 +203,110 @@ At eight threads four atomic cells lie between 2.20 and 2.30 ns: padded to HDIS,
 
 The plain medians for stack local and padded to 128 are 0.42 and 0.47 ns. Padded to HDIS has 0.52 ns, but the ranges overlap. No layout wins among the padded and local ones on this system.
 
+## The same program on x86-64
+
+The third machine is an Intel Core i7-10510U with four cores and two hardware threads per core. It ran as a CI job on a shared Linux laptop, in a container, with the unchanged kernels. Its fields, in the same seven-field order:
+
+| Field | x86-64 |
+|---|---|
+| CPU | Intel Core i7-10510U, 4 cores, 8 threads, SMT on. CPUs 0/4, 1/5, 2/6 and 3/7 are sibling pairs. |
+| Cores used | Pinned with `taskset`. Config `first4`: CPUs 0-3, one thread per core, 1, 2 and 4 threads. Config `all`: CPUs 0-7, 1, 2, 4 and 8 threads, where threads 5 to 8 land on the sibling hyperthreads. |
+| Frequency | Not fixed. Governor `powersave`, turbo on, 59% scaling at the start. |
+| Compiler and flags | GCC 16.2.0 from a pinned amd64 image, `-std=c++23 -O2 -pthread`. The atomic add compiles to `lock addq`. |
+| Workload | 10,000,000 increments of one 8-byte counter per thread. |
+| Baseline | The padded-to-HDIS layout at the same thread count. |
+| Method | Spin barrier, wall clock, layouts interleaved. One discarded warm-up round per config, then 11 repetitions of one process each, with the load average read before and after each. |
+
+On x86-64 the destructive interference size is 64. The padded-to-HDIS and padded-to-64 layouts are therefore the same layout, and their rows differ only by run-to-run noise.
+
+### How quiet the host was
+
+The host was shared. Its load average was 18.7 at the start and between 10 and 20 in bursts. A guard waited 1180 s until the 1-minute load average fell below 1.0, and it passed at 0.97. A repetition counts as noisy when the load average at its end exceeds the benchmark's own thread count by more than 1. None of the 11 repetitions of `first4` or `all` was noisy, so the tables use the raw files, which equal the filtered ones.
+
+A third config, `percore4`, put four threads on four different cores. It produced no usable data. The load average was still decaying from the 8-thread config, so all 25 repetitions were flagged noisy. The post does not use it.
+
+### Atomic counters on x86-64
+
+Config `first4`, one thread per core:
+
+| Layout | 1 thr | 2 thr | 4 thr |
+|---|---|---|---|
+| Layout | 1 thr | 2 thr | 4 thr |
+|---|---|---|---|
+| packed | 4.24 (3.95-4.83), 8% | 22 (22-31), 14% | 64 (53-73), 12% |
+| padded to HDIS | 4.06 (3.90-4.73), 7% | 4.16 (4.00-5.24), 8% | 4.27 (4.21-4.80), 4% |
+| padded to 128 | 4.08 (3.88-4.63), 5% | 4.21 (4.07-5.21), 8% | 4.49 (4.21-5.35), 9% |
+| padded to 64 | 4.07 (3.90-4.64), 5% | 4.31 (4.08-5.19), 9% | 4.44 (4.23-5.07), 8% |
+| one shared counter | 4.05 (3.89-4.96), 9% | 26 (21-33), 15% | 70 (53-74), 12% |
+| `thread_local` | 3.99 (3.85-4.89), 8% | 4.22 (4.08-4.65), 4% | 4.66 (4.22-5.35), 9% |
+| stack local | 4.29 (3.90-4.86), 8% | 4.23 (4.00-4.91), 6% | 4.27 (4.21-5.34), 10% |
+
+Config `all`, where 8 threads use the hyperthread pairs:
+
+| Layout | 1 thr | 2 thr | 4 thr | 8 thr |
+|---|---|---|---|---|
+| Layout | 1 thr | 2 thr | 4 thr | 8 thr |
+|---|---|---|---|---|
+| packed | 4.64 (3.91-5.09), 10% | 26 (22-30), 10% | 71 (64-81), 8% | 146 (128-157), 7% |
+| padded to HDIS | 4.12 (3.97-4.97), 9% | 4.24 (4.11-8.91), 30% | 5.20 (4.21-5.55), 11% | 11 (9.37-14), 12% |
+| padded to 128 | 4.26 (4.04-4.84), 8% | 4.24 (4.17-5.40), 9% | 4.53 (4.22-5.86), 13% | 11 (9.47-14), 12% |
+| padded to 64 | 4.15 (4.03-4.81), 8% | 4.34 (4.20-5.43), 11% | 4.31 (4.22-5.56), 12% | 13 (10-16), 13% |
+| one shared counter | 4.06 (3.98-4.86), 8% | 23 (22-36), 16% | 61 (53-73), 11% | 132 (127-150), 6% |
+| `thread_local` | 4.27 (3.99-4.82), 6% | 4.46 (4.21-5.43), 11% | 4.52 (4.22-5.42), 12% | 10 (8.97-12), 9% |
+| stack local | 4.13 (4.03-4.66), 6% | 4.27 (4.22-5.36), 11% | 5.15 (4.22-5.43), 10% | 11 (9.30-13), 12% |
+
+Each median divided by the padded-to-HDIS median:
+
+| Layout | `first4` 2 thr | `first4` 4 thr | `all` 2 thr | `all` 4 thr | `all` 8 thr |
+|---|---|---|---|---|---|
+| packed | 5.35 | 15.04 | 6.18 | 13.65 | 13.49 |
+| one shared counter | 6.33 | 16.51 | 5.46 | 11.80 | 12.26 |
+| padded to 64 | 1.04 | 1.04 | 1.02 | 0.83 | 1.16 |
+| `thread_local` | 1.01 | 1.09 | 1.05 | 0.87 | 0.93 |
+| stack local | 1.02 | 1.00 | 1.01 | 0.99 | 1.01 |
+
+### Reading the x86-64 tables
+
+- With one thread every layout takes about 4 ns. The layout matters only when a second thread writes.
+- Packed is 5.4 to 6.2 times padded at two threads, and 13.7 to 15.0 times at four. The two four-thread ratios differ because the padded cell moved: 4.27 ns in `first4`, 5.20 ns in `all`.
+- Padded to 64, padded to 128 and padded to HDIS agree within the spread. The pairing penalty that the Mac showed at 64 bytes does not occur, because the line here is 64 bytes.
+- One shared counter again costs about what the packed layout costs.
+- `thread_local` and stack local match the padded layout at one to four threads, as they do on Linux aarch64.
+
+### Hyperthreads at eight threads
+
+At eight threads the padded cells rise to 10 to 13 ns, against 4.3 to 5.2 ns at four threads. This holds for every layout, `thread_local` and stack local included, and no layout shares a cache line there. Two threads on one core share its execution resources, so I read this as SMT and not as false sharing. The 8-thread ratio of 13.5 is therefore not like-for-like with the M2 Max's eight performance cores. I did not test the SMT explanation further.
+
+### Plain counters on x86-64
+
+Median ns per increment, with the minimum, maximum and coefficient of variation in the files:
+
+| Config and layout | 1 thr | 2 thr | 4 thr | 8 thr |
+|---|---|---|---|---|
+| CPUs 0-3, packed | 1.26 (1.17-1.35), 5% | 1.83 (1.79-2.13), 5% | 1.93 (1.82-2.11), 5% | not run |
+| CPUs 0-3, padded to HDIS | 1.27 (1.16-1.35), 5% | 1.29 (1.25-1.49), 5% | 1.34 (1.26-1.52), 6% | not run |
+| CPUs 0-3, stack local | 1.26 (1.19-1.35), 4% | 1.29 (1.25-1.44), 5% | 1.46 (1.26-1.53), 6% | not run |
+| CPUs 0-7, packed | 1.23 (1.21-1.39), 5% | 1.95 (1.88-2.12), 4% | 2.03 (1.93-2.33), 6% | 8.20 (7.82-8.79), 4% |
+| CPUs 0-7, padded to HDIS | 1.27 (1.24-1.40), 5% | 1.33 (1.30-1.49), 5% | 1.44 (1.32-1.60), 6% | 3.01 (1.63-4.65), 37% |
+| CPUs 0-7, stack local | 1.27 (1.22-1.39), 5% | 1.33 (1.28-1.51), 6% | 1.46 (1.35-1.58), 5% | 3.07 (2.02-4.23), 21% |
+
+Packed over padded to HDIS is 1.4 to 1.5 at two and four threads, and 2.7 at eight threads with hyperthreads. On the ARM systems the ratio was 3.7 to 4.4 on the Mac and 4.1 to 15.9 in the Docker VM.
+
+The file `bench-x86.s` shows the plain loop. Each iteration runs one `addq $1, (%rdi)`, a read-modify-write of memory with no `lock` prefix. Every layout calls that same function, so the padded layout does not keep its counter in a register either. The assembly does not show why the packed penalty is smaller than on ARM, and I did not test it.
+
+## Three machines side by side
+
+Packed over padded to HDIS for the atomic flavour, from the medians in each table:
+
+| Machine | 1 thr | 2 thr | 4 thr | 8 thr |
+|---|---|---|---|---|
+| Apple M2 Max, native | 0.99 | 4.40 | 20.38 | 83.31 |
+| Linux aarch64 Docker VM on the same Mac | 1.01 | 4.48 | 21.02 | 87.52 |
+| x86-64 i7-10510U, CPUs 0-3 (`first4`) | 1.05 | 5.35 | 15.04 | not run |
+| x86-64 i7-10510U, CPUs 0-7 (`all`) | 1.12 | 6.18 | 13.65 | 13.49 |
+
+On all three machines a second writer in the line costs several times the padded baseline, and the cost grows with the thread count. The x86-64 ratio grows more slowly. At eight threads its 13.5 comes from hyperthread pairs, and its padded baseline is itself raised by SMT. Absolute nanoseconds are not comparable across these machines, because none had a fixed clock.
+
 ## thread_local counters shared lines on macOS
 
 On the Mac, the atomic `thread_local` row follows the packed layout: 9.51 ns at two threads, 44 at four and 118 at eight. Its spreads are wide (1.99 to 12 ns at two threads). The same variant on Linux costs the same as the padded layout.
@@ -212,7 +315,11 @@ A small program, `tls_addresses.cpp`, starts eight threads, keeps them alive, an
 
 GCC on macOS compiled the access to a call of the emulated-TLS function in its generated code. I did not look at what Apple clang generates, and I did not time Apple clang. The timing result above is for GCC. The conclusion that I can support is narrow. A `thread_local` variable is not automatically a private cache line on macOS, so a tiny per-thread counter can false-share there.
 
-A stack local variable merged once at the end avoided the problem on both systems. The merge target in this program is a padded slot, written once per thread.
+A stack local variable merged once at the end avoided the problem on all three machines. The merge target in this program is a padded slot, written once per thread.
+
+### On x86-64 Linux
+
+The `thread_local` row matches the padded layout, as in the Docker VM. In `first4` it took 4.22 against 4.16 ns at two threads, and 4.66 against 4.27 ns at four. I did not run `tls_addresses.cpp` there.
 
 ## A layout and correctness check on Compiler Explorer
 
@@ -230,22 +337,24 @@ It then runs two threads on each struct and checks that both counters add up. It
 
 ## What this has not been tested on
 
-- x86-64. I have no x86-64 numbers, and the cache hierarchy and coherence behaviour of Apple's chips differ from x86 designs.
+- Other x86-64 CPUs. One laptop part was measured, on a shared host, with turbo on and the governor on `powersave`. Server parts and AMD cores may differ.
 - Other Arm chips, including other Apple generations and server cores with different line sizes.
 - A pinned macOS run. The system has no affinity API, so I cannot say which core type a thread used.
-- Hyperthreading. The M2 Max has no SMT, so the 12 logical CPUs here are 12 physical cores.
+- Hyperthreading as a cause. The M2 Max has no SMT. The x86-64 8-thread cells use hyperthread pairs, and the `percore4` run that would separate cores from siblings produced no usable data.
 - Clang against GCC on Linux. Apple clang was used only for the constants and the address check, not for timings.
-- Core counts above 12, and a quiet machine. The load listed above was not zero.
+- Core counts above 12, and a quiet Mac. The load listed above was not zero.
 - Real workloads. The program does nothing but increment a counter.
-- Frequency control. Neither system fixed the clock.
+- Frequency control. None of the three machines fixed the clock.
 
 ## Sources and files
 
-The claims in this post come from these runs. The program, run script, raw CSV rows and generated tables are in the examples repository at commit [`828431a1cbd4`](https://github.com/wrocpp/cpp26-reflection-examples/tree/828431a1cbd4/posts/93-false-sharing/examples):
+The claims in this post come from these runs. The program, run script, raw CSV rows and generated tables are in the examples repository at commit [`882c7058cb50`](https://github.com/wrocpp/cpp26-reflection-examples/tree/882c7058cb50/posts/93-false-sharing/examples):
 
-- [`bench.cpp`](https://github.com/wrocpp/cpp26-reflection-examples/blob/828431a1cbd4/posts/93-false-sharing/examples/bench.cpp) and [`run.sh`](https://github.com/wrocpp/cpp26-reflection-examples/blob/828431a1cbd4/posts/93-false-sharing/examples/run.sh)
-- [`results-mac-m2max.csv`](https://github.com/wrocpp/cpp26-reflection-examples/blob/828431a1cbd4/posts/93-false-sharing/examples/results-mac-m2max.csv) and [`results-docker-aarch64.csv`](https://github.com/wrocpp/cpp26-reflection-examples/blob/828431a1cbd4/posts/93-false-sharing/examples/results-docker-aarch64.csv), 715 and 572 rows
-- [`env-mac-m2max.txt`](https://github.com/wrocpp/cpp26-reflection-examples/blob/828431a1cbd4/posts/93-false-sharing/examples/env-mac-m2max.txt) and [`env-docker-aarch64.txt`](https://github.com/wrocpp/cpp26-reflection-examples/blob/828431a1cbd4/posts/93-false-sharing/examples/env-docker-aarch64.txt), the machine, flags and load
-- [`tls-addresses.txt`](https://github.com/wrocpp/cpp26-reflection-examples/blob/828431a1cbd4/posts/93-false-sharing/examples/tls-addresses.txt) and [`layout_demo.cpp`](https://github.com/wrocpp/cpp26-reflection-examples/blob/828431a1cbd4/posts/93-false-sharing/examples/layout_demo.cpp), the source of the Compiler Explorer permalink
+- [`bench.cpp`](https://github.com/wrocpp/cpp26-reflection-examples/blob/882c7058cb50/posts/93-false-sharing/examples/bench.cpp) and [`run.sh`](https://github.com/wrocpp/cpp26-reflection-examples/blob/882c7058cb50/posts/93-false-sharing/examples/run.sh)
+- [`results-mac-m2max.csv`](https://github.com/wrocpp/cpp26-reflection-examples/blob/882c7058cb50/posts/93-false-sharing/examples/results-mac-m2max.csv) and [`results-docker-aarch64.csv`](https://github.com/wrocpp/cpp26-reflection-examples/blob/882c7058cb50/posts/93-false-sharing/examples/results-docker-aarch64.csv), 715 and 572 rows
+- [`env-mac-m2max.txt`](https://github.com/wrocpp/cpp26-reflection-examples/blob/882c7058cb50/posts/93-false-sharing/examples/env-mac-m2max.txt) and [`env-docker-aarch64.txt`](https://github.com/wrocpp/cpp26-reflection-examples/blob/882c7058cb50/posts/93-false-sharing/examples/env-docker-aarch64.txt), the machine, flags and load
+- The x86-64 run: the [`results-x86`](https://github.com/wrocpp/cpp26-reflection-examples/tree/882c7058cb50/posts/93-false-sharing/examples/results-x86) directory, with raw and filtered CSVs, noise logs, host info and assembly
+- [`tables-x86.md`](https://github.com/wrocpp/cpp26-reflection-examples/blob/882c7058cb50/posts/93-false-sharing/examples/tables-x86.md) and the driver [`bench-run-x86.sh`](https://github.com/wrocpp/cpp26-reflection-examples/blob/882c7058cb50/posts/93-false-sharing/examples/bench-run-x86.sh)
+- [`tls-addresses.txt`](https://github.com/wrocpp/cpp26-reflection-examples/blob/882c7058cb50/posts/93-false-sharing/examples/tls-addresses.txt) and [`layout_demo.cpp`](https://github.com/wrocpp/cpp26-reflection-examples/blob/882c7058cb50/posts/93-false-sharing/examples/layout_demo.cpp), the source of the Compiler Explorer permalink
 
-The first Docker run was repeated because the host load average was 26 when it started, left over from the Mac run. The tables use the repeated run. The measurements were taken on 11 October 2026. The C++ draft, Drepper's paper, the Intel manual and the usamahz README were fetched the same day. The README page was read up to its "What earns a place" section.
+The first Docker run was repeated because the host load average was 26 when it started, left over from the Mac run. The tables use the repeated run. The measurements, including the x86-64 run, were taken on 11 October 2026. The C++ draft, Drepper's paper, the Intel manual and the usamahz README were fetched the same day. The README page was read up to its "What earns a place" section.
