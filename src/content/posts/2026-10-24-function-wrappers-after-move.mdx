@@ -1,0 +1,64 @@
+---
+title: "What C++23 and C++26 promise about a moved-from function wrapper"
+slug: "function-wrappers-after-move"
+pubDate: 2026-10-24
+author: filip-sajdak
+language: en
+tags: [news, cpp23, cpp26, stdlib, concurrency, libcxx]
+kind: short
+audience: working-cpp
+summary: "None of the standard function wrappers promises an empty source after a move: std::function, move_only_function and copyable_function all leave it valid but unspecified. libstdc++ 16.1 empties all three, libc++ trunk keeps a copy in std::function and does not ship the other two. A small wrapper that states its own move works on both."
+draft: false
+relatedPosts: [moved-from-function, hand-off-tasks-across-threads, function-ref]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+None of the standard function wrappers promises that the source is empty after a move. The C++23 and C++26 wrappers use the same wording as `std::function`: the source is "in a valid state with an unspecified value". That covers `std::move_only_function` and `std::copyable_function`. The [first episode](/posts/moved-from-function/) showed what that costs on libc++. This episode checks what C++23 and C++26 add, library by library.
+
+## In short
+
+- The standard leaves the moved-from source unspecified for all three owning wrappers.
+- libstdc++ 16.1 empties all three. libc++ trunk keeps a copy in `std::function` and does not ship the other two.
+- `std::function_ref` is available on libc++ trunk and libstdc++ 16.1, but it does not own anything, so it cannot carry a task to another thread.
+- The `std::execution` operation states cannot be moved at all, but neither library defines its feature-test macro yet.
+- A wrapper class that states its own move gives you an empty source on every library today.
+
+## The probe
+
+One program tries each type on a callable that captures a `shared_ptr`. It moves the callable once and reports whether the source still holds it. It also checks each feature-test macro, so a missing type shows up as "not available" instead of a compile error.
+
+<GodboltEmbed id="hrMGPsj48" gcc_id="o7hMa4dKx" compilerLabel="clang trunk + libc++" title="Which wrappers leave a copy behind after a move?" gcc_subtitle="x86-64 GCC 16.1 · -std=c++26 -O2 · runs live" subtitle="clang trunk, libc++ · -std=c++26 -O2 -stdlib=libc++ · runs live" />
+
+| Type | Owns the callable | Source after a move (standard) | libstdc++ 16.1 | libc++ trunk |
+|---|---|---|---|---|
+| std::function | yes | unspecified | empty | holds a copy |
+| std::move_only_function | yes | unspecified | empty | not available |
+| std::copyable_function | yes | unspecified | empty | not available |
+| std::function_ref | no | trivially copyable reference | available | available |
+
+The `move_only_function` row is the surprise. Removing the copy constructor removes the copy, but the wording still lets a library leave the source engaged. On libstdc++ 16.1 it happens to be empty. Code that needs the guarantee cannot rely on that.
+
+## Two types that do not help here
+
+A `std::function_ref` stores a pointer to the callable and a pointer to the function that calls it. A queued task outlives the frame that created it, so a reference to it would dangle. The type fits a parameter that is called and dropped, as the [function_ref post](/posts/function-ref/) shows.
+
+The operation states of `std::execution` are a different case. The standard makes it ill-formed to copy or move a library-provided operation state, so there is no moved-from state to worry about. Neither libc++ trunk nor libstdc++ 16.1 defines `__cpp_lib_senders`, so this is something to design for, not to use.
+
+## A wrapper that states its own move
+
+The fix that works today is to own the move. A small class holds the `std::function` and defines its move constructor with an exchange:
+
+```cpp
+Emptying(Emptying&& o) noexcept : f(std::exchange(o.f, nullptr)) {}
+Emptying& operator=(Emptying&& o) noexcept {
+  f = std::exchange(o.f, nullptr);
+  return *this;
+}
+```
+
+The probe shows `Emptying<std::function>` leaving an empty source on libc++ and on libstdc++. The rule now lives in one place, so no layer between the caller and the queue can forget it. The same wrapper accepts `std::move_only_function` as its member once libc++ ships it.
+
+---
+
+**Sources**: [\[func.wrap.func.con\]](https://eel.is/c++draft/func.wrap.func.con) · [\[func.wrap.move.ctor\]](https://eel.is/c++draft/func.wrap.move.ctor) · [\[func.wrap.copy.ctor\]](https://eel.is/c++draft/func.wrap.copy.ctor) · [\[func.wrap.ref.class\]](https://eel.is/c++draft/func.wrap.ref.class) · [\[exec.opstate\]](https://eel.is/c++draft/exec.opstate) · [QTBUG-151347](https://qt-project.atlassian.net/browse/QTBUG-151347).

@@ -119,6 +119,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # fact-only short runs beside the evergreen portable-simd post.
     "2026-10-23": {"slug": "cra-reporting-live-qt-declaration", "hour": 16,
                    "why": "EU CRA reporting news short alongside the evergreen post"},
+    # Episode 3 of the QTBUG-151347 series (what C++23 and C++26 promise) runs
+    # beside the derive-eq-hash post of the day.
+    "2026-10-24": {"slug": "function-wrappers-after-move", "hour": 16,
+                   "why": "QTBUG-151347 series episode 3 alongside the derive-eq-hash post"},
 }
 
 
