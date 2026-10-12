@@ -1,0 +1,56 @@
+---
+title: "A moved-from std::function can still hold the callable"
+slug: "moved-from-function"
+pubDate: 2026-10-13
+author: filip-sajdak
+language: en
+tags: [news, cpp, stdlib, concurrency, qt, libcxx]
+kind: short
+audience: working-cpp
+summary: "The standard leaves a moved-from std::function valid but unspecified. libc++ keeps a copy of a small callable in the source, libstdc++ empties it. A Qt HarmonyOS bug filed on 2026-10-12 shows the cost: a task queued to another thread was destroyed on the thread that sent it."
+draft: false
+relatedPosts: [function-ref]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+After `std::function f2 = std::move(f)`, the source `f` is empty on libstdc++ and still holds the callable on libc++, as long as the callable is small. A lambda that captures one `shared_ptr` is small. The Qt bug [QTBUG-151347](https://qt-project.atlassian.net/browse/QTBUG-151347), filed on 2026-10-12 against the HarmonyOS platform plugin, comes from exactly that difference.
+
+## What the Qt ticket describes
+
+The plugin queues tasks to a JS thread and to the Qt thread. Each task is a `std::function`, and each internal layer moves it one step closer to the queue. The code assumes every move leaves the source empty. Then the queued instance is the only one left, and the task is destroyed on the thread that runs it, together with everything it captured.
+
+The ticket reports that the libc++ in the OHOS SDK keeps a copy for small callables. That leftover is destroyed on the calling thread after the task was queued. If the target thread has already run the task, the leftover can hold the last reference to the captured state. The destructor then runs on the wrong thread. The failure depends on timing, so it appears only now and then.
+
+## What the standard promises
+
+The move constructor of `std::function` says that the source is "in a valid state with an unspecified value". The move assignment operator says nothing about the source at all. An empty source is what you usually get, and the standard does not require it.
+
+## Watching the destructor run on the wrong thread
+
+The demo below hands a task to a worker thread through a one-slot queue. The task captures a `shared_ptr` to a resource whose destructor prints which thread it runs on. The worker runs the task and drops its own copy before the producer leaves its scope. The last reference then belongs to whoever still holds a leftover.
+
+<GodboltEmbed id="vGcxqcEG5" gcc_id="jPe7EbPrb" compilerLabel="clang trunk + libc++" title="Which thread destroys the captured resource?" gcc_subtitle="x86-64 GCC 16.1 · -std=c++20 -O2 -pthread · runs live" subtitle="clang trunk, libc++ · -std=c++20 -O2 -stdlib=libc++ -pthread · runs live" />
+
+The same source gives two answers:
+
+| Library | Output | Moved-from `std::function` |
+|---|---|---|
+| libc++ (clang trunk) | last reference dropped on: PRODUCER thread | holds a copy |
+| libstdc++ (GCC 16.1) | last reference dropped on: WORKER thread | empty |
+
+## Why libc++ behaves this way
+
+libc++ stores a small callable inside the `std::function` object itself. Its move constructor takes the source's pointer for a heap-allocated callable and sets the source to null. For an inline callable it copies the callable into the new object with a `__clone` call and leaves the source as it was. The standard allows this, so the library is conforming.
+
+A callable that does not fit the inline buffer, takes the pointer path and leaves an empty source. That is why a test with a big lambda passes on every library and the bug survives.
+
+## What to do about it
+
+Never rely on a moved-from `std::function` being empty. If the object must not keep a reference, reset it yourself, or move the callable into a single owner before it crosses a thread. The next episode compares two fixes: the one in the ticket, which moves the task into a `shared_ptr`, and an explicit reset. Both get checked against the thread-id output above.
+
+C++23 added `std::move_only_function`, which cannot be copied. No hidden copy can exist. But libc++ does not define `__cpp_lib_move_only_function` in version 20 or on trunk. The type is missing on the library that has this behaviour. A non-owning [`std::function_ref`](/posts/function-ref/) fixes a different problem and leaves the ownership question open.
+
+---
+
+**Sources**: [QTBUG-151347](https://qt-project.atlassian.net/browse/QTBUG-151347) · [\[func.wrap.func.con\]](https://eel.is/c++draft/func.wrap.func.con) · [libc++ `__functional/function.h`](https://github.com/llvm/llvm-project/blob/main/libcxx/include/__functional/function.h).
