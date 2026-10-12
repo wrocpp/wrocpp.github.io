@@ -1,0 +1,71 @@
+---
+title: "Hand a task to another thread without leaving a copy behind"
+slug: "hand-off-tasks-across-threads"
+pubDate: 2026-10-19
+author: filip-sajdak
+language: en
+tags: [news, cpp, stdlib, concurrency, qt, libcxx]
+kind: short
+audience: working-cpp
+summary: "Two ways to stop a std::function from leaving a copy behind when it crosses to another thread: empty the source with an exchange, or box the task in a shared_ptr at the entry point. In a demo on libc++, the plain by-value chain destroys the task on the sending thread and both fixes destroy it on the worker."
+draft: false
+relatedPosts: [moved-from-function, function-ref]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+The [previous episode](/posts/moved-from-function/) showed that libc++ leaves a copy of a small callable in a moved-from `std::function`. This episode tests two fixes on the same libc++. A chain of by-value parameters still destroys the task on the sending thread. Taking the task by rvalue reference and emptying it with an exchange, or boxing it in a `shared_ptr`, destroys it on the worker thread.
+
+## In short
+
+- A by-value parameter leaves a copy in the caller's variable, so the leak starts one frame above the layer you fixed.
+- `std::exchange(f, nullptr)` empties a `std::function` on every library, because assigning a null pointer destroys the target.
+- A moved-from `shared_ptr` is empty by definition, so a boxed task cannot leak at the layers below the entry point.
+- The box costs one allocation. The exchange costs none, but each layer has to remember it.
+
+## Where the leftover hides
+
+A task crosses several layers before it reaches the queue. Each layer takes it as a parameter and moves it on. Every one of those moves can leave a copy behind in the variable it came from, and the copies die when their frames end. The outermost one is the easiest to miss: it lives in the caller's own local variable.
+
+That is why the ticket asks for rvalue references. A function that takes `Task&&` can empty the caller's variable. A function that takes `Task` by value can only move from it.
+
+## Three hand-offs, one result
+
+The demo sends the same task through two layers into a one-slot queue three times. The first version moves a by-value parameter down the chain. The other two are the fixes:
+
+```cpp
+// fix 1: empty the source at every layer
+Task take(Task& f) { return std::exchange(f, nullptr); }
+void layer(Queue& q, Task&& f) { push(q, take(f)); }
+
+// fix 2: box the task once, at the entry point
+void layer(Queue& q, Task&& f) {
+  push(q, std::make_shared<Task>(std::exchange(f, nullptr)));
+}
+```
+
+The worker takes the task out of the slot, runs it, and drops it. The producer waits for that, leaves its scope, and the demo prints which thread destroyed the captured resource.
+
+<GodboltEmbed id="4f515Y78z" gcc_id="W3qYdoaea" compilerLabel="clang trunk + libc++" title="Three hand-offs, and the thread that destroys the task" gcc_subtitle="x86-64 GCC 16.1 · -std=c++20 -O2 -pthread · runs live" subtitle="clang trunk, libc++ · -std=c++20 -O2 -stdlib=libc++ -pthread · runs live" />
+
+| Hand-off | libc++ (clang trunk) | libstdc++ (GCC 16.1) |
+|---|---|---|
+| By-value chain | PRODUCER (wrong) | WORKER (right) |
+| Exchange at each layer | WORKER (right) | WORKER (right) |
+| Boxed in a shared pointer | WORKER (right) | WORKER (right) |
+
+## Choosing between the two fixes
+
+The exchange allocates nothing, and it works with any queue that stores a `std::function`. Its weakness is that the rule has to hold in every layer, forever. One new helper that takes the task by value brings the bug back.
+
+The box moves a `shared_ptr` between layers. The standard leaves a moved-from `shared_ptr` empty, so no layer below the entry point can leave a copy of the task. You pay one heap allocation per task, and you take the task out of the box on the target thread before running it. The ticket's to-do list describes this shape.
+
+## What the first run got wrong
+
+The first run of this demo had both fixes in place and still failed on libc++. The harness passed the task to the first layer by value, which left a copy in `main`. The check that caught it was the thread printed at the end, not a code review.
+
+The type `std::move_only_function` would remove the copy by construction, but libc++ does not define its feature-test macro yet. The next episode looks at what C++23 and C++26 offer for this, library by library.
+
+---
+
+**Sources**: [QTBUG-151347](https://qt-project.atlassian.net/browse/QTBUG-151347) · [\[func.wrap.func.con\]](https://eel.is/c++draft/func.wrap.func.con) · [\[util.smartptr.shared.const\]](https://eel.is/c++draft/util.smartptr.shared.const).
