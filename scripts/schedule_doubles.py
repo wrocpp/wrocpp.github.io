@@ -96,6 +96,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # evergreen post of the day.
     "2026-10-18": {"slug": "simdjson-5-reflection-supported", "hour": 16,
                    "why": "simdjson 5.0 library news short alongside the evergreen post"},
+    # Episode 2 of the QTBUG-151347 series (hand-off patterns) runs beside the
+    # Qt examples post of the day.
+    "2026-10-19": {"slug": "hand-off-tasks-across-threads", "hour": 16,
+                   "why": "QTBUG-151347 series episode 2 alongside the Qt examples post"},
     # The pre-Buzios mailing closes on 23 October, so the calendar short
     # runs beside the evergreen post (reflection-on-released-gcc) on the
     # 20th while a paper author can still act on the date.
