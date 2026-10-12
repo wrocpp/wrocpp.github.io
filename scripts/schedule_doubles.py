@@ -69,6 +69,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # post of the day.
     "2026-10-12": {"slug": "qt-object-that-never-names-its-class", "hour": 16,
                    "why": "reflect-moc series episode 3 alongside the evergreen post"},
+    # QTBUG-151347 was filed on 12 October: a moved-from std::function is not
+    # empty on libc++. Episode 1 of the series runs beside the function_ref post.
+    "2026-10-13": {"slug": "moved-from-function", "hour": 16,
+                   "why": "QTBUG-151347 news short alongside the function_ref post"},
     # A reactive GCC trunk short on a coroutine promise with both return_value
     # and return_void (P3950R1), beside the evergreen optional-ref post.
     "2026-10-14": {"slug": "coroutine-return-void-and-value", "hour": 16,
