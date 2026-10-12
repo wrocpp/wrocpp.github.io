@@ -1,0 +1,65 @@
+---
+title: "Sort a QRangeModel in Qt 6.12 without a proxy model"
+slug: "sort-qrangemodel-rows-in-qt-6-12"
+pubDate: 2026-11-22
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, qt, qt6, lts, cpp17]
+summary: "Qt 6.12.0 on Compiler Explorer sorts a std::vector of tuples through QRangeModel::sort(), and the same program on Qt 6.11.0 leaves the order unchanged. The post reports what the Qt 6.12 LTS pages say about QRangeModel, Canvas Painter, QtGrpc compression, the C++17 requirement and the 5-year maintenance period."
+draft: false
+relatedPosts: [cra-reporting-live-qt-declaration, qt-four-examples-without-moc]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+On Compiler Explorer, Qt 6.12.0 sorts a `std::vector` of rows through `QRangeModel`. The same program built against Qt 6.11.0 leaves the rows in their original order. Qt 6.12 is a Long-Term Support release, published on 30 September 2026. The EU Cyber Resilience Act side of that release is in <PostLink slug="cra-reporting-live-qt-declaration">the October post</PostLink>.
+
+## Sorting rows in the model
+
+`QRangeModel` wraps a C++ range so that Qt views can show it. The 6.12 documentation adds a `sort()` override. It also adds the `sortRole` and `sortCollator` properties.
+
+The documentation says `sort()` calls a member `sort()` of the range when one exists. Otherwise it calls `std::stable_sort()` for random-access ranges, and for any other range it does nothing.
+
+The demo wraps a vector of `std::tuple<QString, int>`, which the documentation lists as a table row. It prints the rows, calls `model.sort(1, Qt::DescendingOrder)` and prints them again.
+
+<GodboltEmbed id="jM1c8cbna" compilerLabel="GCC 16.2 + Qt 6.12.0" gcc_subtitle="-std=c++17 -fPIC -O1 · Qt 6.12.0 · runs live" title="Sorting a QRangeModel by its rating column" />
+
+The run exits with 0 and prints the rows in the order GCC 5, MSVC 4, Clang 3, EDG 2. The [Qt 6.11.0 run](https://godbolt.org/z/er4sxvK8c) of the same source prints Clang, GCC, MSVC, EDG after the call.
+
+The documentation also lists a new `match()` override. The release post calls it faster searching, and I did not measure it. The documentation adds that an application compiled against Qt 6.11 does not call either override, even on Qt 6.12. Recompile to get them.
+
+## Other changes in the release
+
+| Area | What the Qt pages say |
+| --- | --- |
+| Canvas Painter | The core API leaves Technology Preview and is ready for production for C++ and QML. The Canvas2D element and the custom brush class stay in preview. |
+| QtGrpc | Client-side request compression, with Identity, Deflate and Gzip choices, and a cap on incoming message size. |
+| LTS | Maintenance over a 5-year period, with a new LTS release every 2 years. |
+
+## The C++ standard
+
+The C++20 overview page says Qt 6 officially requires C++17. Qt WebEngine needs a C++20 compiler. The three-way comparison operator on QtCore classes works only when the user project builds in C++20 mode.
+
+The demo compiled at `-std=c++17`. For earlier Qt work on this site, see <PostLink slug="qt-four-examples-without-moc">the moc-free examples post</PostLink>.
+
+## What this has not been tested on
+
+- Qt 6.12 outside Compiler Explorer, any compiler except GCC 16.2, and any GUI view.
+- The `match()` speedup. The demo also leaves the sort role and the collator at their defaults.
+- Canvas Painter and QtGrpc. I read their pages and ran no code.
+- Whether reflect-moc works with Qt 6.12. The posts about it used Qt 6.10.3, and I did not try 6.12.
+- The end date of the 5-year period, which the pages I read do not give.
+
+---
+
+**Sources**, all read on 12 October 2026:
+
+- [Qt 6.12 LTS Released](https://www.qt.io/blog/qt-6.12-released), 30 September 2026: QRangeModel, Canvas Painter, QtGrpc, LTS
+- [What's New in Qt 6.12](https://doc.qt.io/qt-6.12/whatsnew612.html): sort(), match(), Canvas Painter, QtGrpc
+- [QRangeModel in Qt 6.12](https://doc.qt.io/qt-6.12/qrangemodel.html): sort(), match(), tuple rows, recompile note
+- [New classes in Qt 6.12](https://doc.qt.io/qt-6.12/newclasses612.html): compression algorithm names
+- [C++20 Overview](https://doc.qt.io/qt-6.12/cpp20-overview.html): the C++17 requirement
+- [Compiler Explorer, Qt 6.12.0](https://godbolt.org/z/jM1c8cbna): g162, Qt library 6.12.0 plus pcre2 10.42
