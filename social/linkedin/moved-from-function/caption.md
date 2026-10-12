@@ -13,7 +13,7 @@ https://wrocpp.github.io/posts/moved-from-function/
 #cpp #cplusplus #libcxx #concurrency #qt #wrocpp
 
 ## Alt-text
-Dark wro.cpp card with the magnet logo. Headline reads "On libc++, std::move leaves the callable behind" with a subtitle saying a small callable stays in the moved-from std::function and libstdc++ empties it. Citation footer: wro.cpp, 2026-10-13.
+Cream wro.cpp card with the magnet logo. Headline reads "On libc++, std::move leaves the callable behind" with a subtitle saying a small callable stays in the moved-from std::function and libstdc++ empties it. Citation footer: wro.cpp, 2026-10-13.
 
 ## Suggested post time
 Tuesday 2026-10-13, 16:00 UTC
