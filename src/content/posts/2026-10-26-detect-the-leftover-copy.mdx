@@ -1,0 +1,76 @@
+---
+title: "Catching a leftover std::function copy before it ships"
+slug: "detect-the-leftover-copy"
+pubDate: 2026-10-26
+author: filip-sajdak
+language: en
+tags: [news, cpp, clang-tidy, thread-sanitizer, concurrency, libcxx]
+kind: short
+audience: working-cpp
+summary: "Stock clang-tidy checks stay silent on a std::function moved down a by-value chain, and one of them flags the corrected code. A short custom query check finds the three bad sites, and ThreadSanitizer reports the wrong-thread destructor on libc++ when the destructor touches thread-confined state."
+draft: false
+relatedPosts: [moved-from-function, hand-off-tasks-across-threads, function-wrappers-after-move]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+The code that hit [QTBUG-151347](https://qt-project.atlassian.net/browse/QTBUG-151347) never reads the task after moving it, so the usual move checks have nothing to report. This last episode tests what does catch it. A custom clang-tidy query check flags the three bad sites in a small sample and none of the fixed ones. ThreadSanitizer reports the wrong-thread destructor on libc++, but only when that destructor touches state that belongs to another thread.
+
+## In short
+
+- `bugprone-use-after-move` is silent, because nothing uses the task after the move.
+- `cppcoreguidelines-rvalue-reference-param-not-moved` warns about the fixed code and pushes you back toward the bug.
+- A custom query check on moves of `std::function` reports exactly the three by-value sites in the sample.
+- ThreadSanitizer needs a destructor that touches thread-confined state before it reports anything.
+
+## What the stock checks say
+
+The sample has the by-value chain from the second episode and its corrected twin. I ran five move and parameter checks from clang-tidy 23.1.1 on it:
+
+- `bugprone-use-after-move`
+- `bugprone-move-forwarding-reference`
+- `performance-unnecessary-value-param`
+- `performance-move-const-arg`
+- `cppcoreguidelines-missing-std-forward`
+
+None of them reported the by-value chain.
+
+A sixth check did report the sample. It is `cppcoreguidelines-rvalue-reference-param-not-moved`, and it warned on both functions of the fixed version. They take an rvalue reference and never call `std::move` on it. Following that advice would bring the bug back.
+
+## A query check for the move
+
+A custom check can match the move itself. The matcher looks for a move constructor or move assignment whose argument is `std::move` applied to a `std::function`. Passing the task on to a `Task&&` parameter is not a move, so the fixed code does not match:
+
+```
+match expr(anyOf(
+  cxxConstructExpr(hasDeclaration(cxxConstructorDecl(isMoveConstructor())),
+                   hasArgument(0, <std::move of a std::function>)),
+  cxxOperatorCallExpr(hasOverloadedOperatorName("="),
+                      callee(cxxMethodDecl(isMoveAssignmentOperator())),
+                      hasArgument(1, <std::move of a std::function>))))
+```
+
+The full config is in the [examples repository](https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/00-news/2026-10-26-detect-the-leftover-copy/examples). It needs clang-tidy 22 or later and the `--experimental-custom-checks` flag. On the sample it reports three lines: the move assignment into the queue, the move inside the first layer, and the caller's by-value hand-off. The same lines are the ones that fail on libc++.
+
+The check is a heuristic. It flags every move of a `std::function`, including moves that never cross a thread. Read the result as a list of places to look at.
+
+## What ThreadSanitizer sees
+
+A destructor on the wrong thread is not a data race by itself. The demo gives the captured resource a destructor that decrements a counter owned by the worker thread. The worker drops its reference first and then increments the same counter. On libc++ the by-value chain makes the sending thread run the destructor last. ThreadSanitizer reported the race in the destructor on every run I made.
+
+<GodboltEmbed id="chqhfK6oW" gcc_id="99KxdYG4K" compilerLabel="clang trunk + libc++" title="ThreadSanitizer on the wrong-thread destructor" gcc_subtitle="x86-64 GCC 16.1 · -std=c++20 -O1 -fsanitize=thread · runs live" subtitle="clang trunk, libc++ · -std=c++20 -O1 -stdlib=libc++ -fsanitize=thread · runs live" />
+
+| Hand-off | libc++ (clang trunk) | libstdc++ (GCC 16.1) |
+|---|---|---|
+| By-value chain | data race reported | no report |
+| Exchange at each layer | no report | no report |
+
+A resource whose destructor touches nothing thread-confined produces no report on either library, so a clean ThreadSanitizer run says little about this bug.
+
+## The libc++ code behind it
+
+The move constructor of libc++'s internal function holder has three branches. An empty source stays empty. A callable stored on the heap moves by pointer, and the source becomes empty. A callable stored in the inline buffer is copied by a virtual clone call, and the source keeps its copy. The branches are in [lines 237 to 247](https://github.com/llvm/llvm-project/blob/c14ba73a927211a10ce66ac44df5403c53199206/libcxx/include/__functional/function.h#L237-L247) of the header at commit `c14ba73`, and the clone is a placement-new copy of the stored callable.
+
+---
+
+**Sources**: [QTBUG-151347](https://qt-project.atlassian.net/browse/QTBUG-151347) · [libc++ `__functional/function.h` at c14ba73](https://github.com/llvm/llvm-project/blob/c14ba73a927211a10ce66ac44df5403c53199206/libcxx/include/__functional/function.h#L237-L247) · [clang-tidy: bugprone-use-after-move](https://clang.llvm.org/extra/clang-tidy/checks/bugprone/use-after-move.html) · [clang-tidy: cppcoreguidelines-rvalue-reference-param-not-moved](https://clang.llvm.org/extra/clang-tidy/checks/cppcoreguidelines/rvalue-reference-param-not-moved.html).
