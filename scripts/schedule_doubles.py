@@ -123,6 +123,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # beside the derive-eq-hash post of the day.
     "2026-10-24": {"slug": "function-wrappers-after-move", "hour": 16,
                    "why": "QTBUG-151347 series episode 3 alongside the derive-eq-hash post"},
+    # Episode 4 of the QTBUG-151347 series (detecting the leftover copy) runs
+    # beside the Boost modules post of the day.
+    "2026-10-26": {"slug": "detect-the-leftover-copy", "hour": 16,
+                   "why": "QTBUG-151347 series episode 4 alongside the Boost modules post"},
 }
 
 
