@@ -7,8 +7,8 @@ language: en
 kind: short
 audience: working-cpp
 tags: [news, boost, decimal, floating-point, numerics, library]
-summary: "Add 0.1 to a double a thousand times and you get 99.999999999998593. Boost.Decimal, accepted after two reviews and first shipped in 1.91, implements the IEEE 754 decimal formats: decimal32_t, decimal64_t, decimal128_t. Compiler Explorer's Boost stops at 1.90, so the library half is cited rather than shown."
-draft: true
+summary: "Add 0.1 to a double a thousand times and you get 99.999999999998593. Boost.Decimal, accepted after two reviews and first shipped in 1.91, implements the IEEE 754 decimal formats: decimal32_t, decimal64_t, decimal128_t. Compiler Explorer carries Boost 1.91, so the same loop runs live with decimal32_t."
+draft: false
 relatedPosts: [float-to-int-ub, cpp14-shims-deleted]
 ---
 
@@ -46,9 +46,7 @@ Run the library's loop with `decimal32_t` and the total is exactly 100.
 
 ## The part you can run
 
-The library half of this post cannot be shown live: Compiler Explorer's Boost tops out at 1.90.0, which predates Decimal by one release. The same limitation applied to the <PostLink slug="cpp14-shims-deleted">Boost 1.92 shim removals</PostLink> in September.
-
-What runs without any library is the arithmetic that motivates the library:
+Compiler Explorer carries Boost 1.91 and 1.92, so the library runs live as well. First comes the arithmetic that motivates it, with no library at all:
 
 <GodboltEmbed id="5ss3PdvdG" title="What binary floating point does with decimal-exact values" />
 
@@ -58,11 +56,26 @@ A thousand additions of `0.1` land 1.41e-12 below 100. A hundred additions of `0
 
 The third is the one that survives the usual advice. "Store integer cents" fixes the total, and the demo confirms it: a hundred additions of `1` give exactly 100. It does not fix rounding. A price of 1.005 should go to 1.01 at two decimal places. The nearest `double` to 1.005 sits just below 1.005, so `std::round(price * 100.0) / 100.0` gives 1.00, and the half-cent goes the wrong way. Integer cents move the problem to wherever a rate or a division reintroduces a fraction.
 
+## The same loop with Boost.Decimal
+
+The second demo repeats both loops with Boost.Decimal. A thousand additions of one tenth use the 32-bit type, and a hundred additions of one hundredth use the 64-bit type. It runs on Boost 1.91:
+
+<GodboltEmbed id="7z5Tva1WW" gccOnly title="The same loop in binary and in decimal" gcc_subtitle="x86-64 GCC 16.1 · Boost 1.91 · -std=c++20 -O2 · runs live" />
+
+```
+double   0.1 x 1000: 99.999999999998593
+decimal32_t 0.1 x 1000: 100
+decimal64_t 0.01 x 100: 1
+decimal64_t equals 1: 1
+```
+
+The decimal totals are exact, and the comparison against 1 holds. I also ran it on Boost 1.92.0 with the same output.
+
 ## Where this fits
 
 C++ has no standard decimal type. C23 has optional `_Decimal32` and friends, ISO/IEC TR 24733 specified a C++ binding that never landed in the standard, and in practice teams that need exact decimal arithmetic have reached for a fixed-point class of their own, or for a bignum, or for the database.
 
-Boost 1.92 followed up in August with CUDA support, so the three types can be used inside kernels, and a `decompose` function that returns the significand, exponent and sign without normalizing first.
+Boost 1.92 followed up with CUDA support, so the three types can be used inside kernels, and a `decompose` function that returns the significand, exponent and sign without normalizing first.
 
 The trade is speed. Decimal arithmetic is not what the hardware does, so these types are emulated, and the `decimal_fast*` variants exist because the conforming ones are slow enough that the library authors thought a second tier was worth shipping. If your numbers came from a person, a price list, or a tax table, the exactness is what you were missing. If they came from a sensor, `double` was already the right answer.
 
