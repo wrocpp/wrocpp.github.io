@@ -8,7 +8,7 @@ kind: short
 audience: working-cpp
 tags: [news, api-contracts, windows, code-review, correctness, strings]
 summary: "RegGetValueW guarantees the string it returns is NUL-terminated and counts the terminator in the size it reports. RegQueryValueExW promises neither. The same buffer-reading code is correct against one and wrong against the other, and nothing at the call site distinguishes them."
-draft: true
+draft: false
 relatedPosts: [ai-cpp-workflow-2026, float-to-int-ub]
 ---
 
@@ -19,7 +19,7 @@ Here are two ways to read a string out of the Windows registry. They take almost
 
 `RegQueryValueExW` copies the bytes that are stored and reports how many it copied. If the value was written without a terminator, you get no terminator. If the value is empty, you get zero bytes.
 
-`RegGetValueW` guarantees the result is NUL-terminated, adds the terminator itself when the stored bytes lack one, and includes it in the size it reports. An empty value therefore costs one `wchar_t`, and the size it reports is never zero.
+`RegGetValueW` guarantees the result is NUL-terminated, adds the terminator itself when the stored bytes lack one. It includes the terminator in the size it reports. A buffer without room gets an error, not an unterminated string. An empty value therefore costs one `wchar_t`, and the size it reports is never zero.
 
 Now consider the code that consumes either one. Take the reported size, subtract the terminator, build a string:
 
