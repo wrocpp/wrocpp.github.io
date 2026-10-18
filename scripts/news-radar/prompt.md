@@ -19,17 +19,35 @@ note: the wrapper saves it.
    The repository is at `{{REPO}}`. Run each script as a single plain command by that absolute path: no `cd`, no loops, no pipes.
 5. Compare with the previous note in `{{REPO}}/.notes/radar-*.md` (the newest older one; `Read` is limited to `{{REPO}}/src/content/posts/` and `{{REPO}}/.notes/radar-*.md`, by absolute path) and report only what is new.
 
-## Sources
+## Sources (fetch every one; this is a checklist, not a menu)
 
-Standard: the latest mailing and agenda on open-std.org/jtc1/sc22/wg21/docs/papers/2026/, the P1000 schedule,
-wg21.org news, isocpp.org/blog (current and previous month), herbsutter.com.
-Compilers: gcc.gnu.org/projects/cxx-status.html and gcc.gnu.org/gcc-17/changes.html, the LLVM release and
-clang C++ status pages, the Microsoft C++ team blog (MSVC release notes), Phoronix compiler news.
-Libraries and tools: boost.org/releases, the Qt blog and release notes, Abseil, GoogleTest, Catch2, CMake,
-vcpkg and Conan release pages. Read the web pages; the gh CLI is not available to you.
-Community and talks: meetingcpp.com news, cppcon.org and the CppCon YouTube channel, CppCast, and named authors
-(Lemire, Revzin, Dargo, Fertig, Raymond Chen).
-Safety and regulation: EU CRA reporting obligations, CISA memory-safety guidance, profiles and contracts news.
+The run budget is generous (the weekly ceiling is 6 USD and a complete pass costs a fraction of it). Do not skip a source
+to save cost. The only valid reason to skip is a failed fetch, and you record it. Read the newest items on each page.
+
+Standard
+- https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/ (long page: fetch it again with `offset` until the end)
+- https://wg21.org/
+- https://isocpp.org/blog/YYYY/MM for the current month, and the previous month in the first week of a month
+- https://herbsutter.com/
+
+Compilers
+- https://gcc.gnu.org/projects/cxx-status.html and https://gcc.gnu.org/gcc-17/changes.html
+- https://clang.llvm.org/cxx_status.html and https://github.com/llvm/llvm-project/releases
+- https://devblogs.microsoft.com/cppblog/
+- a WebSearch for Phoronix news on GCC, LLVM and C++ this week
+
+Libraries and tools
+- https://www.boost.org/releases/ and https://www.qt.io/blog
+- https://github.com/abseil/abseil-cpp/releases, https://github.com/google/googletest/releases, https://github.com/catchorg/Catch2/releases
+- https://cmake.org/download/ , https://github.com/microsoft/vcpkg/releases , https://blog.conan.io/
+
+Community and talks
+- https://meetingcpp.com/blog/ , https://cppcon.org/ , https://cppcast.com/
+- https://lemire.me/blog/ , https://accu.org/journals/overload/
+
+Safety and regulation
+- a WebSearch for the EU Cyber Resilience Act reporting obligations and for CISA memory-safety guidance this month
+- a WebSearch for C++ profiles and contracts news this week
 
 ## Rules
 
@@ -59,6 +77,8 @@ One paragraph, plus the count of candidates.
 Item, post slug and date.
 ## Upcoming triggers
 Dated events in the next 30 days that will need a post (meetings, ballots, releases).
+## Source coverage
+One line per source above: fetched or failed (with the error), and the date of its newest item. A source with no line is a defect in this note.
 ## Dropped / could-not-verify
 Item and the reason it could not be confirmed.
 ```
