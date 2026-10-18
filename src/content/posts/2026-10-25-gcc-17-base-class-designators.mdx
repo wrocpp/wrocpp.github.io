@@ -1,0 +1,75 @@
+---
+title: "GCC's development branch accepts designated initializers for base classes"
+slug: "gcc-17-base-class-designators"
+pubDate: 2026-10-25
+author: filip-sajdak
+language: en
+tags: [news, cpp29, gcc, gcc-17, aggregates]
+kind: short
+audience: working-cpp
+summary: "In June the P2287R6 example had to stay commented out because no compiler accepted it. On 2026-10-18 GCC's development branch (17.0.0 20261018) compiles B{.a = 1, .b = 2} for a derived aggregate with -std=c++29. GCC 16.1 and 16.2 in C++26 mode and Clang trunk in -std=c++2d reject it."
+draft: false
+relatedPosts: [brno-quality-of-life, cpp29-mode-is-open, dates-to-watch-buzios-gcc17]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+On 2026-10-18, GCC's development branch compiles a designated initializer that names a member of a base class. The line is `B{.a = 1, .b = 2}`, and it needs `-std=c++29`. GCC 16.1 and 16.2 in C++26 mode reject the line, and so does Clang trunk in `-std=c++2d`. In June the [Brno post](/posts/brno-quality-of-life/) had to leave this example commented out, because no compiler accepted it.
+
+## In short
+
+- The feature is P2287R6, "Designated-initializers for Base Classes". The committee adopted it for C++29 at the Brno meeting.
+- GCC trunk, which is GCC 17 in development, accepts all three forms of it under `-std=c++29`. It is marked experimental.
+- Under `-std=c++26` the same trunk still rejects the plain form and accepts the other two with a warning.
+- GCC's status page lists 8 of the 18 C++29 items it tracks as available in GCC 17.
+
+## The example from June
+
+The aggregate `B` has one base class. Before P2287R6, a designator could not name the inherited member, because it is not a direct member of `B`:
+
+```cpp
+struct A { int a; };
+struct B : A { int b; };
+
+auto b1 = B{.a = 1, .b = 2};    // name the inherited member directly
+auto b2 = B{{.a = 1}, .b = 2};  // or brace the base subobject
+auto b3 = B{A{1}, .b = 2};      // or initialize the base by type
+```
+
+The embed below compiles that file with GCC trunk in C++29 mode and prints the three results. The second button shows GCC 16.1 in C++26 mode on the same file.
+
+<GodboltEmbed id="EYa7an1Y3" gcc_id="7h3WbToo8" compilerLabel="GCC trunk, -std=c++29" gccLabel="GCC 16.1, -std=c++26" title="Designated initializers for a base class" subtitle="x86-64 gcc (trunk) · -std=c++29 · runs live; the version line changes with the snapshot" gcc_subtitle="x86-64 gcc 16.1 · -std=c++26 · fails to compile, exact errors shown" />
+
+On the snapshot I ran, the program prints `1 2` for each form and reports `17.0.0 20261018 (experimental)`. Compiler Explorer's trunk moves, so the version line in the embed will differ.
+
+## What each compiler does
+
+| Compiler and mode | Plain form | Braced base and base by type |
+|---|---|---|
+| GCC trunk 17.0.0 20261018, `-std=c++29` | compiles | compile |
+| GCC trunk, `-std=c++26` | error: no member named `a` | compile with a `-Wc++29-extensions` warning |
+| GCC 16.1 and 16.2, `-std=c++26` | error: no member named `a` | error: all or none of the clauses should be designated |
+| Clang trunk, `-std=c++2d` | error: field designator `a` does not refer to any field | compile with a `-Wc99-designator` warning |
+
+The mixed forms are the ones C++20 already ruled out. GCC trunk accepts them in C++26 mode and says they belong to C++29. Clang accepts them as a C99 extension.
+
+## What else is in GCC 17
+
+GCC's C++ status page, read on 2026-10-18, calls its C++29 support experimental. Of the 18 items it lists, 8 are marked GCC 17:
+
+| Paper | Item |
+|---|---|
+| P2287R6 | Designated initializers for base classes |
+| P2953R5 | Restrictions on defaulted assignment operators |
+| P3658R1 | Identifiers following new Unicode recommendations |
+| P3733R1 | More named universal character escapes |
+| P3424R2 | Deallocation functions with a throwing specification are ill-formed |
+| P3822R2 | Conditional noexcept in compound requirements |
+| P3540R3 | An offset parameter for `#embed` |
+| P3950R1 | `return_value` and `return_void` are not mutually exclusive |
+
+The last one has its own [post from 14 October](/posts/coroutine-return-void-and-value/). The page lists two more items as available, one with no version and one marked GCC 12, and 8 as not yet implemented. I ran only the first row.
+
+---
+
+**Sources**: [P2287R6](https://wg21.link/p2287r6) · [GCC C++ status page](https://gcc.gnu.org/projects/cxx-status.html), read 2026-10-18 · Herb Sutter, [Brno trip report](https://herbsutter.com/2026/06/13/brno-trip-report/). Compiler Explorer runs on 2026-10-18: GCC trunk 17.0.0 20261018, GCC 16.1, GCC 16.2 and Clang trunk.
