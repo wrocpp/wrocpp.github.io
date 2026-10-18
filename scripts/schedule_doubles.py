@@ -136,6 +136,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # trunk, with one case that differs. It runs beside the P0963 post of the day.
     "2026-10-30": {"slug": "constexpr-virtual-inheritance", "hour": 16,
                    "why": "P3533R2 on GCC 16 and Clang trunk alongside the P0963 post"},
+    # The Qt 6.12 LTS shipped on 30 September, so its post moves up from 22
+    # November. It runs beside the Catch2 post of the day.
+    "2026-10-31": {"slug": "sort-qrangemodel-rows-in-qt-6-12", "hour": 16,
+                   "why": "Qt 6.12 LTS news, moved up from 22 November, alongside the Catch2 post"},
 }
 
 
