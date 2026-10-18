@@ -132,6 +132,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # beside the Boost modules post of the day.
     "2026-10-26": {"slug": "detect-the-leftover-copy", "hour": 16,
                    "why": "QTBUG-151347 series episode 4 alongside the Boost modules post"},
+    # P3533R2 (constexpr virtual inheritance) is accepted by GCC 16 and Clang
+    # trunk, with one case that differs. It runs beside the P0963 post of the day.
+    "2026-10-30": {"slug": "constexpr-virtual-inheritance", "hour": 16,
+                   "why": "P3533R2 on GCC 16 and Clang trunk alongside the P0963 post"},
 }
 
 
