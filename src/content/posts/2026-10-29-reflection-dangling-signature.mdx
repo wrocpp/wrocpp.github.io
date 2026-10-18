@@ -1,0 +1,91 @@
+---
+title: "Reflection can flag a dangling signature that GCC 16.2 does not warn about"
+slug: "reflection-dangling-signature"
+pubDate: 2026-10-29
+author: filip-sajdak
+language: en
+tags: [news, cpp26, reflection, safety, lifetime, gcc]
+kind: short
+audience: working-cpp
+summary: "A reflection lint of under 60 lines flags 3 of 5 declarations in a namespace on GCC 16.2: two return a view of a by-value owner, one returns a reference that can bind a temporary. For the view case GCC 16.2 gives no warning with -Wall -Wextra, a plain run prints garbage, and AddressSanitizer reports a heap use after free."
+draft: false
+relatedPosts: [reflection-on-released-gcc, memory-safety-what-to-point-at, hardened-stdlib-turn-it-on]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+Klaus Iglberger's [first article on C++ safety](https://www.modernescpp.com/index.php/cpp-and-memory-safety-part-1/), published on 2026-10-18, asks how you can know that a piece of code is safe by reading it. A function signature can answer part of that. On GCC 16.2, a reflection lint of under 60 lines flags 3 of 5 declarations in a namespace. For one of the bugs it finds, GCC's own warnings say nothing.
+
+## In short
+
+- Two of the flagged declarations return a view of a by-value owner. The third returns a `const` reference that can bind a temporary argument.
+- For the view case, GCC 16.2 gives no warning with `-Wall -Wextra`, and none with `-Wdangling-pointer=2`.
+- The same bug prints garbage in a plain run and fails AddressSanitizer with a heap use after free.
+- The lint reads signatures only. It reports a risk and proves nothing about the function body.
+
+## Five declarations
+
+The lint walks every function in a namespace. It runs on GCC 16.2 and on GCC trunk with `-std=c++26 -freflection`, with the same output on both:
+
+```cpp
+namespace api {
+std::string_view first_word(std::string s);                             // a view of a by-value owner
+std::span<const int> head(std::vector<int> v);                          // a span of a by-value owner
+const std::string& longer(const std::string& a, const std::string& b);  // the std::max shape
+std::string_view first_word_ok(std::string_view s);                     // a view of a view
+std::string longer_ok(const std::string& a, const std::string& b);      // returns by value
+}
+```
+
+<GodboltEmbed id="ac9Gan9e6" gcc_id="o5dsE77Tq" compilerLabel="GCC 16.2" gccLabel="GCC trunk" title="A signature lint over a namespace" subtitle="x86-64 gcc 16.2 · -std=c++26 -freflection · runs live" gcc_subtitle="x86-64 gcc (trunk) · -std=c++26 -freflection · runs live" />
+
+| Declaration | Lint result |
+|---|---|
+| `first_word` | returns a view of a by-value owner |
+| `head` | returns a view of a by-value owner |
+| `longer` | returns a reference that may bind a temporary argument |
+| `first_word_ok` | returns a view, check the source |
+| `longer_ok` | ok |
+
+## What the compiler and the sanitizer say
+
+The next table runs the same two bugs, written out as programs, through three tools on GCC 16.2.
+
+| Bug | `-Wall -Wextra` | Plain run | AddressSanitizer |
+|---|---|---|---|
+| A view returned from a by-value `std::string` | no warning | the view no longer equals its source | heap use after free |
+| `longer` called with two temporaries | a `-Wdangling-reference` warning at the call | prints the length 50 | stack use after scope |
+
+The view bug is the one the compiler does not see. The first embed below runs it plainly, and the second button runs the same file under AddressSanitizer:
+
+<GodboltEmbed id="Tn8vKsYaz" gcc_id="G967GvTeb" compilerLabel="GCC 16.2, plain run" gccLabel="GCC 16.2, AddressSanitizer" title="The view outlives the string it points into" subtitle="x86-64 gcc 16.2 · -std=c++26 -O0 · runs live" gcc_subtitle="x86-64 gcc 16.2 · -O1 -fsanitize=address · the report is shown" />
+
+The plain run prints `false` for "the view still equals the text it was taken from". Printing only the size of the dangling view is silent even under AddressSanitizer, because nothing reads the freed memory.
+
+## How the lint works
+
+The lint takes two facts from reflection. The first is the return type of each function. The second is the type of each parameter, and whether it is a reference. A view is a string view or a span. An owner is a string or a vector:
+
+```cpp
+consteval std::meta::info canon(std::meta::info t) {
+  return std::meta::dealias(std::meta::remove_cvref(t));
+}
+consteval bool is_owner(std::meta::info t) {
+  auto c = canon(t);
+  return c == std::meta::dealias(^^std::string) ||
+         (std::meta::has_template_arguments(c) && std::meta::template_of(c) == ^^std::vector);
+}
+```
+
+My first version missed `first_word`. The expression for `std::string` names an alias, and comparing an alias with a type compares two different things. The alias needs `dealias` on both sides.
+
+## Limits
+
+- A signature cannot show what the body does. A function that takes a `std::string` by value and returns a view of a static string is safe, and the lint flags it.
+- The lint knows two owner types and two view types. A project would list its own.
+- Views stored as data members are a different check. The toolset pages on [lifetime safety](/toolset/lifetime-safety-2026/) and [memory safety](/toolset/memory-safety-cpp26-and-beyond/) show that one on the clang-p2996 fork.
+- I did not test `[[clang::lifetimebound]]`, function bodies or other translation units.
+
+---
+
+**Sources**: Klaus Iglberger, [The Problem with C++ Safety (Part 1)](https://www.modernescpp.com/index.php/cpp-and-memory-safety-part-1/), 2026-10-18 · [P2996, Reflection for C++26](https://wg21.link/p2996). Compiler Explorer runs on 2026-10-18 and 2026-10-19: GCC 16.2 and GCC trunk.
