@@ -1,0 +1,71 @@
+---
+title: "Constexpr constructors with virtual bases work in GCC 16 and Clang trunk"
+slug: "constexpr-virtual-inheritance"
+pubDate: 2026-10-30
+author: filip-sajdak
+language: en
+tags: [news, cpp26, constexpr, gcc, clang]
+kind: short
+audience: working-cpp
+summary: "P3533R2 lifts the rule that a constexpr constructor cannot belong to a class with a virtual base. GCC 16.1 accepts it with -std=c++26 and Clang trunk accepts it, while GCC 15.3 and Clang 23.1 reject it. One case still differs: GCC 16 refuses a virtual call through a reference to the virtual base in a constant expression, and Clang trunk accepts it."
+draft: false
+relatedPosts: [constexpr-exceptions]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+A class with a virtual base could not have a constexpr constructor until P3533R2, "constexpr virtual inheritance" (Hana Dusíková, 2025-02-17). On 2026-10-18, GCC 16.1 and 16.2 accept it with `-std=c++26`, and Clang trunk accepts it. GCC 15.3, GCC 14.1 and Clang 23.1 reject it. GCC 16 still refuses one thing that Clang trunk allows: a virtual call through a reference to the virtual base inside a constant expression.
+
+## In short
+
+- The paper removes the restriction on constexpr constructors and destructors in classes with virtual base classes. It names `std::ios_base` and the stream classes as later beneficiaries.
+- GCC 16.1, 16.2 and trunk define `__cpp_constexpr_virtual_inheritance` as 202506 under `-std=c++26`. Clang trunk accepts the code and defines no macro yet.
+- GCC 16 rejects the virtual call through a virtual base reference with a specific message. Clang trunk runs it.
+- I did not determine whether the standard requires that last case, so this reports behavior and not a bug.
+
+## The example
+
+The base `A` is virtual. Both `B` and `C` inherit it. The class `D` inherits both of those. Every constructor is constexpr:
+
+```cpp
+struct A {
+  int v;
+  constexpr A(int x) : v(x) {}
+  constexpr virtual int f() const { return v; }
+};
+struct B : virtual A {
+  constexpr B() : A(1) {}
+  constexpr int f() const override { return 2; }
+};
+struct C : virtual A { constexpr C() : A(1) {} };
+struct D : B, C { constexpr D() : A(5) {} };
+```
+
+The program checks two things at compile time. It reads the data member of the virtual base through a `D`, and it calls the virtual function on a complete `B`. The first embed runs it on GCC 16.1, and the second button runs the same file on Clang trunk.
+
+<GodboltEmbed id="37b4aP8qf" gcc_id="brs36df1a" compilerLabel="GCC 16.1, -std=c++26" gccLabel="Clang trunk" title="Constexpr constructors with a virtual base" subtitle="x86-64 gcc 16.1 · -std=c++26 · runs live" gcc_subtitle="x86-64 clang (trunk) · -std=c++26 · runs live" />
+
+Both print `read_base = 5` and `direct_call = 2`. GCC reports the macro value 202506, and Clang reports it as undefined.
+
+## The case that differs
+
+Compiling with `-DCALL_THROUGH_BASE` adds one more function. It makes a `B` and binds a reference to its virtual base. Then it calls the virtual function through that reference in a `static_assert`:
+
+<GodboltEmbed id="ez9EKTq19" gcc_id="9bejxPjdo" compilerLabel="GCC 16.1, -std=c++26" gccLabel="Clang trunk" title="A virtual call through a virtual base reference" subtitle="x86-64 gcc 16.1 · -std=c++26 -DCALL_THROUGH_BASE · fails to compile, exact error shown" gcc_subtitle="x86-64 clang (trunk) · -std=c++26 -DCALL_THROUGH_BASE · runs live" />
+
+| Compiler | Constructors, reads, direct call | Virtual call through the virtual base |
+|---|---|---|
+| GCC 14.1 (`-std=c++23`) and 15.3 | error: the struct has virtual base classes | same error |
+| GCC 16.1, 16.2 and trunk | compiles | error: calling a constexpr member function through a virtual base subobject |
+| Clang 23.1 | error: constexpr constructor not allowed in struct with virtual base class | same error |
+| Clang trunk | compiles | compiles, prints `through_base = 2` |
+
+The GCC message names the function, `B::f`, and says it is called through a virtual base subobject. A smaller version compiled on GCC 16.1: the base had no data member and no constructor argument. So the trigger is not simply the virtual call, and I stopped at the version above.
+
+## What I did not test
+
+Destructors, `dynamic_cast` and `typeid` in constant expressions were not run. Neither was any standard stream class, because the library types the paper mentions are not constexpr yet.
+
+---
+
+**Sources**: [P3533R2](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3533r2.html), read 2026-10-18 · Compiler Explorer runs on 2026-10-18: GCC 14.1, 15.3, 16.1, 16.2 and trunk, Clang 23.1 and trunk.
