@@ -123,6 +123,11 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # beside the derive-eq-hash post of the day.
     "2026-10-24": {"slug": "function-wrappers-after-move", "hour": 16,
                    "why": "QTBUG-151347 series episode 3 alongside the derive-eq-hash post"},
+    # P2287R6 now compiles on GCC trunk with -std=c++29. The June Brno post had
+    # to comment that example out, so this follow-up runs beside the GoogleTest
+    # post of the day.
+    "2026-10-25": {"slug": "gcc-17-base-class-designators", "hour": 16,
+                   "why": "P2287R6 runs on GCC trunk alongside the GoogleTest post"},
     # Episode 4 of the QTBUG-151347 series (detecting the leftover copy) runs
     # beside the Boost modules post of the day.
     "2026-10-26": {"slug": "detect-the-leftover-copy", "hour": 16,
