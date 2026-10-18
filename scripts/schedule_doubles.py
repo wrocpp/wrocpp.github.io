@@ -132,6 +132,11 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # beside the Boost modules post of the day.
     "2026-10-26": {"slug": "detect-the-leftover-copy", "hour": 16,
                    "why": "QTBUG-151347 series episode 4 alongside the Boost modules post"},
+    # A reflection lint that flags a dangling-view signature GCC 16.2 does not
+    # warn about, written in response to Klaus Iglberger's safety article of
+    # 18 October. It runs beside the API-contract post of the day.
+    "2026-10-29": {"slug": "reflection-dangling-signature", "hour": 16,
+                   "why": "reflection signature lint, response to Iglberger's safety article, beside the API-contract post"},
     # P3533R2 (constexpr virtual inheritance) is accepted by GCC 16 and Clang
     # trunk, with one case that differs. It runs beside the P0963 post of the day.
     "2026-10-30": {"slug": "constexpr-virtual-inheritance", "hour": 16,
