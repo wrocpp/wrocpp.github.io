@@ -17,7 +17,9 @@ note: the wrapper saves it.
    snippet inline as `--code '...'` (probe.py reads no files).
    Quote the result. No demo possible is a valid answer; say why.
    The repository is at `{{REPO}}`. Run each script as a single plain command by that absolute path: no `cd`, no loops, no pipes.
-5. Compare with the previous note in `{{REPO}}/.notes/radar-*.md` (the newest older one; `Read` is limited to `{{REPO}}/src/content/posts/` and `{{REPO}}/.notes/radar-*.md`, by absolute path) and report only what is new.
+5. Read `{{REPO}}/.notes/radar-pending.md`: dated follow-ups for this radar. List every item due within 7 days, and any past-due item first, at the top of "Upcoming triggers". Do not edit the file.
+6. Compare with the previous note: the newest `{{REPO}}/.notes/radar-YYYY-MM-DD.md` older than today, not `radar-pending.md`.
+   `Read` is limited to `{{REPO}}/src/content/posts/` and `{{REPO}}/.notes/radar-*.md`, by absolute path. Report only what is new.
 
 ## Sources (fetch every one; this is a checklist, not a menu)
 
