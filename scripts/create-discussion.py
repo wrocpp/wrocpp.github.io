@@ -98,7 +98,7 @@ def godbolt_id_for(slug: str) -> str | None:
     a 'try the code' link inside the discussion body."""
     yml = REPO_ROOT / "src/data/godbolt-permalinks.yml"
     if not yml.exists():
-        return None
+        return manual_godbolt_id(slug)
     in_post = False
     indent = None
     for line in yml.read_text().splitlines():
@@ -114,6 +114,15 @@ def godbolt_id_for(slug: str) -> str | None:
         m = re.match(r'^(\s+)id:\s*(.+)$', line)
         if m:
             return m.group(2).strip()
+    return manual_godbolt_id(slug)
+
+
+def manual_godbolt_id(slug: str) -> str | None:
+    """A link minted by hand lives in the post as <GodboltEmbed id="...">, not in the yml."""
+    for post in (REPO_ROOT / "src/content/posts").glob(f"*-{slug}.mdx"):
+        m = re.search(r'<GodboltEmbed\s+id="([^"]+)"', post.read_text())
+        if m:
+            return m.group(1)
     return None
 
 
@@ -132,6 +141,8 @@ def discussion_body(fm: dict, godbolt: str | None) -> str:
         f"- The Compiler Explorer playground: <https://godbolt.org/z/{godbolt}>\n"
         if godbolt else ""
     )
+    # A standalone post has no series page to link to.
+    series_link = f"- The wro.cpp series: <{SITE_BASE}/series/{series}/>\n" if series else ""
     return f"""# {title}
 {series_line}
 This is the discussion thread for **[{title}]({post_url})**.
@@ -143,8 +154,7 @@ This is the discussion thread for **[{title}]({post_url})**.
 
 **Quick links:**
 - The post: <{post_url}>
-{godbolt_line}- The wro.cpp series: <{SITE_BASE}/series/cpp26-reflection/>
-- Slack (#wro.cpp): <https://wrocpp.slack.com>
+{godbolt_line}{series_link}- Slack (#wro.cpp): <https://wrocpp.slack.com>
 
 If you spot a bug in the code or the prose, a comment here or a PR against [wrocpp.github.io](https://github.com/{GH_OWNER}/{GH_REPO}) both work.
 """
