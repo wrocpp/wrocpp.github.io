@@ -13,8 +13,8 @@ https://wrocpp.github.io/posts/qt-class-template-typed-signals-without-moc/
 #cpp #cpp26 #qt #reflection #moc #softwarearchitecture #wrocpp
 
 ## Alt-text
-wro.cpp card with the magnet logo. Headline reads "moc can't read a template. Reflection can." with a subtitle saying one container template with typed signals, one model for seven Qt containers and tests that catch six wrong adapters. Citation footer: wro.cpp, 2026-10-22.
+wro.cpp card with the magnet logo. Headline reads "moc can't read a template. Reflection can." with a subtitle saying one container template with typed signals, one model for seven Qt containers and tests that catch six wrong adapters. Citation footer: wro.cpp, 2026-10-21.
 
 ## Suggested post time
-Thursday 2026-10-22, 08:00 UTC
-Reason: first post of the day; the Rust and Swift interop news holds the 16:00 UTC slot.
+Wednesday 2026-10-21, 08:00 UTC
+Reason: first post of the day; the Qt Bridges replay holds the 16:00 UTC slot.

@@ -1,7 +1,7 @@
 ---
 title: "One Qt class template can declare typed signals without moc"
 slug: "qt-class-template-typed-signals-without-moc"
-pubDate: 2026-10-22
+pubDate: 2026-10-21
 author: filip-sajdak
 language: en
 kind: flagship
@@ -121,5 +121,9 @@ For a stable name, set one with `RQT_CLASS_NAME(NameOf<T>::value)` in the class,
 - I have only the description in his post. The tests come from the `QAbstractItemModel` contract, so they show that these classes keep it. They do not show that his application has no ghost rows.
 - `QMultiMap` and `QMultiHash` are not supported. Two entries can share a key there, so a key does not identify an entry.
 - Proxy models, views that cache row data, and QML registration of a specialization are not covered.
+- The same specialization in two translation units is not tested. The library does that for plain classes, and I did not write the template version.
+- The map and hash models cost linear time. Finding a row from a key, or a key from a row, walks the container or the model's key list. I read this in the code and did not measure it, and the tests use small containers.
+- If a container's own insert throws after the "about" signal, the model is left mid-change, as a hand-written adapter would be.
+- The model is a single-column list model with display and key roles. It has no editing, no tables or trees and no range inserts, and it assumes the container and the model live in one thread.
 - I did not measure the speed difference from the `QVariant` version. He wrote that his design is not the fastest, and I have no number for ours.
 - `tools/rqt-migrate` cannot port this shape. It reads `moc --output-json`, and moc cannot read a template, so the reflect-moc tree here is written by hand. A step that folds a signals-only base into the template does not exist yet.
