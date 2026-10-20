@@ -24,7 +24,7 @@ import PostLink from '../../components/PostLink.astro';
 - The cause was one line: a template specialization has no identifier, and the code that names a class asked for one.
 - One container template now declares typed signals, and one generic model serves seven Qt containers, from `QList` to `QSet`.
 - 224,000 random steps are checked against a plain reference, and six deliberately wrong adapters are all caught.
-- Against a rebuilt `QVariant` version, the typed one is faster per emit (26 against 38 ns) and per change for a list. Removal from a hash model is the exception, and the typed one costs 112 bytes per container against 24.
+- Against a rebuilt `QVariant` version, the typed one is faster per emit (26 against 38 ns) and per change for a list. One apparent exception, removal from a hash model, was the placement of a loop in the machine code. The typed one costs 112 bytes per container against 24.
 - I have not seen his code. The tests come from the Qt model contract, and `QMultiMap` is not supported.
 
 ## What he asked for
@@ -119,14 +119,14 @@ For a stable name, set one with `RQT_CLASS_NAME(NameOf<T>::value)` in the class,
 
 ## What it costs against the QVariant version
 
-His post says the `QVariant` design is not the fastest, so I measured it. The twin is [a reconstruction from his description](https://github.com/wrocpp/reflect-moc/tree/0137abfdb2645cdc4eb753f2dbe7a4946df1e522/examples/qt/observable_models_qvariant). It has a non-template base with `Q_OBJECT` and ten signals keyed by `QVariant`. A template container boxes the key and a model unboxes it. Its row logic is copied from the typed model, so only the way the key travels differs. It passes the same random test as the typed version before anything is timed, and a copy with one wrong row fails that test.
+His post says the `QVariant` design is not the fastest, so I measured it. The twin is [a reconstruction from his description](https://github.com/wrocpp/reflect-moc/tree/e235c615fc9bf0794829607aa4670381e4150448/examples/qt/observable_models_qvariant). It has a non-template base with `Q_OBJECT` and ten signals keyed by `QVariant`. A template container boxes the key and a model unboxes it. Its row logic is copied from the typed model, so only the way the key travels differs. It passes the same random test as the typed version before anything is timed, and a copy with one wrong row fails that test.
 
 | per change, 1,000 entries (median of 7, ns) | QVariant | typed |
 |---|---|---|
 | `QList` replace | 91.5 | 72.4 |
 | `QHash` fill | 162.4 | 120.5 |
 | `QMap` replace | 1,857.9 | 1,875.6 |
-| `QHash` drain, x86_64 (not Mac) | 267.5 | 297.8 |
+| `QHash` drain, x86_64 (loop placement, see text) | 267.5 | 297.8 |
 | one emit, `quint32` key | 37.8 | 25.8 |
 | one emit, 32-byte key | 46.0 | 28.2 |
 | bytes per container (ten signals, a `QHash`) | 24 | 112 |
@@ -134,7 +134,7 @@ His post says the `QVariant` design is not the fastest, so I measured it. The tw
 
 On the Mac the typed version is as fast or faster in all ten rows of the full table. It is 15 to 25 percent faster for a list and a hash. A map shows no difference, because finding the row dominates both. A `quint32` key already shows the gap on a bare emit, so it is not only the heap allocation that a large key causes.
 
-I also ran it on a GitHub x86_64 runner, where the spread is under 2 percent. The picture is the same, with one result that goes against the typed version. Removing entries from a hash model is slower: 1.11 times at 1,000 entries and 1.73 times at 100,000. I do not know why. The model code on that path is identical in the two builds, and only the signal transport differs.
+I also ran it on a GitHub x86_64 runner, where the spread is under 2 percent. The picture is the same, with one result that first looked like a cost of typed signals. Removing entries from a hash model was slower: 1.11 times at 1,000 entries and 1.73 times at 100,000. The scan that finds the row is the same four instructions in both builds. In the typed build the compiler put its compare and jump across a 32-byte boundary, and building both with that boundary respected made them equal. Replacing the model's key list with a `std::vector` removed the gap as well, so a coming change switches the model to one. The profile is in the measurements doc.
 
 ### What it costs in memory and compile time
 
@@ -142,7 +142,7 @@ Each data-member signal takes 8 bytes in every instance, so a container with ten
 
 ### How far to trust it
 
-These numbers come from one script ([`run.sh`](https://github.com/wrocpp/reflect-moc/blob/0137abfdb2645cdc4eb753f2dbe7a4946df1e522/tests/qt/measure/observable_bench/run.sh)) The Mac was in use, so treat differences under about 10 percent there as noise. The x86_64 run is the manual [`bench` workflow](https://github.com/wrocpp/reflect-moc/actions/runs/39480417966). The full tables, the spread of every cell and how to repeat it are in [`docs/measurements.md`](https://github.com/wrocpp/reflect-moc/blob/0137abfdb2645cdc4eb753f2dbe7a4946df1e522/docs/measurements.md).
+These numbers come from one script ([`run.sh`](https://github.com/wrocpp/reflect-moc/blob/e235c615fc9bf0794829607aa4670381e4150448/tests/qt/measure/observable_bench/run.sh)) The Mac was in use, so treat differences under about 10 percent there as noise. The x86_64 run is the manual [`bench` workflow](https://github.com/wrocpp/reflect-moc/actions/runs/39480417966). The full tables, the spread of every cell and how to repeat it are in [`docs/measurements.md`](https://github.com/wrocpp/reflect-moc/blob/e235c615fc9bf0794829607aa4670381e4150448/docs/measurements.md).
 
 ## What this does not show
 
