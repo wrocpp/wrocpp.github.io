@@ -24,6 +24,7 @@ import PostLink from '../../components/PostLink.astro';
 - The cause was one line: a template specialization has no identifier, and the code that names a class asked for one.
 - One container template now declares typed signals, and one generic model serves seven Qt containers, from `QList` to `QSet`.
 - 224,000 random steps are checked against a plain reference, and six deliberately wrong adapters are all caught.
+- Against a rebuilt `QVariant` version, the typed one is faster per emit (26 against 38 ns) and per change for a list. Removal from a hash model is the exception, and the typed one costs 112 bytes per container against 24.
 - I have not seen his code. The tests come from the Qt model contract, and `QMultiMap` is not supported.
 
 ## What he asked for
@@ -116,6 +117,33 @@ The demo below has no Qt. It prints `has_identifier` for two specializations of 
 
 For a stable name, set one with `RQT_CLASS_NAME(NameOf<T>::value)` in the class, or `[[=rqt::class_name{"SampleContainer"}]]` on a plain class. One difference from moc shows in the signatures: a `qsizetype` argument is registered as `qlonglong`, in a template and in a plain class.
 
+## What it costs against the QVariant version
+
+His post says the `QVariant` design is not the fastest, so I measured it. The twin is [a reconstruction from his description](https://github.com/wrocpp/reflect-moc/tree/0137abfdb2645cdc4eb753f2dbe7a4946df1e522/examples/qt/observable_models_qvariant). It has a non-template base with `Q_OBJECT` and ten signals keyed by `QVariant`. A template container boxes the key and a model unboxes it. Its row logic is copied from the typed model, so only the way the key travels differs. It passes the same random test as the typed version before anything is timed, and a copy with one wrong row fails that test.
+
+| per change, 1,000 entries (median of 7, ns) | QVariant | typed |
+|---|---|---|
+| `QList` replace | 91.5 | 72.4 |
+| `QHash` fill | 162.4 | 120.5 |
+| `QMap` replace | 1,857.9 | 1,875.6 |
+| `QHash` drain, x86_64 (not Mac) | 267.5 | 297.8 |
+| one emit, `quint32` key | 37.8 | 25.8 |
+| one emit, 32-byte key | 46.0 | 28.2 |
+| bytes per container (ten signals, a `QHash`) | 24 | 112 |
+| compile, one translation unit (s) | 5.5 + 3.5 for moc | 7.9 |
+
+On the Mac the typed version is as fast or faster in all ten rows of the full table. It is 15 to 25 percent faster for a list and a hash. A map shows no difference, because finding the row dominates both. A `quint32` key already shows the gap on a bare emit, so it is not only the heap allocation that a large key causes.
+
+I also ran it on a GitHub x86_64 runner, where the spread is under 2 percent. The picture is the same, with one result that goes against the typed version. Removing entries from a hash model is slower: 1.11 times at 1,000 entries and 1.73 times at 100,000. I do not know why. The model code on that path is identical in the two builds, and only the signal transport differs.
+
+### What it costs in memory and compile time
+
+Each data-member signal takes 8 bytes in every instance, so a container with ten signals is 112 bytes against 24. `RQT_OBJECT_STATIC` with `rqt::static_signal` brings it back to 24 bytes. The reflection translation unit compiles 2.4 seconds slower on the Mac, and 1.1 seconds faster once moc and its generated file are counted. On x86_64 it is 2.1 seconds slower and 0.4 seconds faster. Which side wins there depends on how many files include the header.
+
+### How far to trust it
+
+These numbers come from one script ([`run.sh`](https://github.com/wrocpp/reflect-moc/blob/0137abfdb2645cdc4eb753f2dbe7a4946df1e522/tests/qt/measure/observable_bench/run.sh)) The Mac was in use, so treat differences under about 10 percent there as noise. The x86_64 run is the manual [`bench` workflow](https://github.com/wrocpp/reflect-moc/actions/runs/39480417966). The full tables, the spread of every cell and how to repeat it are in [`docs/measurements.md`](https://github.com/wrocpp/reflect-moc/blob/0137abfdb2645cdc4eb753f2dbe7a4946df1e522/docs/measurements.md).
+
 ## What this does not show
 
 - The library is GCC only, tested on 16.2 and Qt 6.10 (Docker on aarch64, and [CI on x86_64](https://github.com/wrocpp/reflect-moc/actions/runs/39465952513)). Nothing here ran on clang or MSVC.
@@ -123,8 +151,8 @@ For a stable name, set one with `RQT_CLASS_NAME(NameOf<T>::value)` in the class,
 - `QMultiMap` and `QMultiHash` are not supported. Two entries can share a key there, so a key does not identify an entry.
 - Proxy models, views that cache row data, and QML registration of a specialization are not covered.
 - The same specialization in two translation units is not tested. The library does that for plain classes, and I did not write the template version.
-- The map and hash models cost linear time. Finding a row from a key, or a key from a row, walks the container or the model's key list. I read this in the code and did not measure it, and the tests use small containers.
+- The map and hash models cost linear time. Finding a row from a key, or a key from a row, walks the container or the model's key list. A replace takes about 28 microseconds in a hash model of 100,000 entries and about 54 in a map of 10,000. The `QVariant` twin costs the same, since the row logic is shared. I have not added an index.
 - If a container's own insert throws after the "about" signal, the model is left mid-change, as a hand-written adapter would be.
 - The model is a single-column list model with display and key roles. It has no editing, no tables or trees and no range inserts, and it assumes the container and the model live in one thread.
-- I did not measure the speed difference from the `QVariant` version. He wrote that his design is not the fastest, and I have no number for ours.
+- The speed numbers come from GCC 16.2 on two machines, with no view attached and with my reconstruction of his design. A real application with a view would see smaller differences, and his code could differ from my twin.
 - `tools/rqt-migrate` cannot port this shape. It reads `moc --output-json`, and moc cannot read a template, so the reflect-moc tree here is written by hand. A step that folds a signals-only base into the template does not exist yet.
