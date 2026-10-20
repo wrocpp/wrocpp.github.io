@@ -132,6 +132,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # beside the Boost modules post of the day.
     "2026-10-26": {"slug": "detect-the-leftover-copy", "hour": 16,
                    "why": "QTBUG-151347 series episode 4 alongside the Boost modules post"},
+    # A reply to a reader's wishlist for contracts that prove things, with the
+    # wishlist run on GCC 16.2. It runs beside the Abseil iterator post of the day.
+    "2026-10-27": {"slug": "contracts-that-prove-something", "hour": 16,
+                   "why": "reply to a reader's contracts wishlist, tested on GCC 16.2, beside the Abseil post"},
     # A reflection lint that flags a dangling-view signature GCC 16.2 does not
     # warn about, written in response to Klaus Iglberger's safety article of
     # 18 October. It runs beside the API-contract post of the day.
