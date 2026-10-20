@@ -27,4 +27,4 @@ A wro.cpp card reading "Trivially copyable, and not copyable", about a type-trai
 
 ## Suggested post time
 Sunday 2026-11-01, 10:00 CET
-Reason: first free day. The post moved here from 2026-10-22, which now carries the reflect-moc class template post.
+Reason: first free day. The post moved here from 2026-10-22, when that morning slot went to another post.

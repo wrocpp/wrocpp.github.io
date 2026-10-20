@@ -20,5 +20,5 @@ Reduced case, both compilers: https://wrocpp.github.io/posts/gcc-expansion-named
 A wro.cpp card about a GCC expansion statement limitation.
 
 ## Suggested post time
-Wednesday 2026-10-21, 10:00 CET
+Thursday 2026-10-22, 10:00 CET
 Reason: weekday mid-morning CET suits the EU C++ audience.
