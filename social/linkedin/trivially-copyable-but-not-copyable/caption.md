@@ -26,5 +26,5 @@ Three compilers, one file: https://wrocpp.github.io/posts/trivially-copyable-but
 A wro.cpp card reading "Trivially copyable, and not copyable", about a type-trait divergence between compilers.
 
 ## Suggested post time
-Thursday 2026-10-22, 10:00 CET
-Reason: weekday mid-morning CET suits the EU C++ audience.
+Sunday 2026-11-01, 10:00 CET
+Reason: first free day. The post moved here from 2026-10-22, which now carries the reflect-moc class template post.
