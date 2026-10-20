@@ -1,0 +1,125 @@
+---
+title: "One Qt class template can declare typed signals without moc"
+slug: "qt-class-template-typed-signals-without-moc"
+pubDate: 2026-10-22
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 31
+audience: working-cpp
+tags: [reflection, cpp26, qt, moc, templates]
+summary: "A Qt engineer named reflect-moc's last open limit as exactly his case: one observable container for many types, which moc cannot give signals. The cause was one line. Now one container template declares typed signals, one generic model serves seven Qt containers, and a random test with six wrong adapters and 31 mutants checks that ghost rows and ghost selections cannot come from it."
+draft: false
+relatedPosts: [qt-four-examples-without-moc, qt-signals-as-data-members, qt-object-that-never-names-its-class]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+## In short
+
+- A reader read the README of reflect-moc and named its remaining limit, a class template with signals, as exactly his case.
+- The cause was one line: a template specialization has no identifier, and the code that names a class asked for one.
+- One container template now declares typed signals, and one generic model serves seven Qt containers, from `QList` to `QSet`.
+- 224,000 random steps are checked against a plain reference, and six deliberately wrong adapters are all caught.
+- I have not seen his code. The tests come from the Qt model contract, and `QMultiMap` is not supported.
+
+## What he asked for
+
+Leonardo Rossi described the problem in [a LinkedIn post](https://lnkd.in/p/ePDiicun) after <PostLink slug="qt-four-examples-without-moc">the post on four Qt examples</PostLink>. His team needed observable containers (lists, maps, tables) for many data types, so they had to be templates. moc rejects `Q_OBJECT` in a class template. So they split each one:
+
+- a small non-template `QObject` declares the signals, with one `QVariant` key type for every container
+- a typed template inherits it and does the work, without `Q_OBJECT`
+- a plain class built on the template adds `Q_OBJECT` again and signals of its own
+
+He listed what that cost. The key travels as a `QVariant`. The wiring between data and views had been copied by hand into 19 files, with ghost rows and ghost selections. He also wrote that a class template with signals is still on reflect-moc's list of limits, which is his case.
+
+## Why the template failed
+
+On the commit before the fix, a template with `RQT_OBJECT` and signals did not build:
+
+```text
+uncaught exception of type 'std::meta::exception';
+'what()': 'reflection with has_identifier false'
+```
+
+The function that builds the class name called `identifier_of` on the class. A specialization such as `ObservableContainer<QHash<unsigned, Sample>>` has no identifier, so reflection threw. Nothing else needed a change: the anchor member, the signal offsets and the meta-object all work on a specialization. The fix names a type without an identifier by the compiler's own spelling ([`tables.hpp`](https://github.com/wrocpp/reflect-moc/blob/df5836e1613a1ca8d8dcf93a72b05fca4d3e832b/include/reflect_moc/qt/tables.hpp)).
+
+## Typed signals in one class
+
+The key type comes from the container: the hash key for a `QHash`, the index for a `QList`. The signals carry it as it is:
+
+```cpp
+template <class C>
+class ObservableContainer : public QObject {
+  RQT_OBJECT
+
+ public:
+  using Key = typename ContainerTraits<C>::Key;
+  using Value = typename ContainerTraits<C>::Value;
+
+  bool insert(const Key& key, Value value = Value{});
+  bool remove(const Key& key);
+  bool replace(const Key& key, Value value);
+  bool move(const Key& from, const Key& to);  // a list only
+  bool clear();
+
+ signals:
+  rqt::signal<void(const Key&)> entryAboutToBeAdded;
+  rqt::signal<void(const Key&)> entryAdded;
+  // the same pair for removed and changed; a pair for moved and for cleared
+};
+```
+
+A mutator that is asked for something invalid returns `false`, changes nothing and emits nothing. That covers an index out of range, a key already present and a replace of a missing key. So a bad call cannot leave a view out of step with the container. The `QVariant` is gone from the signals, and so is the signals-only base class.
+
+## One model for every container
+
+A model has to pair every begin call with its end call and find the right row. `ContainerModel<C>` does that once, from the container's signals. A new data type needs a formatter and nothing else. The row comes from a different place for each kind of container:
+
+| container | row order | where the row comes from |
+|---|---|---|
+| `QList`, `QQueue`, `QStack`, `QStringList` | the index | the key is the row |
+| `QMap` | the key order | counted from the key at announcement time |
+| `QHash`, `QSet` | the order of insertion | a key list the model keeps |
+
+The map row is counted at announcement time because a removed key is already gone when the removal is confirmed. The code is in [`examples/qt/observable_models`](https://github.com/wrocpp/reflect-moc/tree/9e1f42da938afb454fcba0abe1758adbe771ea7f/examples/qt/observable_models), with a smaller [`observable_container`](https://github.com/wrocpp/reflect-moc/tree/9e1f42da938afb454fcba0abe1758adbe771ea7f/examples/qt/observable_container) that keeps his split next to the one-class version. Both builds print the same 9 lines under `QAbstractItemModelTester`, and the one-class build has no warnings and runs no moc.
+
+## How ghost rows are caught
+
+A ghost row is a row that a view shows and the model no longer has. A view learns about changes only from signals. So the test keeps a mirror of what a view would believe, built from signals alone. After every step it compares the mirror with the live model.
+
+Each step applies one random change to both the container and a plain reference. It picks from insert, remove, replace, move, clear and select. Afterwards the container, model, mirror, selection and a persistent index must all agree with the reference. `QAbstractItemModelTester` runs in fatal mode. There are 8 seeds of 4,000 steps for each of 7 containers. That is 224,000 steps, about 192,000 of them change requests and the rest row selections. The run takes 1.5 seconds.
+
+To check that the test can fail, I wrote six adapters with one mistake each. All six are reported, and the right adapter is not:
+
+| mistake | what reports it |
+|---|---|
+| no end call after an insert, a move or a reset | the change was announced and never confirmed |
+| the insert announced after the container changed | the row count is not what the change implies |
+| the removal announced for the wrong row | the mirror differs from the model |
+| a value replaced with no `dataChanged` | the mirror differs from the model |
+
+The last two are the instructive ones. Only the mirror caught them. The model reads the container live, so a check built from the model's own data agrees with it and sees nothing wrong.
+
+I also ran 31 hand-listed mutants on the headers, because Mull needs clang and the image has only GCC. The first run killed 24 and exposed two gaps. Nothing tested the container's own announcements, and nothing checked that a list model has no rows under a row. Both are closed. The final count is 30 killed and 1 survivor, which is equivalent: `upperBound` for `lowerBound` on a key that is not in the map yet.
+
+## Naming a specialization
+
+Qt reports a class name for every meta-object. For a specialization, reflect-moc uses the compiler's spelling. On GCC 16.2 that is `ObservableContainer<QHash<unsigned int, Sample> >`, with the space before the last bracket. The text is implementation-defined, so a test that pins it is pinned to one compiler.
+
+The demo below has no Qt. It prints `has_identifier` for two specializations of a template and lists the typed signal members of each.
+
+<GodboltEmbed id="Kv176hYea" gccOnly gccLabel="GCC 16.2" title="A specialization has no identifier (Qt-free)" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection · runs live" />
+
+For a stable name, set one with `RQT_CLASS_NAME(NameOf<T>::value)` in the class, or `[[=rqt::class_name{"SampleContainer"}]]` on a plain class. One difference from moc shows in the signatures: a `qsizetype` argument is registered as `qlonglong`, in a template and in a plain class.
+
+## What this does not show
+
+- The library is GCC only, tested on 16.2 and Qt 6.10 (Docker on aarch64, and [CI on x86_64](https://github.com/wrocpp/reflect-moc/actions/runs/39465952513)). Nothing here ran on clang or MSVC.
+- I have only the description in his post. The tests come from the `QAbstractItemModel` contract, so they show that these classes keep it. They do not show that his application has no ghost rows.
+- `QMultiMap` and `QMultiHash` are not supported. Two entries can share a key there, so a key does not identify an entry.
+- Proxy models, views that cache row data, and QML registration of a specialization are not covered.
+- I did not measure the speed difference from the `QVariant` version. He wrote that his design is not the fastest, and I have no number for ours.
+- `tools/rqt-migrate` cannot port this shape. It reads `moc --output-json`, and moc cannot read a template, so the reflect-moc tree here is written by hand. A step that folds a signals-only base into the template does not exist yet.
