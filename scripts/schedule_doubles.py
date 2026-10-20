@@ -136,6 +136,11 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # wishlist run on GCC 16.2. It runs beside the Abseil iterator post of the day.
     "2026-10-27": {"slug": "contracts-that-prove-something", "hour": 16,
                    "why": "reply to a reader's contracts wishlist, tested on GCC 16.2, beside the Abseil post"},
+    # The follow-up to the Qt class template post: the ten limits it listed, three
+    # defects found while closing them, a row index and the multi containers. It
+    # runs beside the post of the day.
+    "2026-10-28": {"slug": "qt-observable-models-known-limits", "hour": 16,
+                   "why": "follow-up to the Qt class template post, the known limits closed, beside the post of the day"},
     # A reflection lint that flags a dangling-view signature GCC 16.2 does not
     # warn about, written in response to Klaus Iglberger's safety article of
     # 18 October. It runs beside the API-contract post of the day.
