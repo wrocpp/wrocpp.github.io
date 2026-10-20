@@ -1,0 +1,160 @@
+---
+title: "What a C++ contract would have to be to prove something"
+slug: "contracts-that-prove-something"
+pubDate: 2026-10-27
+author: filip-sajdak
+language: en
+kind: flagship
+audience: working-cpp
+tags: [cpp26, contracts, verification, correctness]
+summary: "A reader asked for contracts that prove things instead of glorified assertions. On GCC 16.2 a postcondition does not reach the caller, a body-less predicate links only when ignored, and a bad constant port is already a compile error. The chain they want comes today from a type and a visible predicate."
+draft: false
+relatedPosts: [cpp26-contracts, contracts-dispute, check-a-statement-with-contract-assert, dis-ballot-contracts-papers]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+## In short
+
+- Pavel Simerda wrote a wishlist for contracts that prove things. I ran each wish on GCC 16.2.
+- A postcondition does not travel to the caller. The checks run inside each function, so one bad port is reported by four functions in a chain.
+- A condition with no body links only when contracts are ignored. Under observe or enforce it is a link error.
+- A chain proof does happen when the predicate is visible. With a constant port and enforce, every check folds away and the code equals the ignored build.
+- A bad constant port is already a compile error under enforce. A type that checks once at the boundary cuts the four reports to none.
+
+## What was asked
+
+Pavel Simerda, an independent embedded Linux engineer, [wrote a post](https://lnkd.in/p/ez6SdGbv) about contracts. Their opening was "I don't buy the idea of contracts being glorified assertions". They then listed what would make contracts interesting, using a connect call as the example:
+
+- A postcondition on `make_address()` is a promise, even when no validation code exists, only a named condition.
+- The precondition of `connect()` is met at compile time because its argument came from `make_address()`. A constant port or a range check completes the chain.
+- The result of `connect()` is 0 or -1. Comparisons such as `result < 0` and `result == -1` then produce the same code, and a tautology warns.
+- A switch over `errno` warns when it misses a value or names one that cannot occur.
+
+They also say this is not what C++26 promises. They are right, and the mechanics of what C++26 does promise are in <PostLink slug="cpp26-contracts">an earlier post</PostLink>. This post asks a different question. What would a contract have to be for a tool to prove something? Who does that today? What can you do on GCC 16.2 now?
+
+## The wishlist against GCC 16.2
+
+Every row below is a program in [the examples](https://github.com/wrocpp/cpp26-reflection-examples/tree/52d53073b72c9aedc08126cd9132bd6e7bcf74a3/posts/94-contracts-beyond-assert), compiled with GCC 16.2.0 at all four semantics where it mattered. The assembly was read on aarch64 and again on x86-64.
+
+| wish | result |
+|---|---|
+| a condition with no body is a promise | not at observe, enforce or quick-enforce: link error. At ignore it links |
+| the postcondition makes the next precondition free | only when the predicate is visible to the optimizer |
+| `r < 0` and `r == -1` compile alike | only when the callee is visible, with or without contracts |
+| tautologies warn | no warning from the usual flags or `-fanalyzer` |
+| a switch over `errno` warns | no. A switch over an `enum class` does |
+| a constant bad port is caught early | yes, a compile error at enforce |
+
+### A condition with no body
+
+The model is the example from the post, without sockets. Both predicates are declared and never defined.
+
+```cpp
+bool valid_port(int);
+bool valid_address(const Address&);
+
+Address make_address(int port) pre(valid_port(port)) post(r : valid_address(r));
+```
+
+At the ignore semantic the program links and runs, because the predicates are never evaluated. At the other three it fails with `undefined reference to valid_port(int)`. A contract predicate is code. The compiler needs its definition the moment a check exists.
+
+### A postcondition does not travel to the caller
+
+In `make_address` the postcondition says the result is valid. In `connect_to` the precondition asks whether the argument is valid. A prover would connect the two. GCC 16.2 does not try. Each check is emitted inside the function that states it, so `connect_to` checks again whatever `make_address` just checked.
+
+I forced both functions into `main` and passed the literal 8080, to give the optimizer the best chance. Three predicate calls remained when the predicates were defined in another file. Three remained when they carried the pure attribute. The pure attribute is a promise that a function has no effect, and it changed nothing here.
+
+The picture changes when the predicate is visible. With the predicate defined inline, a constant port and enforce, `main` came out as short as the build that ignores contracts. All three checks were folded away at compile time. With a runtime port, a single range test remained (15 instructions against 11 on x86-64).
+
+So the chain proof exists, and the optimizer does it. It needs a visible predicate and ordinary constant folding. It does not use the postcondition as a promise.
+
+The same holds for the result of `connect()`. Here the function returns 0 or -1 and says so in a postcondition. When the caller only sees the declaration, three comparisons give three different instruction sequences.
+
+```text
+r < 0     shr  eax, 31
+r == -1   cmp  eax, -1 ; sete al
+r != 0    test eax, eax ; setne al
+```
+
+When the definition is visible, all three become one comparison, and `r > 0` becomes a constant false. That is true at ignore as well as enforce. The compiler is reading the function body, so contracts add nothing. No flag I tried warned about the dead comparison. The flags were the usual warning set, the type-limits and tautological-compare checks, and the static analyzer.
+
+### The one static check C++26 has
+
+A call in a constant expression with a false precondition is already a compile error. Given `constexpr Address a = make_address(70000);`, GCC 16.2 stays silent at ignore, warns at observe, and fails at enforce and quick-enforce with `contract predicate is false in constant expression`. [P2900R14](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p2900r14.pdf) specifies this: enforce and quick-enforce render the program ill-formed, and observe emits a diagnostic. This is half of the second wish. A constant port is checked while compiling. A port from the network is not.
+
+### The switch
+
+A switch over an `int` such as `errno` gets no help. A switch over an `enum class` gets `-Wswitch`, which names a missing enumerator and a case that is not an enumerator. This needs no contract. It needs a result type with a closed set of values, which is also what that postcondition was trying to say.
+
+## What other tools prove
+
+The wishlist is close to what verification tools do. The difference is who checks the contract and when. The table uses only what each project's own pages say.
+
+| tool | a contract is | it is checked |
+|---|---|---|
+| [SPARK](https://docs.adacore.com/spark2014-docs/html/ug/en/source/subprogram_contracts.html) | `Pre` and `Post` on a subprogram | at run time when assertions are enabled, and by the GNATprove prover whatever the assertion policy |
+| [Frama-C](https://frama-c.com/fc-plugins/wp.html) | ACSL annotations | by the WP plugin, for all possible executions |
+| [Dafny](https://dafny.org/latest/DafnyRef/DafnyRef) | specifications in the program | by the verifier, as part of compiling, and left out of the executable |
+| [Liquid Haskell](https://ucsd-progsys.github.io/liquidhaskell/) | logical predicates in types | at compile time |
+| [Eiffel](https://www.eiffel.org/doc/eiffel/ET-_Design_by_Contract_%28tm%29%2C_Assertions_and_Exceptions) | `require`, `ensure`, `invariant` | at run time, under compilation options |
+| [Kani](https://model-checking.github.io/kani/reference/experimental/contracts.html) | `requires` and `ensures` behind an unstable flag | by the model checker, which assumes the first and asserts the second |
+
+Two more entries are about status. Rust's own contracts feature is [unstable in the standard library](https://doc.rust-lang.org/nightly/src/core/contracts.rs.html). Microsoft's [Code Contracts](https://github.com/microsoft/CodeContracts) had a static checker, and its repository was archived in July 2023. None of these pages puts a price on the proof effort, so I do not either.
+
+What C++26 specifies is the first row of a different table. Under [P2900R14](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p2900r14.pdf) a contract assertion is evaluated under one of four semantics: ignore, observe, enforce or quick-enforce. Ignore has no effect. The paper lists the ability to assume a predicate true as a missing future extension, which is the thing the wishlist needs. Any proof by a compiler would rest on that assumption, and C++26 does not have it.
+
+The related work on undefined behaviour is separate. [P3100R1](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3100r1.pdf) proposed treating undefined and erroneous behaviour as a contract violation, and later revisions carry a different title. I did not check where it stands.
+
+## Patterns that work today
+
+None of these proves anything in the sense of Frama-C. Each removes a check you would otherwise repeat.
+
+### Check once, where the value is born
+
+Put the precondition on a constructor. Add a `parse` function that tests the input and returns an optional. The check then lives in one place.
+
+```cpp
+class Port {
+ public:
+  explicit Port(int number) pre(valid_port_number(number)) : number_(number) {}
+  static std::optional<Port> parse(int number) {
+    if (!valid_port_number(number)) return std::nullopt;
+    return Port{number};
+  }
+  // ...
+};
+```
+
+Every later function takes a `Port`, or an address built from one. None of them states a precondition. Under enforce, the plain version compiled to four violation-handler call sites. The typed version compiled to none, because the constructor's check follows the `if` that proves it. That count is from aarch64.
+
+The demo below shows the behaviour. It runs the same bad port, 70000, down both chains under observe, which reports each violation and carries on. The plain chain reports it four times, once per function. The `Port` chain reports nothing, because `parse` refused it. Building `Port{70000}` directly is reported once, by the constructor.
+
+<GodboltEmbed id="9fjGY8fYo" gccOnly gccLabel="GCC 16.2" title="One bad port, counted by each design" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -fcontract-evaluation-semantic=observe · runs live" />
+
+### Keep predicates visible
+
+A predicate defined in a header can be folded. A predicate defined in another file, or hidden behind a call, cannot. If you want the optimizer to see that two checks are the same, define the predicate inline and keep it small.
+
+### Return a closed set
+
+Return an enum class, or an expected value with an enum error, instead of 0 and -1 with an error number on the side. The compiler then checks the switch over it with `-Wswitch`. The postcondition on the result of `connect()` is what this type states.
+
+### Use assume only on purpose
+
+`[[assume]]` is the unchecked promise a postcondition is not. In a test I wrote `[[assume(x > 0)]]` and then `x <= 0 ? -1 : x`. At -O0 a call with x equal to 0 printed -1. At -O2 it printed 0, because the test after the assume was removed. A false assume is undefined behaviour. Use it for facts you have already established, not for ones you hope for.
+
+## The two-type-systems idea
+
+This paragraph is opinion. The Python comparison, runtime checks now and checked-by-a-tool annotations later, fits what the table above shows. Every tool that proves a contract does it in a separate step with its own rules. The program does not need the contract in order to run. 
+
+C++26 put the runtime half into the language and left the assumption half out. If a second kind of contract arrives, I expect a different feature with a different cost. I do not expect a stricter reading of this one. Until then the closest thing in the language is a type that refuses bad values, and a predicate the optimizer can see.
+
+## What this does not show
+
+- Everything is GCC 16.2.0. I did not test clang or MSVC. Clang 23 has no contracts flag, so it adds nothing.
+- The assembly counts were taken on aarch64 and the main ones repeated on x86-64. The `Port` count and the assume test are aarch64 only.
+- Whether a compiler may assume a checked contract is a question about the standard, not about this compiler. I read it from P2900R14, not from the final draft.
+- I answered a public post. This is not a position of the committee, and I did not ask Pavel Simerda to review it.
+- I did not look for tools beyond the ones listed, and the prior-art table has only what each tool's own pages state.
