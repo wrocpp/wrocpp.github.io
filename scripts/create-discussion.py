@@ -129,7 +129,7 @@ def discussion_body(fm: dict, godbolt: str | None) -> str:
     else:
         series_line = ""
     godbolt_line = (
-        f"\n- The Compiler Explorer playground: <https://godbolt.org/z/{godbolt}>\n"
+        f"- The Compiler Explorer playground: <https://godbolt.org/z/{godbolt}>\n"
         if godbolt else ""
     )
     return f"""# {title}
@@ -142,7 +142,8 @@ This is the discussion thread for **[{title}]({post_url})**.
 - Your own variations / war stories
 
 **Quick links:**
-- The post: <{post_url}>{godbolt_line}- The wro.cpp series: <{SITE_BASE}/series/cpp26-reflection/>
+- The post: <{post_url}>
+{godbolt_line}- The wro.cpp series: <{SITE_BASE}/series/cpp26-reflection/>
 - Slack (#wro.cpp): <https://wrocpp.slack.com>
 
 If you spot a bug in the code or the prose, a comment here or a PR against [wrocpp.github.io](https://github.com/{GH_OWNER}/{GH_REPO}) both work.
