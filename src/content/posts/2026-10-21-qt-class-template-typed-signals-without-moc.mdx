@@ -120,7 +120,9 @@ For a stable name, set one with `RQT_CLASS_NAME(NameOf<T>::value)` in the class,
 
 ## What it costs against the QVariant version
 
-His post says the `QVariant` design is not the fastest, so I measured it. The twin is [a reconstruction from his description](https://github.com/wrocpp/reflect-moc/tree/973e54422f1390279cf1aea4429587fb5fda7ea5/examples/qt/observable_models_qvariant). It has a non-template base with `Q_OBJECT` and ten signals keyed by `QVariant`. A template container boxes the key and a model unboxes it. Its row logic is the same code as the typed model's, so only the way the key travels differs. It passes the same random test as the typed version before anything is timed, and a copy with one wrong row fails that test.
+His post says the `QVariant` design is not the fastest, so I measured it. The twin is [a reconstruction from his description](https://github.com/wrocpp/reflect-moc/tree/973e54422f1390279cf1aea4429587fb5fda7ea5/examples/qt/observable_models_qvariant), and it rebuilds only the per-entry part of his design. It has no batch events that collapse into one begin/end pair per run, no atomic `resetWith`, no roles in the data-changed pair, no 2D matrix and no selection. He listed those in his reply.
+
+The per-entry part has a non-template base with `Q_OBJECT` and ten signals keyed by `QVariant`. A template container boxes the key and a model unboxes it. Its row logic is the same code as the typed model's, so only the way the key travels differs. It passes the same random test as the typed version before anything is timed, and a copy with one wrong row fails that test.
 
 | ns per change, 1,000 entries | Mac QVariant | Mac typed | x86_64 QVariant | x86_64 typed |
 |---|---|---|---|---|
@@ -170,7 +172,7 @@ These numbers come from one script ([`run.sh`](https://github.com/wrocpp/reflect
 
 - The library is GCC only, tested on 16.2 and Qt 6.10 (Docker on aarch64, and CI on x86_64). Nothing here ran on clang or MSVC. A [reading of the sources](https://github.com/wrocpp/reflect-moc/blob/973e54422f1390279cf1aea4429587fb5fda7ea5/docs/clang-portability.md) lists what blocks clang, and it is not a build.
 - I have only the description in his post. The tests come from the `QAbstractItemModel` contract, so they show that these classes keep it. They do not show that his application has no ghost rows.
-- The speed numbers come from GCC 16.2 on two machines, with no view attached and with my reconstruction of his design. A real application with a view would see smaller differences, and his code could differ from my twin.
+- The speed numbers come from GCC 16.2 on two machines, with no view attached, and cover only the per-entry operations of my reconstruction of his design. They say nothing about his batches, his reset or his matrix. A real application with a view would see smaller differences, and his code could differ from my twin.
 - A container in a worker thread with a model in the GUI thread is not supported. Both must live in one thread, which a debug build asserts.
 - A throw from the allocator between the "about" and the "done" signal is not handled, as in Qt itself. A value type whose move can throw is refused at compile time.
 
