@@ -95,6 +95,6 @@ A container is 24 bytes in A and 144 in B, and the benchmark binary is 20 percen
 
 ## What comes next
 
-The design in the spec has batches, an atomic reset and roles in the change pair, and my own models do not. I will port those into `observable_models` with the random driver and the mutation run, as a separate change. The agents' notes go back to Leonardo as a list, and the spec stays Leonardo's to fix.
+The design in the spec has batches, an atomic reset and roles in the change pair, and my own models had none of them. I ported those into [`observable_models`](https://github.com/wrocpp/reflect-moc/tree/f13409a/examples/qt/observable_models) after the agents finished. A batch is one announcement and one begin and end per run of rows, `resetWith` is one reset, and the data pair carries roles. The random driver calls them and a map model with four batch mistakes is caught. 93 of 96 mutants are killed, and the other three are equivalent. The mutation script had gone stale, with 17 of its 59 mutants out of date, and is repaired. The agents' notes go back to Leonardo as a list, and the spec stays Leonardo's to fix.
 
 Thanks to Leonardo Rossi for the spec and for offering it. The two bindings, the benchmark and the README are in [reflect-moc](https://github.com/wrocpp/reflect-moc/tree/e109fa49cd47188b80837290ee83a85e30c29023/examples/qt/spec_regen).
