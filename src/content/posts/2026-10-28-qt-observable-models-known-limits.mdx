@@ -1,0 +1,81 @@
+---
+title: "Closing the known limits of the Qt observable models"
+slug: "qt-observable-models-known-limits"
+pubDate: 2026-10-28
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 37
+audience: working-cpp
+tags: [reflection, cpp26, qt, moc, templates, models]
+summary: "The first post listed ten limits of the observable container and its Qt models. Three tests found real defects while closing them, a hash slowdown turned out to be code placement, and a row index made a change 50 to 200 times cheaper at large sizes."
+draft: false
+relatedPosts: [qt-class-template-typed-signals-without-moc, qt-four-examples-without-moc]
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+## In short
+
+- The <PostLink slug="qt-class-template-typed-signals-without-moc">first post</PostLink> ended with a list of limits. This one closes most of them and says what is left.
+- Tests written for the limits found three defects: a stale key role, a class name that aborted Qt, and a slowdown that was not one.
+- A row index makes a change 50 to 200 times cheaper: at 100,000 entries for a hash model, at 10,000 for a map.
+- `QMultiMap` and `QMultiHash` now work, with an entry named by its key and its occurrence.
+- Speed numbers are from one Mac and one CI runner. Everything is in the repository, pinned below.
+
+## What was open, and what happened
+
+| limit from the first post | result |
+|---|---|
+| the same specialization in two translation units | tested under `-flto -Wodr`: one meta-object, the same signal index |
+| proxy models | a sorting proxy joined the random test and found a defect (below) |
+| QML registration of a specialization | tested, and it found a second defect (below) |
+| a throwing insert | cannot be undone in a Qt container, so a value whose move can throw is refused at compile time |
+| range changes, editing, tables | `insertRange`, `removeRange`, `setData` and a table model, all through the container |
+| threads | the container and its models must live in one thread, asserted in debug builds |
+| `QMultiMap` and `QMultiHash` | supported, see the last section |
+| linear row lookup | replaced by a row index, with a measurement |
+| `rqt-migrate` cannot fold the signals-only base | `rqt-migrate` now folds a signals-only base keyed by `QVariant` into the template, and lists every site it will not guess |
+| clang | a desk inventory of the blockers, no build |
+
+## Three defects the tests found
+
+A list model answered the key role with the row. A row shifts under every insert and remove with no signal, so a sorting proxy went stale. The fix is to offer no key role for a list. The proxy test failed for every list container and passed for map, hash and set, which is how the cause showed.
+
+A pointer to a class template specialization aborted Qt. Qt registers a class under its name plus a star and refuses a name it would normalize differently. GCC writes `unsigned int` and a space in `> >`. Qt wants `uint` and `>>`. The fix normalizes the name the way Qt does, and a test compares it with `QMetaObject::normalizedType` on sixteen spellings.
+
+The third defect is the one that was not. The first measurements showed removal from a hash model 1.7 times slower with typed signals on an x86_64 runner. The scan that finds the row is the same four instructions in both builds. In the typed build the compiler placed its compare and jump across a 32-byte boundary. Padding either build made them equal, and a `std::vector` key list removed the gap, so the model now uses one. The profile showed all the time in user code in the model's slots, with no system calls beyond start-up.
+
+## A row index
+
+A model used to find a row by walking the container. A map counted from the start of its tree, and a hash model scanned its key list. Both are linear.
+
+The model now owns an index. A map keeps a sorted copy of its keys and searches it. A hash or set keeps a Fenwick tree over insertion slots. It counts the live slots before a key and finds the k-th live slot in logarithmic time.
+
+| typed, ns per change, aarch64 | linear scan | row index |
+|---|---|---|
+| `QHash`, 100,000 entries, replace | 27,827 | 137 |
+| `QHash`, 100,000 entries, remove | 21,032 | 257 |
+| `QMap`, 10,000 entries, replace | 53,789 | 255 |
+| `QMap`, 10,000 entries, remove | 25,012 | 507 |
+
+The Mac was busy while these ran, so read a ratio, not the last digit. The comparison with the `QVariant` version did not change: the same index is in both.
+
+## Multi containers
+
+In a `QMultiMap` two entries can share a key. An entry is now a key plus an occurrence, counted from the most recently inserted, the order that `values(key)` lists. A new entry is occurrence 0 and the older ones of its key move up, so an insert naming another occurrence is refused. Like a list row, an occurrence shifts without a signal, so these models offer no key role either.
+
+The test inserts, removes and replaces entries that share six keys, against a plain list of rows. It runs under a fatal model tester with a selection, a persistent index and a sorting proxy that must follow their entries.
+
+## What is still open
+
+- The thread rule is an assertion, not a design. A container in a worker thread with a model in the GUI thread needs queued delivery and copies of the data, and that is separate work.
+- A throw from the allocator between the two signals is not handled, as in Qt itself.
+- The key list of a hash model is still a copy of the container's keys, and a map's sorted copy costs a memmove per insert.
+- Nothing here ran on clang or MSVC. The [inventory of what blocks clang](https://github.com/wrocpp/reflect-moc/blob/95902b42a1742f334a45552ed49c25675a122825/docs/clang-portability.md) is a reading of the sources, not a build.
+- I still have not seen the code that started this. If a ghost row survives these tests in a real application, a small case would let me add it.
+
+## Where the code is
+
+The container, the models and the indexes are in [`examples/qt/observable_models`](https://github.com/wrocpp/reflect-moc/tree/95902b42a1742f334a45552ed49c25675a122825/examples/qt/observable_models). The tests are in [`tests/qt`](https://github.com/wrocpp/reflect-moc/tree/95902b42a1742f334a45552ed49c25675a122825/tests/qt), and the hash-drain probes and the profile are in [`tests/qt/measure/observable_bench`](https://github.com/wrocpp/reflect-moc/tree/95902b42a1742f334a45552ed49c25675a122825/tests/qt/measure/observable_bench). The tables are in [`docs/measurements.md`](https://github.com/wrocpp/reflect-moc/blob/95902b42a1742f334a45552ed49c25675a122825/docs/measurements.md).
