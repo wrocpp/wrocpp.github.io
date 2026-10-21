@@ -15,8 +15,8 @@ https://wrocpp.github.io/posts/rust-swift-cpp-interop-toolchains/
 #cpp #cplusplus #rust #swift #interop #wrocpp
 
 ## Alt-text
-Cream wro.cpp card with the magnet logo. Headline reads "Three pages on Rust and Swift meeting C++" with a subtitle naming the Microsoft Rust backend, the Rust Foundation interop update and Swift 6.4 std::span. Citation footer: wro.cpp, 2026-10-22.
+Cream wro.cpp card with the magnet logo. Headline reads "Three pages on Rust and Swift meeting C++" with a subtitle naming the Microsoft Rust backend, the Rust Foundation interop update and Swift 6.4 std::span. Citation footer: wro.cpp, 2026-11-01.
 
 ## Suggested post time
-Thursday 2026-10-22, 18:00 CEST (16:00 UTC)
-Reason: the planned second slot of the day, after the evergreen post at 08:00 UTC.
+Sunday 2026-11-01, 17:00 CET (16:00 UTC)
+Reason: the planned second slot of the day, after the evergreen post at 08:00 UTC. The post moved here from 2026-10-22, which now carries the post on a spec for observable Qt containers.

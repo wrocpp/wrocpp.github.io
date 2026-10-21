@@ -1,0 +1,100 @@
+---
+title: "Regenerating a Qt container library from a spec, with and without moc"
+slug: "regenerate-qt-containers-from-a-spec"
+pubDate: 2026-10-22
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 38
+audience: working-cpp
+tags: [reflection, cpp26, qt, moc, models, ai]
+summary: "A reader wrote their observable Qt containers down as a spec an AI agent can regenerate from. Two fresh agents built it, one with classic moc and one with typed signals through reflect-moc. Both pass all 17 acceptance entries, the moc version builds with MSVC, and the spec itself has a row lookup that costs 193 microseconds per removal at 10,000 entries."
+draft: false
+relatedPosts: [qt-class-template-typed-signals-without-moc, qt-observable-models-known-limits]
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+## In short
+
+- Leonardo Rossi asked the question behind the <PostLink slug="qt-class-template-typed-signals-without-moc">class template post</PostLink>. Now Leonardo has written the design down as a [specification and a generation prompt](https://gist.github.com/96Ven96/100c0ec4917dced4d6c8ac9a4cc06b7e) and asked where an agent trips.
+- Two fresh agents, each given only those two files, built binding A (classic moc, C++20) and binding B (typed signals through reflect-moc). Both pass all 17 acceptance entries with 0 warnings.
+- Binding A builds with MSVC 19.44 and Qt 6.8.3 at `/W4 /permissive-`, which is the toolchain Leonardo's team builds with. Binding B needs GCC 16.
+- The agents found 15 places where the spec leaves a choice and seven that look wrong. One of them costs 193 microseconds per removal at 10,000 entries.
+- My earlier speed comparison covered only the per-entry part of that design, and I have corrected both earlier posts.
+
+## What the spec adds to my reconstruction
+
+After the first post, Leonardo listed what my `QVariant` twin left out. A gesture on N entries is one event, not N. The list model turns it into one begin and end pair per contiguous run, so a view keeps its selection and scroll position. `resetWith` replaces the whole content without an empty state in between. The data-changed pair carries the roles that changed. There is a 2D matrix where renaming a row is `headerDataChanged`, and a row selection on top of any `QAbstractItemModel`.
+
+The twin had none of that, so the speed numbers in the first post cover per-entry operations only. I narrowed the claim in <PostLink slug="qt-class-template-typed-signals-without-moc">that post</PostLink> and in <PostLink slug="qt-observable-models-known-limits">the follow-up</PostLink>, replacing the old sentences.
+
+The spec is 1,540 lines. It defines the notifications, the traits, exact signal sequences, 67 acceptance tests written in words, six cases that must not compile, and a delivery layout. It is neutral about the signal mechanism. Binding A uses two non-template `QObject` base classes and `QVariant` keys. Binding B declares the signals in the templates with typed keys. The gist has no license, so I link it and copy nothing from it.
+
+## The run
+
+I started two agents with no other code in view. The binding A agent got `PROMPT.md` and `SPEC.md` only. The binding B agent got the same two files and the reflect-moc headers. Its copy of the repository had the observable models of the earlier posts removed. Neither could run git or reach credentials, and I read each CMake file before building.
+
+Both finished with all 17 ctest entries passing. They cover every acceptance test from AT-1.1 to AT-9.6. Each compile-fail case is a pair: the twin must build, and the breaking build must fail with the named text. I then rebuilt both from a read-only mount. Binding A took no edits. Binding B needed three small CMake edits to sit inside the repository's build, listed in the [README](https://github.com/wrocpp/reflect-moc/blob/e109fa49cd47188b80837290ee83a85e30c29023/examples/qt/spec_regen/README.md).
+
+The binding B agent ran five hand-made mutants against its own tests. Four were caught. One survived, a `replace` that writes before its "about" notification, so the agent added a test for it and that mutant is now caught.
+
+## MSVC
+
+The team's blocker is MSVC in C++20, so binding A has a CI job on `windows-2022`. It uses MSVC 19.44 and Qt 6.8.3 at `/W4 /permissive-`. It builds, runs the same 17 entries including the compile-fail pairs, and prints no warning. That settles one worry. In `Container<QList<T>>` two `insert` overloads have the same signature and differ only in their constraint, and both compilers accept it. Clang was not tried.
+
+Binding B stays GCC-only, because reflect-moc needs C++26 reflection. So the team can use the spec with moc today, and the typed keys arrive when MSVC gets reflection.
+
+## Where an agent had to decide
+
+Both agents wrote down every point where the text leaves a choice. A few that change behavior:
+
+- Section 9.4 gives "last occurrence wins" and "skip unchanged cells" with no order. Deduplicating first is right. The other order writes a stale value for `[(c, new), (c, current)]`.
+- Section 11 sequence T13 removes row 2, but AT-8.4 says to apply it to the new selected row, 3.
+- Section 14 says the selection layer does not depend on the container layer. Yet the Multi `clearSelectionAndNotify` needs `contiguousRuns`, which section 6.4 puts in the container layer.
+- A Multi tracker starts with zero rows and the example models have no constructor. A host over existing rows must call `reset(n)` first, or an assertion fires.
+
+The 15 readings and the places the spec could not be applied to binding B are in the [README](https://github.com/wrocpp/reflect-moc/blob/e109fa49cd47188b80837290ee83a85e30c29023/examples/qt/spec_regen/README.md). For binding B they include `VariantKey` and the `ContainerSignals *` parameters, which do not exist without the base classes.
+
+## Where the spec looks wrong
+
+Section 8.3 calls `beginRemoveRows` after the container has already erased the entries, so `data()` of a doomed row is invalid during the cycle. A proxy or view that reads those rows in `rowsAboutToBeRemoved` sees nothing. The spec chose this on purpose, so it is a trade-off to state, not a bug.
+
+Section 7.1 says a value already equal changes nothing, but `replace` always notifies. The `Self = C` template trick that defers the `static_assert` can be defeated. A caller can name another container type in the call and skip the check.
+
+The cost is in section 8.1. The list model keeps a lazy key-to-row map that every change marks stale and the next lookup rebuilds. So the next removal after any change pays for a rebuild. That is 11 microseconds per removal at 1,000 hash entries and 193 microseconds at 10,000, in both bindings. The row index in <PostLink slug="qt-observable-models-known-limits">the follow-up</PostLink> costs 167 to 473 nanoseconds per change at 100,000 hash entries and 10,000 map entries. The row order differs, because the spec sorts rows by key and my models keep insertion order for a hash. Read it as an indication, not a like-for-like comparison.
+
+## What binding A costs against binding B
+
+One source, built against each binding through the same API, seven runs alternating the two binaries. Medians on a GitHub x86_64 runner, with a spread mostly under 5 percent. A gate runs first: both bindings pass their tests, and a copy of each whose list model removes runs in the wrong order is caught.
+
+| 10,000 entries | A, ns | B, ns | B / A |
+|---|---|---|---|
+| `QList` fill, per change | 132 | 103 | 0.78 |
+| `QList` replace, per change | 91 | 53 | 0.58 |
+| `QHash` fill, per change | 208 | 175 | 0.84 |
+| `QHash` replace, per change | 170 | 131 | 0.77 |
+| `QHash` drain, per change | 193,274 | 197,616 | 1.02 |
+| `QHash` `insertMany` of 100, contiguous | 26,058 | 15,335 | 0.59 |
+| `QHash` `insertMany` of 100, scattered | 60,315 | 51,121 | 0.85 |
+| `QHash` `removeMany` of 100, scattered | 487,240 | 488,066 | 1.00 |
+| `QMap` `resetWith` | 128,968 | 139,660 | 1.08 |
+| matrix `setValues`, 100 cells in a block | 9,681 | 9,983 | 1.03 |
+
+Per entry, the typed version is 16 to 42 percent faster, as in the first post. The batch and reset rows need care: **the two trees were written by two different agents, so they do not share model code.** A difference there can come from the model as well as from the signal. `removeMany` is equal because both pay the same rebuild. `resetWith` is 8 percent slower in B at 10,000 entries but 7 percent faster at 1,000. On a busy Mac it was 23 and 29 percent slower, which did not repeat on x86_64, and I did not look for the cause.
+
+A container is 24 bytes in A and 144 in B, and the benchmark binary is 20 percent larger in B. Compile time of one translation unit is within 6 percent once moc is counted. The full tables for both machines are in [`docs/measurements.md`](https://github.com/wrocpp/reflect-moc/blob/e109fa49cd47188b80837290ee83a85e30c29023/docs/measurements.md).
+
+## What this does not show
+
+- Neither binding ran on Clang, binding B not on MSVC, and nothing here tests a view, queued connections, threads or QML.
+- The spec is one reader's design, and I have still not seen the application code. Passing the acceptance tests says the library keeps the contract, not that the application has no ghost rows.
+- Two agents are two samples. A different agent, or the same one on another day, could resolve the 15 choices differently. The acceptance tests catch only the choices they pin.
+- The generated code is held to its tests, not to the mutation and complexity rules of the hand-written examples.
+
+## What comes next
+
+The design in the spec has batches, an atomic reset and roles in the change pair, and my own models do not. I will port those into `observable_models` with the random driver and the mutation run, as a separate change. The agents' notes go back to him as a list, and the spec stays Leonardo's to fix.
+
+Thanks to Leonardo Rossi for the spec and for offering it. The two bindings, the benchmark and the README are in [reflect-moc](https://github.com/wrocpp/reflect-moc/tree/e109fa49cd47188b80837290ee83a85e30c29023/examples/qt/spec_regen).
