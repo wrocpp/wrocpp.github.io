@@ -42,7 +42,7 @@ The binding B agent ran five hand-made mutants against its own tests. Four were 
 
 ## MSVC
 
-The team's blocker is MSVC in C++20, so binding A has a CI job on `windows-2022`. It uses MSVC 19.44 and Qt 6.8.3 at `/W4 /permissive-`. It builds, runs the same 17 entries including the compile-fail pairs, and prints no warning. That settles one worry. In `Container<QList<T>>` two `insert` overloads have the same signature and differ only in their constraint, and both compilers accept it. Clang was not tried.
+The team's blocker is MSVC in C++20, so binding A has a CI job on `windows-2022`. It uses MSVC 19.44 and Qt 6.8.3 at `/W4 /permissive-`. It builds, runs the same 17 entries including the compile-fail pairs, and prints no warning. That settles one worry. In `Container<QList<T>>` two `insert` overloads have the same signature and differ only in their constraint, and both compilers accept it. Clang 19.1.7 accepts it too. I built binding A with it by hand: 17 of 17, no warning, no CI job.
 
 Binding B stays GCC-only, because reflect-moc needs C++26 reflection. So the team can use the spec with moc today, and the typed keys arrive when MSVC gets reflection.
 
@@ -88,7 +88,7 @@ A container is 24 bytes in A and 144 in B, and the benchmark binary is 20 percen
 
 ## What this does not show
 
-- Neither binding ran on Clang, binding B not on MSVC, and nothing here tests a view, queued connections, threads or QML.
+- Binding B did not run on Clang or MSVC, and binding A ran on Clang only by hand. Nothing here tests a view, queued connections, threads or QML.
 - The spec is one reader's design, and I have still not seen the application code. Passing the acceptance tests says the library keeps the contract, not that the application has no ghost rows.
 - Two agents are two samples. A different agent, or the same one on another day, could resolve the 15 choices differently. The acceptance tests catch only the choices they pin.
 - The generated code is held to its tests, not to the mutation and complexity rules of the hand-written examples.
