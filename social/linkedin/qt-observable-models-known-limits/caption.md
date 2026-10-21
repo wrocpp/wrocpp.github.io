@@ -5,7 +5,7 @@ The first post on observable Qt containers ended with a list of ten limits. This
 
 Tests written for the limits found three defects. A list model answered the key role with the row, which shifts without a signal, so a sorting proxy went stale. A pointer to a class template specialization aborted Qt because GCC spells the name differently from Qt's normalizer. And a 1.7 times slowdown in hash removal on x86_64 turned out to be the same scan loop landing across a 32-byte boundary in one build.
 
-A row index then made a change 50 to 200 times cheaper at 100,000 entries for a hash and 10,000 for a map, and QMultiMap and QMultiHash now work with an entry named by its key and occurrence. The speed numbers come from one Mac and one CI runner, nothing ran on clang, and I still have not seen the code that started this.
+A row index then made a change 42 to 125 times cheaper at 100,000 entries for a hash and 10,000 for a map, and QMultiMap and QMultiHash now work with an entry named by its key and occurrence. The speed numbers come from one Mac and one CI runner, nothing ran on clang, and I still have not seen the code that started this.
 
 https://wrocpp.github.io/posts/qt-observable-models-known-limits/
 

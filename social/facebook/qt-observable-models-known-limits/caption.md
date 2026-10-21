@@ -5,7 +5,7 @@ Ten limits were left open in the last Qt post. Most are closed now, and tests fo
 
 The most instructive one: a hash removal that looked 1.7 times slower with typed signals was the same loop landing across a 32-byte boundary in one build. Padding either build made them equal.
 
-A row index also makes a change 50 to 200 times cheaper at large sizes, and QMultiMap works.
+A row index also makes a change 42 to 125 times cheaper at large sizes, and QMultiMap works.
 
 https://wrocpp.github.io/posts/qt-observable-models-known-limits/
 

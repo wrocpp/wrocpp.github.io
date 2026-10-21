@@ -9,7 +9,7 @@ series: cpp26-reflection
 series_order: 37
 audience: working-cpp
 tags: [reflection, cpp26, qt, moc, templates, models]
-summary: "The first post listed ten limits of the observable container and its Qt models. Three tests found real defects while closing them, a hash slowdown turned out to be code placement, and a row index made a change 50 to 200 times cheaper at large sizes."
+summary: "The first post listed ten limits of the observable container and its Qt models. Three tests found real defects while closing them, a hash slowdown turned out to be code placement, and a row index made a change 42 to 125 times cheaper at large sizes."
 draft: false
 relatedPosts: [qt-class-template-typed-signals-without-moc, qt-four-examples-without-moc]
 ---
@@ -20,7 +20,7 @@ import PostLink from '../../components/PostLink.astro';
 
 - The <PostLink slug="qt-class-template-typed-signals-without-moc">first post</PostLink> ended with a list of limits. This one closes most of them and says what is left.
 - Tests written for the limits found three defects: a stale key role, a class name that aborted Qt, and a slowdown that was not one.
-- A row index makes a change 50 to 200 times cheaper: at 100,000 entries for a hash model, at 10,000 for a map.
+- A row index makes a change 42 to 125 times cheaper: at 100,000 entries for a hash model, at 10,000 for a map.
 - `QMultiMap` and `QMultiHash` now work, with an entry named by its key and its occurrence.
 - Speed numbers are from one Mac and one CI runner. Everything is in the repository, pinned below.
 
@@ -53,14 +53,14 @@ A model used to find a row by walking the container. A map counted from the star
 
 The model now owns an index. A map keeps a sorted copy of its keys and searches it. A hash or set keeps a Fenwick tree over insertion slots. It counts the live slots before a key and finds the k-th live slot in logarithmic time.
 
-| typed, ns per change, aarch64 | linear scan | row index |
+| typed, x86_64, ns per change | linear scan | row index |
 |---|---|---|
-| `QHash`, 100,000 entries, replace | 27,827 | 137 |
-| `QHash`, 100,000 entries, remove | 21,032 | 257 |
-| `QMap`, 10,000 entries, replace | 53,789 | 255 |
-| `QMap`, 10,000 entries, remove | 25,012 | 507 |
+| `QHash`, 100,000 entries, replace | 17,083 | 167 |
+| `QHash`, 100,000 entries, remove | 16,112 | 294 |
+| `QMap`, 10,000 entries, replace | 39,488 | 315 |
+| `QMap`, 10,000 entries, remove | 19,673 | 473 |
 
-The Mac was busy while these ran, so read a ratio, not the last digit. The comparison with the `QVariant` version did not change: the same index is in both.
+These are medians on a GitHub runner, before and after the index. The comparison with the `QVariant` version, in the first post, uses the same index in both designs.
 
 ## Multi containers
 
