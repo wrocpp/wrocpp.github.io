@@ -60,7 +60,7 @@ The model now owns an index. A map keeps a sorted copy of its keys and searches 
 | `QMap`, 10,000 entries, replace | 39,488 | 315 |
 | `QMap`, 10,000 entries, remove | 19,673 | 473 |
 
-These are medians on a GitHub runner, before and after the index. The comparison with the `QVariant` version, in the first post, uses the same index in both designs.
+These are medians on a GitHub runner, before and after the index. The comparison with the `QVariant` version, in the first post, uses the same index in both designs. It covers the per-entry operations only, not his batch events, reset or matrix.
 
 ## Multi containers
 
