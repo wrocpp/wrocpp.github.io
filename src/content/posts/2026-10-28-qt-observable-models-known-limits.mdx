@@ -70,7 +70,7 @@ The test inserts, removes and replaces entries that share six keys, against a pl
 
 ## What is still open
 
-- The thread rule is an assertion, not a design. A container in a worker thread with a model in the GUI thread needs queued delivery and copies of the data, and that is separate work.
+- The thread rule is an assertion, not a design. A container in a worker thread with a model in the GUI thread needs queued delivery and copies of the data. That is separate work.
 - A throw from the allocator between the two signals is not handled, as in Qt itself.
 - The key list of a hash model is still a copy of the container's keys, and a map's sorted copy costs a memmove per insert.
 - Nothing here ran on clang or MSVC. The [inventory of what blocks clang](https://github.com/wrocpp/reflect-moc/blob/95902b42a1742f334a45552ed49c25675a122825/docs/clang-portability.md) is a reading of the sources, not a build.
