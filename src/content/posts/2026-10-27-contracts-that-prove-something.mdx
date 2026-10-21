@@ -67,6 +67,8 @@ In `make_address` the postcondition says the result is valid. In `connect_to` th
 
 I forced both functions into `main` and passed the literal 8080, to give the optimizer the best chance. Three predicate calls remained when the predicates were defined in another file. Three remained when they carried the pure attribute. The pure attribute is a promise that a function has no effect, and it changed nothing here.
 
+### A visible predicate changes it
+
 The picture changes when the predicate is visible. With the predicate defined inline, a constant port and enforce, `main` came out as short as the build that ignores contracts. All three checks were folded away at compile time. With a runtime port, a single range test remained (15 instructions against 11 on x86-64).
 
 So the chain proof exists, and the optimizer does it. It needs a visible predicate and ordinary constant folding. It does not use the postcondition as a promise.
