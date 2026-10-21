@@ -26,5 +26,5 @@ What is the fastest a bug report of yours has ever been answered?
 A wro.cpp social card reading "Filed at 15:44, root caused by 17:19", about a GCC bug diagnosed the same afternoon.
 
 ## Suggested post time
-Friday 2026-10-30, 09:00 CET
+Saturday 2026-10-31, 09:00 CET
 Reason: Weekday morning for a compiler internals read.

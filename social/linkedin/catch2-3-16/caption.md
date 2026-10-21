@@ -24,5 +24,5 @@ How would you notice a test that silently stopped being registered?
 A wro.cpp social card reading "A bug that shipped with the feature", about Catch2 fixing semicolon handling in catch_discover_tests.
 
 ## Suggested post time
-Saturday 2026-10-31, 10:00 CET
+Sunday 2026-11-01, 10:00 CET
 Reason: Weekend mid morning for a tooling read.

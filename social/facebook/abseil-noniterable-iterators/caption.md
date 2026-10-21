@@ -18,5 +18,5 @@ https://wrocpp.github.io/posts/abseil-noniterable-iterators/
 A wro.cpp social card reading "The loop compiles and does nothing", about Abseil making insert iterators non iterable.
 
 ## Suggested post time
-Monday 2026-10-27, 09:00 CET
+Wednesday 2026-10-28, 09:00 CET
 Reason: Weekday morning for a correctness and upgrade hazard read.

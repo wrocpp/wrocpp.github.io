@@ -16,5 +16,5 @@ https://wrocpp.github.io/posts/catch-undefined-behavior-with-constexpr/
 Dark wro.cpp card with the magnet logo. Headline reads "The same bad index: a compile error, then exit 0" with a subtitle saying that static_assert stops the build on undefined behavior and that with a run-time index at -O2 the same call printed stale memory. Citation footer: wro.cpp, 2026-11-02.
 
 ## Suggested post time
-Monday 2026-11-02, 18:00 UTC (19:00 CET)
+Tuesday 2026-11-03, 18:00 UTC (19:00 CET)
 Reason: the evening slot, after the LinkedIn post.

@@ -20,5 +20,5 @@ https://wrocpp.github.io/posts/boost-modules-1-92/
 A wro.cpp social card reading "Your includes become imports", about Boost 1.92 adding C++20 module support to six libraries.
 
 ## Suggested post time
-Sunday 2026-10-26, 11:00 CET
+Tuesday 2026-10-27, 11:00 CET
 Reason: Weekend late morning for a build systems read.
