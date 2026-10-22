@@ -9,7 +9,7 @@ series: cpp26-reflection
 series_order: 39
 audience: working-cpp
 tags: [reflection, cpp26, qt, models, testing, ai]
-summary: "I wrote down 228 edge cases for the observable Qt models and tested each one. 170 work, 22 are refused on purpose, 20 were defects that are now fixed, and 16 are still pinned. The defects included an editor that writes an empty value back, and a model that survives its container with stale rows."
+summary: "I wrote down 228 edge cases for the observable Qt models and tested each one. 170 work, 22 are refused on purpose, 27 were defects that are now fixed, and 9 are still pinned. The defects included an editor that writes an empty value back, and a model that survives its container with stale rows."
 draft: false
 relatedPosts: [regenerate-qt-containers-from-a-spec, qt-observable-models-known-limits]
 ---
@@ -19,9 +19,9 @@ import PostLink from '../../components/PostLink.astro';
 ## In short
 
 - The <PostLink slug="regenerate-qt-containers-from-a-spec">last post</PostLink> ended with a list of what was not tested. The answer to that list is a catalogue of 228 cases, each with a test and a verdict.
-- 170 work and 22 are refused by design. 20 were defects with a fix and a test now. 16 are still pinned by a test that passes while the gap exists.
+- 170 work and 22 are refused by design. 27 were defects with a fix and a test now. 9 are still pinned by a test that passes while the gap exists.
 - The run found real defects in my own models. An empty editor can write an empty value back, and a model keeps stale rows when its container dies.
-- Nothing here is merged yet. Four pull requests are open, in order, and a few fixes are still being written.
+- All of it is merged: eight pull requests, #19 to #26. The nine pinned cases are the ones I have not fixed.
 
 ## How the cases were collected and checked
 
@@ -31,11 +31,11 @@ The tests do not trust my reading of Qt. A view or proxy is shown Qt's own model
 
 | category | rows | works | refused | fixed | pinned |
 |---|---|---|---|---|---|
-| model protocol | 67 | 50 | 12 | 0 | 5 |
+| model protocol | 67 | 50 | 12 | 5 | 0 |
 | re-entrancy and lifetime | 23 | 9 | 0 | 13 | 1 |
 | proxies and selection | 32 | 32 | 0 | 0 | 0 |
-| views and QML | 27 | 24 | 1 | 0 | 2 |
-| data and types | 32 | 23 | 2 | 4 | 3 |
+| views and QML | 27 | 24 | 1 | 1 | 1 |
+| data and types | 32 | 23 | 2 | 5 | 2 |
 | threads | 19 | 8 | 3 | 3 | 5 |
 | matrix and selection tracker | 28 | 24 | 4 | 0 | 0 |
 
@@ -51,7 +51,7 @@ The protocol tests found five gaps in the models that a view can see. Three of t
 - Zero columns. A table with no columns emitted `dataChanged` with two invalid indexes.
 - QML. Nothing to bind a row count to: `rowCount()` has no notify signal, so a binding stayed stale while `ListView.count` followed.
 
-These are pinned today and have a fix in progress. The tests that pin them pass against the current code, and each is flipped when its fix lands.
+Four are fixed now. The model answers the edit role. It refuses an index that is not its own. It keeps a snapshot of the rows of a batch removal until the runs are announced, and it announces nothing for zero columns. The snapshot has a price: a batch removal on a map or a hash copies each removed entry once. The QML case stays pinned: Qt gives a model no notify signal for `rowCount()`, so there is nothing to bind to.
 
 ## Re-entrancy and lifetime
 
@@ -66,7 +66,7 @@ The fix is two rules. A mutator called while its own container announces returns
 - NaN. A NaN key in a `QMap<double>` answered to every key. In a `QHash<double>` it could never be found again. Now it is refused.
 - `std::less`. Qt 6's `QMap` orders by `std::less<Key>`, but my index searched with the less-than operator. Where the two disagree a ghost row appeared. Now both use `std::less`.
 - Rows are an `int`. A stand-in size of 2^31 gave a negative row count. One checked conversion now refuses a change that would pass `INT_MAX`.
-- A throwing copy. `insertMany` announced the change before copying the values. A copy that threw left a change that was announced and never confirmed. This one is still pinned.
+- A throwing copy. `insertMany` announced the change before copying the values. A copy that threw left a change that was announced and never confirmed. Now the values are copied first, while staging, and a throwing copy changes nothing.
 - Threads. A receiver on another thread reads the new state at an about signal. With assertions off the one-thread rule is not enforced. Both stay pinned until a change-record bridge exists.
 
 ## What Qt itself does
@@ -75,11 +75,11 @@ Three behaviours are not the model's, and each reproduces with `QStringListModel
 
 ## What this does not show
 
-- Open: 16 cases are pinned. Five are protocol gaps, two are the view gaps, three are in data and types, five are thread cases and one is the cut connection. The fixes for the protocol gaps and the throwing copy are still in progress.
+- Open: 9 cases are pinned. One is the QML row count, two are in data and types, five are thread cases and one is the cut connection.
 - Mutation: the first 31 mutants of the matrix code were killed. I did not rerun the full set of 102 after the re-entrancy guard, so the container's older mutants are unchecked.
 - Not tested: a real mouse drag and drop, QtQuick Controls views, locale-aware ordering beyond the C locale, a data race. Clang and MSVC are not tried for the new code.
 - Provenance: AI agents wrote most of the tests, one category each, under my direction. I reviewed their reports and the pinned defects, not every line.
 
 ## Where to read it
 
-The catalogue is in [`docs/qt-edge-cases`](https://github.com/wrocpp/reflect-moc/tree/b57a80cbf3031e1102701c0dd1073d7b86d7fe1a/docs/qt-edge-cases). The tests are in `tests/qt/edge` beside it. The four pull requests, to merge in this order: the [tests](https://github.com/wrocpp/reflect-moc/pull/19), the [re-entrancy fix](https://github.com/wrocpp/reflect-moc/pull/20), the [key fixes](https://github.com/wrocpp/reflect-moc/pull/21) and the [matrix and selection](https://github.com/wrocpp/reflect-moc/pull/22). Until they merge the links point at the branch commit.
+The catalogue is in [`docs/qt-edge-cases`](https://github.com/wrocpp/reflect-moc/tree/cc397a9ddb19107bd6133440a8d770dcf1064228/docs/qt-edge-cases). The tests are in `tests/qt/edge` beside it. The pull requests are #19 (tests), #20 (re-entrancy), #21 (keys), #22 (matrix and selection), #23, #24 (mutation and CRAP) and #26 (protocol fixes), all merged.
