@@ -24,5 +24,5 @@ Three compilers, one file: https://wrocpp.github.io/posts/trivially-copyable-but
 A wro.cpp card about a type-trait divergence between compilers.
 
 ## Suggested post time
-Sunday 2026-11-01, 10:00 CET
+Monday 2026-11-02, 10:00 CET
 Reason: first free day. The post moved here from 2026-10-22, when that morning slot went to another post.

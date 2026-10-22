@@ -33,5 +33,5 @@ Reduced case, both compilers: https://wrocpp.github.io/posts/gcc-expansion-named
 A wro.cpp card reading "Naming a constant makes GCC doubt it", about a GCC expansion statement limitation.
 
 ## Suggested post time
-Thursday 2026-10-22, 10:00 CET
+Friday 2026-10-23, 10:00 CET
 Reason: weekday mid-morning CET suits the EU C++ audience.

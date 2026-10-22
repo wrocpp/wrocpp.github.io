@@ -26,5 +26,5 @@ Do you pin a release or a commit for your test framework?
 A wro.cpp social card reading "The notes say do not use the release", about GoogleTest recommending users build from trunk.
 
 ## Suggested post time
-Saturday 2026-10-25, 10:00 CET
+Monday 2026-10-26, 10:00 CET
 Reason: Weekend mid morning for a tooling and dependency management read.

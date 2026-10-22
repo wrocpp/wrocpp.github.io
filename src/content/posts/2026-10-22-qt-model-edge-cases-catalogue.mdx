@@ -1,0 +1,85 @@
+---
+title: "228 Qt model edge cases, and the ones my models failed"
+slug: "qt-model-edge-cases-catalogue"
+pubDate: 2026-10-22
+author: filip-sajdak
+language: en
+kind: flagship
+series: cpp26-reflection
+series_order: 39
+audience: working-cpp
+tags: [reflection, cpp26, qt, models, testing, ai]
+summary: "I wrote down 228 edge cases for the observable Qt models and tested each one. 170 work, 22 are refused on purpose, 20 were defects that are now fixed, and 16 are still pinned. The defects included an editor that writes an empty value back, and a model that survives its container with stale rows."
+draft: false
+relatedPosts: [regenerate-qt-containers-from-a-spec, qt-observable-models-known-limits]
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+## In short
+
+- The <PostLink slug="regenerate-qt-containers-from-a-spec">last post</PostLink> ended with a list of what was not tested. The answer to that list is a catalogue of 228 cases, each with a test and a verdict.
+- 170 work and 22 are refused by design. 20 were defects with a fix and a test now. 16 are still pinned by a test that passes while the gap exists.
+- The run found real defects in my own models. An empty editor can write an empty value back, and a model keeps stale rows when its container dies.
+- Nothing here is merged yet. Four pull requests are open, in order, and a few fixes are still being written.
+
+## How the cases were collected and checked
+
+A case comes from the Qt documentation, the model tester, a view or proxy, or my own reading of the code. The row says which. A row names its test and a verdict. A script, run by ctest, fails on a blank cell, an unknown verdict, a missing test file or a duplicate id.
+
+The tests do not trust my reading of Qt. A view or proxy is shown Qt's own model under the same change. The two must agree on current index, selection, scroll position and signal counts. The references are `QStringListModel` and `QStandardItemModel`. A difference is the model's fault and nothing else. Cases that must crash run in a forked child that has to die of `SIGABRT`.
+
+| category | rows | works | refused | fixed | pinned |
+|---|---|---|---|---|---|
+| model protocol | 67 | 50 | 12 | 0 | 5 |
+| re-entrancy and lifetime | 23 | 9 | 0 | 13 | 1 |
+| proxies and selection | 32 | 32 | 0 | 0 | 0 |
+| views and QML | 27 | 24 | 1 | 0 | 2 |
+| data and types | 32 | 23 | 2 | 4 | 3 |
+| threads | 19 | 8 | 3 | 3 | 5 |
+| matrix and selection tracker | 28 | 24 | 4 | 0 | 0 |
+
+The last row belongs to the matrix and the selection tracker I ported from Leonardo Rossi's spec, with the same kind of tests. Proxies and selection found no defect: every case behaves like Qt's own models.
+
+## Defects a view can see
+
+The protocol tests found five gaps in the models that a view can see. Three of them are about the data a row reads.
+
+- EditRole. The model said a cell was editable but answered nothing for `Qt::EditRole`. A default editor opens empty. Committing it without typing writes an empty value back to the entry.
+- A foreign index. The data and edit functions never checked the index. An index of another model, or column 1 of a table given to a list model, was read as the row with the same number.
+- A removal that reads empty. Qt wants the data of a removed row to be there while `rowsAboutToBeRemoved` is announced. A batch removal erased the entries first, so those rows read as empty. The spec I ported from had the same property on purpose.
+- Zero columns. A table with no columns emitted `dataChanged` with two invalid indexes.
+- QML. Nothing to bind a row count to: `rowCount()` has no notify signal, so a binding stayed stale while `ListView.count` followed.
+
+These are pinned today and have a fix in progress. The tests that pin them pass against the current code, and each is flipped when its fix lands.
+
+## Re-entrancy and lifetime
+
+A receiver that changes the container while it is being announced is the case Qt's documentation does not cover. I called every mutator from the about and done signal of every change, on a list and a map, each case in a forked child. Nothing refused a nested change. 15 of 100 list cases left the model out of step and 10 ended the process.
+
+When the receiver was connected before the model, 19 of 180 cases crashed. A model created inside an about receiver crashed in 7 of 18, because it ended a change it had never begun. A model whose container was destroyed kept its stale rows and was never reset.
+
+The fix is two rules. A mutator called while its own container announces returns false and asserts in a debug build. The model holds the container by `QPointer` and resets to empty when it is destroyed. After it, 959 of 1000 nested cases abort in debug and the rest cannot occur; in release none fail. One case stays pinned: a receiver that cuts the model's connection after it began a change. The model cannot know the end will not come.
+
+## Keys, sizes and copies
+
+- NaN. A NaN key in a `QMap<double>` answered to every key. In a `QHash<double>` it could never be found again. Now it is refused.
+- `std::less`. Qt 6's `QMap` orders by `std::less<Key>`, but my index searched with the less-than operator. Where the two disagree a ghost row appeared. Now both use `std::less`.
+- Rows are an `int`. A stand-in size of 2^31 gave a negative row count. One checked conversion now refuses a change that would pass `INT_MAX`.
+- A throwing copy. `insertMany` announced the change before copying the values. A copy that threw left a change that was announced and never confirmed. This one is still pinned.
+- Threads. A receiver on another thread reads the new state at an about signal. With assertions off the one-thread rule is not enforced. Both stay pinned until a change-record bridge exists.
+
+## What Qt itself does
+
+Three behaviours are not the model's, and each reproduces with `QStringListModel`. A single-selection view moves its current index to the neighbour of a removed current row and selects it. `ListView` keeps its `currentIndex` number across a reset. A `QItemSelectionModel` that outlives a deleted model crashed in this Qt 6.10 image, flakily. A web search found no bug report for it.
+
+## What this does not show
+
+- Open: 16 cases are pinned. Five are protocol gaps, two are the view gaps, three are in data and types, five are thread cases and one is the cut connection. The fixes for the protocol gaps and the throwing copy are still in progress.
+- Mutation: the first 31 mutants of the matrix code were killed. I did not rerun the full set of 102 after the re-entrancy guard, so the container's older mutants are unchecked.
+- Not tested: a real mouse drag and drop, QtQuick Controls views, locale-aware ordering beyond the C locale, a data race. Clang and MSVC are not tried for the new code.
+- Provenance: AI agents wrote most of the tests, one category each, under my direction. I reviewed their reports and the pinned defects, not every line.
+
+## Where to read it
+
+The catalogue is in [`docs/qt-edge-cases`](https://github.com/wrocpp/reflect-moc/tree/b57a80cbf3031e1102701c0dd1073d7b86d7fe1a/docs/qt-edge-cases). The tests are in `tests/qt/edge` beside it. The four pull requests, to merge in this order: the [tests](https://github.com/wrocpp/reflect-moc/pull/19), the [re-entrancy fix](https://github.com/wrocpp/reflect-moc/pull/20), the [key fixes](https://github.com/wrocpp/reflect-moc/pull/21) and the [matrix and selection](https://github.com/wrocpp/reflect-moc/pull/22). Until they merge the links point at the branch commit.
