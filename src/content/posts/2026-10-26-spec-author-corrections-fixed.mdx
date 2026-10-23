@@ -1,0 +1,45 @@
+---
+title: "Two problems confirmed by the spec's author, fixed in both bindings"
+slug: "spec-author-corrections-fixed"
+pubDate: 2026-10-26
+author: filip-sajdak
+language: en
+kind: short
+series: cpp26-reflection
+series_order: 40
+audience: working-cpp
+tags: [reflection, cpp26, qt, models, testing, ai]
+summary: "The author of the container spec wrote that section 8.3 is a mistake, not a trade-off, and that the lazy row map is in the real code. Both generated bindings now announce a batch removal while the entries still exist and find a row by binary search: a hash drain at 10,000 entries went from 193 microseconds per removal to 320 nanoseconds."
+draft: false
+relatedPosts: [regenerate-qt-containers-from-a-spec, qt-model-edge-cases-catalogue]
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+Leonardo Rossi, who wrote the spec, answered <PostLink slug="regenerate-qt-containers-from-a-spec">the post about regenerating it</PostLink> with two corrections from the real code. Section 8.3 "is a mistake in the spec, not a trade-off", and "I wrote it the wrong way round." The lazy row map is real too: the real list model also rebuilds its index after every change. I had called the first one a trade-off, because the spec says so. Both bindings are now changed by hand, each change with a test that fails on the old code.
+
+## What was wrong in 8.3
+
+The spec has a batch removal erase the entries first and announce the removed rows afterwards. A view that reads a row in `rowsAboutToBeRemoved` then finds nothing. Qt expects the row to be readable there. The real model kit starts the removal at the "about" notification, while the entry is still in the container.
+
+Both list models now announce every run of the batch in that handler. A new test removes scattered keys with `removeMany` and with `takeMany`, from a map and from a hash. It reads each doomed row while the row is announced, and it fails on the old models. The tests that had pinned the old behaviour now assert the values.
+
+## What the lazy map cost
+
+Every change marked the key-to-row map stale, and the next lookup rebuilt it. The rows were already sorted by key, so a row is now found by binary search, and nothing is rebuilt. The matrix kept the same kind of lazy index for rows and columns. It now updates the index where it changes: an append adds keys, a rename moves one, an erase renumbers the rows after it.
+
+| operation on a hash, x86_64 | binding A before | binding A after | binding B before | binding B after |
+|---|---|---|---|---|
+| drain, 1,000 entries, per removal | 11.2 µs | 224 ns | 11.7 µs | 236 ns |
+| drain, 10,000 entries, per removal | 193 µs | 320 ns | 198 µs | 346 ns |
+| `removeMany` of 100 contiguous keys, 10,000 entries | 454 µs | 14.6 µs | 455 µs | 7.1 µs |
+
+Seven runs on a GitHub runner, medians, same script as before. The rows that never touch the lookup, such as fill, replace, `insertMany` and the matrix `setValues`, stayed within about 10 percent. I did not measure the Mac again.
+
+## How it was checked
+
+- Random mixes of inserts, removals, batches, replaces and clears compare the new lookups with the container after every step. A second mix does the same for the matrix indexes.
+- The mutation script covers both trees. Binding A: 53 mutants, 52 killed, one judged equivalent. Binding B: 54 mutants, 53 killed, one judged equivalent. One mutant survived the first run, which showed that a single removal still needed its own test, and that test is added.
+- Both bindings still pass their 17 acceptance entries, and the MSVC job for binding A passes.
+
+The changes are hand edits to generated code, listed in the [README](https://github.com/wrocpp/reflect-moc/tree/b2534166aa858f1b5acde22b7c1cc087d27ec4e3/examples/qt/spec_regen). The agents' own reports are in `notes` next to it. The spec itself stays as it is until its author publishes the next version, and then I will regenerate from that.

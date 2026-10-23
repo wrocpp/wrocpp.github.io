@@ -160,6 +160,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # spec post took the second slot, to the first free second slot.
     "2026-11-01": {"slug": "rust-swift-cpp-interop-toolchains", "hour": 16,
                    "why": "Rust and Swift interop news alongside the evergreen post, moved from 22 October"},
+    # A GoogleTest news short. It moved from the first slot of 26 October, where the
+    # post on the spec author's two corrections took the morning, to the first free second slot.
+    "2026-11-03": {"slug": "googletest-live-at-head", "hour": 16,
+                   "why": "GoogleTest release news alongside the first tidy-agent episode, moved from 26 October"},
 }
 
 

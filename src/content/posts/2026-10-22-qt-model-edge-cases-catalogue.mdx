@@ -47,7 +47,7 @@ The protocol tests found five gaps in the models that a view can see. Three of t
 
 - EditRole. The model said a cell was editable but answered nothing for `Qt::EditRole`. A default editor opens empty. Committing it without typing writes an empty value back to the entry.
 - A foreign index. The data and edit functions never checked the index. An index of another model, or column 1 of a table given to a list model, was read as the row with the same number.
-- A removal that reads empty. Qt wants the data of a removed row to be there while `rowsAboutToBeRemoved` is announced. A batch removal erased the entries first, so those rows read as empty. The spec I ported from had the same property on purpose.
+- A removal that reads empty. Qt wants the data of a removed row to be there while `rowsAboutToBeRemoved` is announced. A batch removal erased the entries first, so those rows read as empty. The spec I ported from had the same property, and I first took that for a deliberate choice. Its author has since said it was a mistake. The two bindings of that spec now announce a batch removal before they erase (see <PostLink slug="spec-author-corrections-fixed">the follow-up</PostLink>).
 - Zero columns. A table with no columns emitted `dataChanged` with two invalid indexes.
 - QML. Nothing to bind a row count to: `rowCount()` has no notify signal, so a binding stayed stale while `ListView.count` followed.
 

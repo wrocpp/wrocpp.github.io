@@ -59,11 +59,15 @@ The 15 readings and the places the spec could not be applied to binding B are in
 
 ## Where the spec looks wrong
 
-Section 8.3 calls `beginRemoveRows` after the container has already erased the entries, so `data()` of a doomed row is invalid during the cycle. A proxy or view that reads those rows in `rowsAboutToBeRemoved` sees nothing. The spec chose this on purpose, so it is a trade-off to state, not a bug.
+Section 8.3 calls `beginRemoveRows` after the container has already erased the entries, so `data()` of a doomed row is invalid during the cycle. A proxy or view that reads those rows in `rowsAboutToBeRemoved` sees nothing. I took the spec's own wording at face value and called this a trade-off.
+
+- **Update, 23 October.** The spec's author replied that I had it wrong: "Section 8.3 is a mistake in the spec, not a trade-off." The removal cycle should start at the "about" notification. The entry is still in the container then, so a view can read the row it is losing. Both bindings are changed to do that, in <PostLink slug="spec-author-corrections-fixed">the next post</PostLink>.
 
 Section 7.1 says a value already equal changes nothing, but `replace` always notifies. The `Self = C` template trick that defers the `static_assert` can be defeated. A caller can name another container type in the call and skip the check.
 
 The cost is in section 8.1. The list model keeps a lazy key-to-row map that every change marks stale and the next lookup rebuilds. So the next removal after any change pays for a rebuild. That is 11 microseconds per removal at 1,000 hash entries and 193 microseconds at 10,000, in both bindings. The row index in <PostLink slug="qt-observable-models-known-limits">the follow-up</PostLink> costs 167 to 473 nanoseconds per change at 100,000 hash entries and 10,000 map entries. The row order differs, because the spec sorts rows by key and my models keep insertion order for a hash. Read it as an indication, not a like-for-like comparison.
+
+- **Update, 23 October.** The author confirmed that the real list model does the same, and put the measurement on the team's list. Both bindings now find a row by binary search, and the same drain costs 320 and 346 nanoseconds at 10,000 hash entries.
 
 ## What binding A costs against binding B
 
