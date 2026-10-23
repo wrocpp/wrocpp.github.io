@@ -20,5 +20,5 @@ https://wrocpp.github.io/posts/googletest-live-at-head/
 A wro.cpp social card reading "The notes say do not use the release", about GoogleTest recommending users build from trunk.
 
 ## Suggested post time
-Monday 2026-10-26, 10:00 CET
-Reason: Weekend mid morning for a tooling and dependency management read.
+Tuesday 2026-11-03, 16:00 UTC
+Reason: the afternoon slot, after the morning slot of the first tidy-agent day, moved here from 26 October for the spec author post.
