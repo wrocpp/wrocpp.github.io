@@ -1,0 +1,71 @@
+---
+title: "Wro.cpp now has a Claude Code plugin marketplace for C++"
+slug: "wrocpp-claude-code-marketplace"
+pubDate: 2026-11-03
+author: filip-sajdak
+language: en
+tags: [news, claude-code, plugins, cpp26, tooling]
+kind: short
+audience: working-cpp
+summary: "The Wro.cpp marketplace for Claude Code lists five plugins from its own repository and tidy-agent from another. Each rule is backed by a fixture that compiles on the compilers it names. The evidence covers GCC 16.2, Apple clang 21 and Homebrew clang 21 to 23, and the README lists what it does not cover."
+draft: true
+---
+
+The Wro.cpp marketplace for Claude Code is public at [wrocpp/claude-marketplace](https://github.com/wrocpp/claude-marketplace) under the MIT licence. Two commands add it and install a plugin:
+
+```bash
+claude plugin marketplace add wrocpp/claude-marketplace
+claude plugin install cpp26-guard@wrocpp
+```
+
+Inside a session, the first command is `/plugin marketplace add wrocpp/claude-marketplace`. The repository holds five plugins, each with a README and tests. A sixth, tidy-agent, is listed from its own repository.
+
+## In short
+
+- Each rule that depends on a compiler has a fixture, and CI rebuilds the fixtures, so a compiler update shows up as a failing test.
+- Hooks are advisory. They add a note for Claude, never block an edit, and exit 0 on any internal error.
+- The plugins treat the repository they run in as untrusted input. The repository's SECURITY.md describes the trust model.
+- The evidence covers GCC 16.2, Apple clang 21 and Homebrew clang 21 to 23. Older compilers are not measured.
+
+## The plugins
+
+| Plugin | What it does | What backs it |
+|---|---|---|
+| cpp26-guard | Keeps C++26 free of hand-written copies of definitions. A reflection lint, advisory hooks before and after a write, and two skills | Lints with a self-test and a strict CI mode; probes for GCC 16.2 with `-freflection` |
+| cpp-quality-gates | A sanitizer matrix, a CRAP gate, mutation testing and a compiler capability matrix, with scripts, CMake presets and a CI template | Scripts that run without Claude; Linux-in-a-container for macOS |
+| cpp-conventions | Five skills: designated initializers, no needless copies, cppreference, units and no magic numbers. A hook scans for copy smells and bare numbers | A fixture compiled with GCC and Clang for each compiler-dependent rule |
+| cpp-modules | `import std` and named modules with CMake and GCC 16: the CMake gate for each release from 3.30.9 to 4.4.4, 26 trap fixtures and a starter project | Fixtures rebuilt by the tests; 3 traps recorded as not reproduced |
+| cpp-fuzzing | One constexpr property reused by unit tests, an AFL++ harness and a compile-time replay of the corpus with `#embed` | A starter with eight planted defects |
+| tidy-agent | Runs clang-tidy on every C++ file the agent edits | Listed from its own repository, version 0.1.0-dev |
+
+## What the evidence shows
+
+Two of the plugins record results, not only advice.
+
+In cpp-fuzzing, GCC 16.2 rejects signed overflow, out-of-bounds reads, null dereference, division by zero, undefined shifts and uninitialised reads at compile time. It does not see a defect on an `if !consteval` branch, which AddressSanitizer found. Neither AddressSanitizer nor UBSan found the uninitialised reads at run time.
+
+In cpp-modules, each of the 26 fixtures records an outcome and a status. Thirteen reproduce a trap. Seven show the workaround building. Two work as expected, and one is a behaviour note.
+
+The last three could not be reproduced, and the plugin says so instead of asserting them:
+
+- the `optional` module type
+- the `expected` module type
+- a `-Wfree-nonheap-object` warning
+
+## How the plugins behave
+
+A project opts in to blocking with a file named `.claude/<plugin>.json`. Skills load a short `SKILL.md` first and read their references on demand. Each plugin installs alone, with its scripts, fixtures and licence. The command `claude plugin details <name>` shows a plugin's projected token cost.
+
+## Limits
+
+The repository's README lists what its evidence does not cover. [Read the Limits section](https://github.com/wrocpp/claude-marketplace#limits) before you rely on a rule. In short:
+
+- The fixtures were not measured on older GCC or on clang 17 or earlier.
+- The CMake gate table could not install some patch releases. Examples are 3.31.7 to 3.31.9 and 4.0.1 and 4.0.2.
+- AddressSanitizer, UBSan, LeakSanitizer and ThreadSanitizer are run. MemorySanitizer is not.
+- The mp-units fixtures and the AFL++ campaign skip when their tools are absent, including in CI.
+- The scanners read text, not compiler state, so a hook can flag code that your compiler accepts.
+
+---
+
+**Sources**: [wrocpp/claude-marketplace](https://github.com/wrocpp/claude-marketplace) README, SECURITY.md and the five plugin READMEs, and `expectations.json` in cpp-modules, all read on 2026-10-18 · [wrocpp/tidy-agent](https://github.com/wrocpp/tidy-agent).
