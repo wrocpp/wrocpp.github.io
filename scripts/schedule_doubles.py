@@ -142,11 +142,11 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # runs beside the post of the day.
     "2026-10-28": {"slug": "qt-observable-models-known-limits", "hour": 16,
                    "why": "follow-up to the Qt class template post, the known limits closed, beside the post of the day"},
-    # A reflection lint that flags a dangling-view signature GCC 16.2 does not
-    # warn about, written in response to Klaus Iglberger's safety article of
-    # 18 October. It runs beside the API-contract post of the day.
-    "2026-10-29": {"slug": "reflection-dangling-signature", "hour": 16,
-                   "why": "reflection signature lint, response to Iglberger's safety article, beside the API-contract post"},
+    # The flagship of the Qt series: which rows of a moc conformance matrix reflection
+    # matches, and a class with no macro. It took the second slot of 29 October from
+    # the reflection signature lint, which moved to 2 November.
+    "2026-10-29": {"slug": "moc-parity-matrix-reflection", "hour": 16,
+                   "why": "Qt series flagship beside the first post of the day"},
     # P3533R2 (constexpr virtual inheritance) is accepted by GCC 16 and Clang
     # trunk, with one case that differs. It runs beside the P0963 post of the day.
     "2026-10-30": {"slug": "constexpr-virtual-inheritance", "hour": 16,
@@ -162,6 +162,11 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
                    "why": "Rust and Swift interop news alongside the evergreen post, moved from 22 October"},
     # A GoogleTest news short. It moved from the first slot of 26 October, where the
     # post on the spec author's two corrections took the morning, to the first free second slot.
+    # A reflection lint that flags a dangling-view signature GCC 16.2 does not warn about,
+    # written in response to Klaus Iglberger's safety article of 18 October. It moved from
+    # 29 October, where the Qt flagship took the second slot.
+    "2026-11-02": {"slug": "reflection-dangling-signature", "hour": 16,
+                   "why": "reflection signature lint, response to Iglberger's safety article, moved from 29 October"},
     "2026-11-03": {"slug": "googletest-live-at-head", "hour": 16,
                    "why": "GoogleTest release news alongside the first tidy-agent episode, moved from 26 October"},
 }

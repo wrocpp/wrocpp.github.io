@@ -12,5 +12,5 @@ https://wrocpp.github.io/posts/reflection-dangling-signature/
 Cream wro.cpp card with the magnet logo. Headline reads "Reflection sees the dangling view GCC 16.2 misses" with a subtitle saying a short lint flags a view returned from a by-value owner and -Wall -Wextra says nothing. Citation footer: wro.cpp, 2026-10-29.
 
 ## Suggested post time
-Thursday 2026-10-29, 16:00 UTC
-Reason: second post of the day; the API contract post holds the 08:00 UTC slot.
+Monday 2026-11-02, 16:00 UTC
+Reason: the second slot of the day, moved here from 29 October for the Qt flagship.
