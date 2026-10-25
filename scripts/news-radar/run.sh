@@ -4,6 +4,8 @@
 # Runs under the private Scudo account (Max subscription), not the default Siili account.
 # Usage: scripts/news-radar/run.sh [--dry-run]
 set -euo pipefail
+# launchd starts bash -lc, which reads ~/.bash_profile and never adds ~/.local/bin, where claude lives.
+export PATH="$HOME/.local/bin:$PATH"
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 PROMPT_FILE="$REPO/scripts/news-radar/prompt.md"
