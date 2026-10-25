@@ -1,0 +1,87 @@
+---
+title: "Profiles now run on Compiler Explorer: what P4415R0 reports and what I ran on both builds"
+slug: "profiles-p4415-implementation-status"
+pubDate: 2026-10-31
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, wg21, profiles, safety, clang, gcc]
+summary: "P4415R0 reports two working implementations of C++ profiles, one in a Clang fork and one in a GCC fork, both on Compiler Explorer. I ran examples from the paper on both builds on 25 October. The GCC build rejects an unmarked owning factory, a leaked owner, a vector pointer used after push_back and a returned local address under the invalidation profile. The Clang build has no such profile and compiles the same file without complaint."
+draft: false
+relatedPosts: [wg21-2026-10-pre-buzios-mailing, memory-safety-what-to-point-at, brno-profiles-contracts, reflection-dangling-signature]
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+[P4415R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4415r0.pdf), "Profiles: implementation status and experience", reports that profiles now have two independent implementations. The PDF is dated 22 October, and the mailing index lists it on 23 October. Krystian Stasiowski's Clang covers the framework and most of the initialization profile. Ville Voutilainen's GCC covers the framework, the initialization profile and a first invalidation profile. Both run on Compiler Explorer, so I ran examples on them on 25 October. This follows the paper in <PostLink slug="wg21-2026-10-pre-buzios-mailing">the mailing digest</PostLink>.
+
+## In short
+
+- The paper is marked information only, not for schedule. Its authors are Michael Wong, Stasiowski and Voutilainen.
+- It says the GCC invalidation profile rejects all nineteen of its adversarial cases, and that Clang rejects none because it has no such profile.
+- On the two Compiler Explorer builds, I got the same split for four small cases: GCC rejects them, Clang compiles them.
+- The initialization profile works on both builds. Both reject a read of an uninitialized local.
+- A profile that a compiler does not know compiles clean on Clang. The paper asks the framework to require a diagnostic.
+
+## What the paper reports
+
+The paper is explicit about its evidence. Where a statement rests on an implementer's own report, it says so.
+
+| area | Clang build | GCC build |
+|---|---|---|
+| framework: enforce, suppress, exempt | enforce and suppress yes, exempt no | all three yes |
+| initialization profile | yes, with twelve named rules | yes, no rule names yet |
+| invalidation profile | no | yes, with owner tracking |
+| unknown profile name | accepted, enforces nothing | rejected as an error |
+| profile off | LLVM IR byte-identical | attributes inert |
+
+The authors also run a suite of 40 initialization and framework cases on both compilers. As of 6 October, 22 agree in outcome for the same reason, 4 agree for different reasons and 9 diverge. Five use features that only GCC has. Of the 87 examples in P4222R2 that Stasiowski compiled, 59 match the paper and 19 differ.
+
+## What I ran
+
+I used the two Compiler Explorer builds the paper names, with the flags it lists: `-std=c++23 -pedantic-errors`. The builds are "x86-64 gcc (P4324 contracts, and profiles)" and "x86-64 clang (std::init profile - P4222)". They are trunk builds, so the results can change. The functions `f` and `g` come from section 7.2 of the paper. The other three are mine, in the spirit of its nineteen cases. The invalidation file:
+
+```cpp
+[[profiles::enforce(std::invalidation)]];
+#include <vector>
+int* f() { return new int{9}; }
+[[owner]] int* g() { return new int{42}; }
+void leak() { int* q = g(); }
+int stale(std::vector<int>& v) { int* p = &v[0]; v.push_back(1); return *p; }
+int* local() { int x = 1; return &x; }
+int fine(const std::vector<int>& v) { const int* p = &v[0]; return *p; }
+```
+
+[Both builds side by side](https://godbolt.org/z/fT64YrfW4). The results:
+
+| function | GCC build | Clang build |
+|---|---|---|
+| `f` | error: returning a freshly-allocated pointer from a function not marked `[[owner]]` | compiles |
+| `leak` | error: the freshly-allocated value assigned to `q` is never deleted or passed on | compiles |
+| `stale` | error: use of a value bound to `v`, potentially invalidated by an earlier mutation of `v` | compiles |
+| `local` | error: returning a pointer or reference to a local, plus the usual warning | compiles, with the usual warning |
+| `fine` | compiles | compiles |
+
+Clang also prints "unknown attribute 'owner' ignored" for the marker on `g`. The exit code is 1 on GCC and 0 on Clang.
+
+The initialization file has two functions, [on both builds](https://godbolt.org/z/jGv6jWKfP):
+
+```cpp
+[[profiles::enforce(std::init)]];
+int bad() { int x; return x; }
+int good() { int x [[uninit]]; x = 3; return x; }
+```
+
+Both builds reject `bad` and accept `good`. Clang reports two errors for `bad`, the missing initialization and the read before initialization. GCC reports the first.
+
+## A profile the compiler does not know
+
+The Clang build compiled the invalidation file clean. That is the framework's specified behaviour for an unknown profile name, and the paper counts its cost. A user who enforces the invalidation profile on a compiler without it gets no checking and no warning. The paper suggests the framework require at least a diagnostic, and keep the attribute that makes the absence a hard error on import.
+
+## What I did not check
+
+- The nineteen adversarial cases. I ran five functions, two from the paper and three of my own.
+- The numbers about test suites, compile-time cost and false positives. Those are the authors' reports, and I did not reproduce them.
+- Module behaviour, the library annotations and anything on a compiler other than these two builds.
+- The design papers: P4418R0 on invalidation and P4416R0 and P4417R0 with proposed wording are known to me by title only.
