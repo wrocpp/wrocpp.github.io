@@ -1,0 +1,83 @@
+---
+title: "The C++26 DIS ballot was reported as disapproved: the numbers, the sources and the next steps"
+slug: "c26-dis-ballot-result"
+pubDate: 2026-10-27
+author: filip-sajdak
+language: en
+tags: [news, cpp26, contracts, wg21, iso]
+kind: short
+audience: working-cpp
+summary: "The 12-week ISO ballot on C++26 ended on 22 October. Two named people report it was disapproved: 12 of 20 P-members in favour, where two thirds are needed, and 9 of 22 votes negative, where a quarter is allowed. No WG21 or ISO document states the tally yet. This post separates what the papers prove from what is reported, and lists the four routes the rules allow."
+draft: false
+relatedPosts: [dis-ballot-contracts-papers, dates-to-watch-buzios-gcc17, contracts-dispute, cpp26-contracts]
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+Robert Seacord posted on LinkedIn that the C++26 draft was disapproved in its ISO ballot. The tally he gives is 12 of 20 P-members in favour and 9 of 22 votes negative. Mateusz Pusz repeated the numbers in an article of 25 October. I found no WG21 or ISO document that states the tally, so every number below is marked as reported.
+
+## In short
+
+- The 12-week ballot concluded on 22 October, according to two WG21 papers of 23 October. Pusz writes 23 October.
+- Reported tally: 12 of 20 P-members in favour, with two thirds needed. 9 of 22 votes negative, with at most a quarter allowed. Either shortfall alone fails the draft.
+- The official ISO record is not public. Seacord's post and Pusz's article are the sources, and they agree.
+- The rules allow four routes: another eight-week ballot, a revised committee draft, a Technical Specification, or cancellation. WG21 advises and the SC22 chair decides.
+- WG21 meets in Búzios from 16 to 21 November. Papers from both sides of the contracts dispute are already in the mailing.
+- Pusz writes that code already using C++26 features needs no undoing yet.
+
+## What is proved and what is reported
+
+| claim | source | status |
+|---|---|---|
+| the vote ran 12 weeks and concluded on 22 October | P4388R0 (Berne, 23 Oct) and P4433R0 (Doumler, Berne and 14 co-authors, 23 Oct) | stated in two WG21 papers. Pusz writes 23 October, and the ISO record gives no close date |
+| approval needs two thirds of the P-member votes and at most a quarter negative | P4388R0, quoting section 2.6.3 of the ISO/IEC Directives | primary |
+| 12 of 20 P-members in favour, 9 of 22 votes negative | Seacord's LinkedIn post, and Pusz's article of 25 Oct | reported by two named people, no official record |
+| No: Denmark, Finland, Iran, Italy, Japan, Luxembourg, Romania, Spain, Sweden. Abstained: Poland and the United States | Pusz's article | his account. The record is visible to national delegates only |
+| the No votes concern contracts | Pusz expects it, and says the comments are not yet published | an expectation, not a fact |
+
+The arithmetic follows from the criteria. Two thirds of 20 P-member votes is 14, and 12 is 60 percent. A quarter of 22 votes is 5, and 9 is 41 percent. Pusz counts 8 negative P-member votes among the 9, and lists Iran, an O-member, among the No votes.
+
+## What the rules allow next
+
+P4388R0 quotes the Directives. When the approval criteria are not met, the chair of SC22 takes one of four courses:
+
+1. circulate a revised enquiry draft for another eight-week vote,
+2. circulate a revised committee draft for comments,
+3. circulate a revised draft as a draft Technical Specification,
+4. cancel the project, subject to a decision by the committee.
+
+WG21 advises the chair. The role of WG21 is to offer a recommendation and, if needed, a revised draft (P4433R0).
+
+There is a clock. A project that has not reached the approval stage 36 months after registration is cancelled automatically, and registration was on 2 January 2025. One extension of up to 12 months is possible. P4388R0 reads this as leaving until the end of 2027 for a draft at the approval stage.
+
+## What the papers propose
+
+I take no side on contracts here. The table says who wrote what, and when.
+
+| paper | authors and date | position |
+|---|---|---|
+| [P4433R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4433r0.pdf), "Do not remove Contracts from C++26" | Doumler, Berne and 14 co-authors, 23 Oct, to EWG | if the ballot failed, seek another ballot without changing contract assertions. Reject comments that ask to remove them as having no consensus for change. Confirm by poll in Búzios |
+| [P4388R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4388r0.pdf), "Ship C++26" | Berne, 23 Oct, to all of WG21 | if the ballot failed, resubmit a new draft with one change already approved as a defect report (CWG2228) |
+| [P4238R1](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4238r1.pdf), "Returning C++26 for the Evaluation It Skipped" | Falco, Voutilainen, García Sánchez and Spicer, for the C++ Alliance, 1 Sep, for information | national bodies vote No with technical comments and return the draft, at the cost of one cycle |
+| [P4334R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4334r0.pdf), "P2900 Contracts' fundamental flaws" | Stroustrup, García, Falco, Spicer and Voutilainen, 9 Aug, to EWG and three study groups | objects to the contracts design as unimplemented, incomplete and untried at scale |
+
+Pusz describes the opinions as divided. Some want another ballot without removing contracts. Others want them removed, and others prefer a Technical Specification or a white paper.
+
+## What it means for your code
+
+Pusz writes that nothing has to be undone yet, and that the ballot does not change what compilers already ship. He adds that contract assertions on GCC 16 rely on an experimental implementation of the disputed part. I have not tested anything for this post. The earlier <PostLink slug="dis-ballot-contracts-papers">post on the three papers</PostLink> has the background.
+
+## What is not known
+
+- the official tally and its date, and whether the ISO record matches the reported numbers,
+- the national bodies' comments, which are not published,
+- the decision of the SC22 chair, and whether the draft changes,
+- what WG21 recommends in Búzios, where the agenda lists C++29 work as its goal.
+
+I will add the official result here when WG21 or ISO publishes it.
+
+## Sources
+
+- [Seacord's LinkedIn post](https://www.linkedin.com/posts/robertseacord_balloting-has-completed-for-c26-unfortunately-activity-7519795140887035918-5PWL), read on 25 October. The page shows its age, not a date.
+- Pusz, [The result of the C++26 DIS ballot](https://train-it.eu/blog/cpp26-contracts-the-ballot-result), part 6 of his contracts series, 25 October.
+- The four papers in the table. I read P4388R0 in full, the first three pages of P4433R0, and the first two pages of P4238R1 and P4334R0.

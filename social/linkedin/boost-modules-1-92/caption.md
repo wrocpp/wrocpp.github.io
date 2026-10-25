@@ -26,5 +26,5 @@ Have you measured modules on a real codebase yet?
 A wro.cpp social card reading "Your includes become imports", about Boost 1.92 adding C++20 module support to six libraries.
 
 ## Suggested post time
-Tuesday 2026-10-27, 11:00 CET
-Reason: Weekend late morning for a build systems read.
+Thursday 2026-11-05, 08:00 UTC
+Reason: the morning slot of a day with one post, moved here from 27 October for the DIS ballot post.
