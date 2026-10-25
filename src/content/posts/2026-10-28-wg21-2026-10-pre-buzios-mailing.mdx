@@ -1,0 +1,61 @@
+---
+title: "The pre-Búzios mailing has 89 papers: contracts, undefined behaviour, profiles and function-body reflection"
+slug: "wg21-2026-10-pre-buzios-mailing"
+pubDate: 2026-10-28
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, wg21, standardization, contracts, safety, reflection, mailing]
+summary: "The 2026-10 WG21 mailing lists 89 documents for the Búzios meeting of 16 to 21 November. Five papers are worth reading first: the contracts reply P4433R0, the undefined-behaviour framework P3100R9, Herb Sutter's question about profile-defined behaviour, the first profiles implementation report, and a proposal to reflect function bodies. This post says which ones I read and which I only know by title."
+draft: false
+relatedPosts: [wg21-2026-08-mailing, c26-dis-ballot-result, dates-to-watch-buzios-gcc17, brno-profiles-contracts]
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+The [2026-10 mailing](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/) lists 89 documents, many dated 23 October. The meeting they are for is in Búzios from 16 to 21 November, and its agenda names work on C++29. I read six papers in full or in part: P4388R0 in full, and the first pages of P4433R0, P3100R9, P4401R0, P4415R0 and P4395R0. The rest I know from the index: number, title, authors and date.
+
+## In short
+
+- Contracts: P4433R0 asks WG21 to keep contracts and reject comments that ask to remove them. Five more papers by Ville Voutilainen on strict, symbolic and configurable contracts sit beside it.
+- Undefined behaviour: P3100R9 groups every core-language case into ten categories and proposes erroneous behaviour and implicit contract assertions as the main tools. P4277R1 is the report on it.
+- Profiles: P4415R0 reports two implementations, one for Clang and one for GCC. Both run on Compiler Explorer, according to the authors.
+- Reflection: P4395R0 proposes reflecting function bodies, with an automatic-differentiation engine as the demonstration.
+- Document dates in the PDFs and in the index sometimes differ. This post follows the index.
+
+## Contracts, after the ballot
+
+The <PostLink slug="c26-dis-ballot-result">ballot post</PostLink> has the context. [P4433R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4433r0.pdf), "Do not remove Contracts from C++26", is by Timur Doumler, Joshua Berne and 14 co-authors. It asks WG21 to confirm by poll in Búzios that a failed ballot should lead to another ballot without changing contract assertions.
+
+Voutilainen's five papers are P4423R0 (conveyor functions and predicates), P4425R0 (symbolic contracts), P4426R0 (function pointers), P4427R0 (virtual functions) and P4428R0 (contract concerns). P4392R0, "C++ Tourniquet - Stricter Contracts" by Jarrad J. Waterloo, and P3400R5 on contract-assertion properties are in the same group. I know these seven by title only.
+
+## Undefined behaviour
+
+[P3100R9](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3100r9.pdf) by Doumler and Berne enumerates the cases of core-language undefined behaviour and groups them into ten categories. Its strategy has seven tools. Two of them apply to a wide range of cases without source changes: erroneous behaviour, and runtime checks through implicit contract assertions. P4277R1 is the overview and implementation report, and P4284R1 adds to the annexes. The abstract says the paper builds on contracts as adopted for C++26.
+
+[P4401R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4401r0.pdf) by Herb Sutter asks one question for profiles. If a profile defines behaviour that is undefined without it, can code rely on that behaviour for correctness? I read its first two pages, which state the question and the three signed-overflow profiles that make it concrete.
+
+## Profiles
+
+[P4415R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4415r0.pdf) by Michael Wong, Krystian Stasiowski and Ville Voutilainen is a status report, marked information only. Stasiowski's Clang implements the framework and most of the initialization profile. Voutilainen's GCC implements the framework, the initialization profile and a first invalidation profile. The paper says the invalidation profile rejects all nineteen of its adversarial cases. It also says that enforcing the initialization profile leaves Clang's generated code byte-identical. These results are self-reported.
+
+Design and wording papers sit next to it: P3704R1 "What are profiles?", P4222R3 on initialization, P4418R0 on invalidation, and wording in P4416R0 and P4417R0. A follow-up post is planned for 31 October, to run the dangling cases on the Compiler Explorer builds.
+
+## Reflection
+
+[P4395R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4395r0.pdf) comes from a Bloomberg team. P2996 reflects declarations and stops at the boundary of a function body. The paper proposes read-only reflection of declaration, expression and return statements inside bodies. Its demonstration is a compile-time automatic-differentiation engine, and it names ORMs, mutation testing and HPC transforms as other uses. The authors say the features are implemented in a Clang fork and a GCC fork. I read its first two pages.
+
+Four more reflection papers are in the index. They are P4414R0, "Structural classes: a bugfix for reflection", P3816R4 on hashing `meta::info`, and P3867R1 on `define_static_string`. The fourth is P4380R1, "Token Sequence Injection", by Revzin, Vandevoorde and Alexandrescu. I know them by title only.
+
+## The rest, by title
+
+| group | papers |
+|---|---|
+| units | P3045R10 quantities and units, P4185R2, P4213R1, P4408R0, P4411R0, P4412R0 (Mateusz Pusz and co-authors) |
+| concurrency | P0260R22 concurrent queues, P4295R1, P4223R1 senders in interfaces, P4282R2, P4390R0, P4394R0 |
+| text and numerics | P2728R16 UTF transcoding, P3412R4 string interpolation, P4444R1 `std::big_int`, P3666R5 bit-precise integers |
+| language | P0917R4 overloadable `operator?:`, P3549R1 diverging expressions, P4235R1 removing digraphs, P4424R0 `[[indeterminate]]` on data members |
+| process | P4195R1, P4302R3, P4430R0, and the LEWG polls P4336R0 and P4396R0 |
+
+I read none of these. The index gives authors and dates only.
