@@ -6,7 +6,7 @@ template: social/linkedin-post
 
 :::insight{citation="wro.cpp -- 2026-10-29"}
 # A Qt class with no macro and no moc
-29 of 47 rows of a moc conformance matrix are the same, each with a test, and 24 are checked against a real moc. The 11 unsupported rows each carry a reason.
+32 of 48 rows of a moc matrix are the same, 27 checked against a real moc. Each of the 10 unsupported rows has a reason.
 :::
 
 ::::

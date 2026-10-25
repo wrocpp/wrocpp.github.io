@@ -1,5 +1,5 @@
 ---
-title: "Replacing moc with reflection: 29 of 47 matrix rows match, and a class needs no macro"
+title: "Replacing moc with reflection: 32 of 48 matrix rows match, and a class needs no macro"
 slug: "moc-parity-matrix-reflection"
 pubDate: 2026-10-29
 author: filip-sajdak
@@ -9,7 +9,7 @@ series: cpp26-reflection
 series_order: 41
 audience: working-cpp
 tags: [reflection, cpp26, qt, moc, testing, ai]
-summary: "I listed 47 things moc processes or generates and gave each a verdict that a test must back. 29 rows are the same: 24 against a real moc's output, 5 by behaviour that moc cannot give. 5 differ in a stated way and 11 are not supported yet. A Qt class and a gadget now need no macro, because the base class finds the class through a default template argument."
+summary: "I listed 48 things moc processes or generates and gave each a verdict that a test must back. 32 rows are the same: 27 against a real moc's output, 5 by behaviour that moc cannot give. 4 differ in a stated way and 10 are not supported yet. A Qt class and a gadget now need no macro, because the base class finds the class through a default template argument."
 draft: false
 relatedPosts: [regenerate-qt-containers-from-a-spec, qt-model-edge-cases-catalogue, qt-class-template-typed-signals-without-moc, qt-object-that-never-names-its-class]
 ---
@@ -18,8 +18,8 @@ import PostLink from '../../components/PostLink.astro';
 
 ## In short
 
-- The question was how much of moc reflection replaces. I wrote 47 rows, one per construct, each with a verdict and a test.
-- 29 rows are "same". In 24 of them the meta-object equals a real moc's, and the behaviour matches. The other 5 have no twin. 5 rows are partial, 11 are unsupported, 1 needs a build step and 1 is not needed.
+- The question was how much of moc reflection replaces. I wrote 48 rows, one per construct, each with a verdict and a test.
+- 32 rows are "same". In 27 of them the meta-object equals a real moc's, and the behaviour matches. The other 5 have no twin. 4 rows are partial, 10 are unsupported, 1 needs a build step and 1 is not needed.
 - A QObject class, a derived class, a widget class and a gadget need no macro. The base class names the class for you.
 - Every open row has a reason. The largest: namespaces, `BINDABLE`, invokable constructors, plugin metadata and the `qmltyperegistrar` input.
 - The container from <PostLink slug="regenerate-qt-containers-from-a-spec">the spec series</PostLink> is one use case. A class template with signals is a row moc cannot have.
@@ -28,15 +28,15 @@ import PostLink from '../../components/PostLink.astro';
 
 A row names a moc construct, its spelling in moc and in reflect-moc, a verdict and a test. A script run by ctest fails on a blank cell, an unknown verdict or a missing test file. It also fails on a "same" row without a test.
 
-In 24 of the 29 "same" rows there is a twin. One executable holds the class written for real moc in one header and for reflect-moc in another. The test compares the two meta-objects row for row: names, signatures, parameter names, access, flags, revisions, properties, enums and class info. Then it runs both. It calls methods by name, round-trips properties, connects signals and casts with `qobject_cast`.
+In 27 of the 32 "same" rows there is a twin. One executable holds the class written for real moc in one header and for reflect-moc in another. The test compares the two meta-objects row for row: names, signatures, parameter names, access, flags, revisions, properties, enums and class info. Then it runs both. It calls methods by name, round-trips properties, connects signals and casts with `qobject_cast`.
 
 The other 5 are class templates, the class-name override, `qobject_cast` and two compile-time errors. I broke a twin on purpose once, by adding a property to the moc side only. The comparison failed. Without that check a comparison that always passes would look the same as one that works.
 
 | verdict | rows | meaning |
 |---|---|---|
-| same | 29 | 24 equal real moc's meta-object and behaviour; 5 are tested without a twin |
-| partial | 5 | works, with a difference the note names |
-| unsupported | 11 | does not build, or is ignored with a message |
+| same | 32 | 27 equal real moc's meta-object and behaviour; 5 are tested without a twin |
+| partial | 4 | works, with a difference the note names |
+| unsupported | 10 | does not build, or is ignored with a message |
 | impossible | 1 | needs a build step that reads moc's JSON |
 | not needed | 1 | there is no generated file to include |
 
@@ -99,6 +99,8 @@ A class template needed one more step. The default must depend on a template par
 | `QPrivateSignal` | the tag as the last parameter | `parity_private_signal` |
 | `Q_ENUM`, `Q_FLAG` | `[[=rqt::enum_]]`, `[[=rqt::flag]]` | `parity_enum_from_type` |
 | overloaded signals, slots, invokables | one annotation per function | `parity_overloads_function_form` |
+| several signatures in one signal member | `rqt::signal<void(int), void(const QString&)>` | `parity_overloads_multi_member` |
+| `WRITE` and `RESET` with overloads | the same rules as moc, by overload resolution | `parity_overloaded_property` |
 
 A gadget has no `QObject`, so Qt hands its address over as a pointer to a `QObject`. Its property code runs in the static meta-call, as moc's gadgets do. Reading and writing properties on a gadget, invoking its methods and storing it in a `QVariant` work with stock Qt.
 
@@ -121,7 +123,7 @@ The regenerated spec runs on it. Its author's two corrections are fixed in both 
 | plugin | `Q_PLUGIN_METADATA` | the JSON must be read at compile time and turned into CBOR by constexpr code |
 | QML | `QML_ELEMENT` and its family | registered by a call, not by the class: partial |
 | JSON | the input of `qmltyperegistrar` | a build step. A program built from the same classes could print it |
-| overloads | one signal member with several signatures; an overloaded setter | two data members cannot share a name; a setter binds to the first overload |
+| partial | default-argument clones of a non-public function; a signal or slot outside its section | the clones exist for public functions only; the compat header does not map the keywords |
 | enums | `QMetaEnum::fromType` in a macro-free class | needs two friend functions that a base class cannot declare for a derived class |
 
 The last row I checked by compiling a small file: the static assertion in Qt fails. The meta-object lists the enum, and a test covers that. There is no test yet for the failing `fromType` call.
@@ -131,8 +133,8 @@ The last row I checked by compiling a small file: the static assertion in Qt fai
 - Only GCC 16.2 builds this, because only it has reflection here. Binding A of the spec also builds with MSVC and Clang, but that code uses moc.
 - Qt 6.10.3 only. `lupdate` scans source text and was not tried against these classes.
 - AI agents wrote most of the tests and the twins, under my direction. I reviewed the matrix and every verdict, not every line.
-- 29 of 47 counts rows, and the rows are not equal in weight. A property row weighs more than a class-info row.
+- 32 of 48 counts rows, and the rows are not equal in weight. A property row weighs more than a class-info row.
 
 ## Where to read it
 
-The matrix is [`docs/moc-parity.md`](https://github.com/wrocpp/reflect-moc/blob/b2534166aa858f1b5acde22b7c1cc087d27ec4e3/docs/moc-parity.md), and the tests are in `tests/qt/parity` beside it. The macro audit, a table of each macro and its replacement, is at the end of the matrix.
+The matrix is [`docs/moc-parity.md`](https://github.com/wrocpp/reflect-moc/blob/16c92da841d9ceb91c7581e209460e0ba2e59612/docs/moc-parity.md), and the tests are in `tests/qt/parity` beside it. The macro audit, a table of each macro and its replacement, is at the end of the matrix.
