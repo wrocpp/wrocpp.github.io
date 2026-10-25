@@ -1,7 +1,7 @@
-# Replacing moc with reflection: 29 of 47 matrix rows match, and a class needs no macro
+# Replacing moc with reflection: 32 of 48 matrix rows match, and a class needs no macro
 
 ## Body
-I listed 47 things moc does and tested each one against a real moc twin. 29 are the same (24 checked against a real moc), and a Qt class or a gadget now needs no macro at all. The open rows each have a stated reason.
+I listed 48 things moc does and tested each one. 32 are the same (27 checked against a real moc), and a Qt class or a gadget now needs no macro at all. The open rows each have a stated reason.
 
 https://wrocpp.github.io/posts/moc-parity-matrix-reflection/
 
@@ -9,7 +9,7 @@ https://wrocpp.github.io/posts/moc-parity-matrix-reflection/
 #cpp #cpp26 #qt #moc #wrocpp
 
 ## Alt-text
-wro.cpp card with the magnet logo. Headline reads "A Qt class with no macro and no moc" with a subtitle about 29 of 47 rows of a moc conformance matrix being the same, 24 checked against a real moc. Citation footer: wro.cpp, 2026-10-29.
+wro.cpp card with the magnet logo. Headline reads "A Qt class with no macro and no moc" with a subtitle about 32 of 48 rows of a moc conformance matrix being the same, 27 checked against a real moc. Citation footer: wro.cpp, 2026-10-29.
 
 ## Suggested post time
 Thursday 2026-10-29, 16:00 UTC
