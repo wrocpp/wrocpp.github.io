@@ -1,0 +1,12 @@
+template: social/linkedin-post
+
+size:
+  width: 1200
+  height: 1200
+  dpr: 2
+
+project:
+  name: "wg21-2026-10-pre-buzios-mailing"
+  author: "Filip Sajdak, Founder & CEO"
+  email: "office@scudoai.com"
+  date: "2026-10-28"
