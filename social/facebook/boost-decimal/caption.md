@@ -12,5 +12,5 @@ https://wrocpp.github.io/posts/boost-decimal/
 Cream wro.cpp card with the magnet logo. Headline reads "A thousand times 0.1 is not 100 in a double" with a subtitle saying Boost.Decimal 1.91 gets exactly 100 and the demo runs live. Citation footer: wro.cpp, 2026-10-28.
 
 ## Suggested post time
-Thursday 2026-10-29, 08:00 UTC
-Reason: single post of the day.
+Monday 2026-11-09, 08:00 UTC
+Reason: the morning slot of a day with one post, moved here from 29 October for the Qt advisories post.
