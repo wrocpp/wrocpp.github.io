@@ -16,5 +16,5 @@ https://wrocpp.github.io/posts/api-contract-guard/
 Cream wro.cpp card with the magnet logo. Headline reads "The missing guard was one call down" with a subtitle saying RegGetValueW promises a terminator and RegQueryValueExW does not. Citation footer: wro.cpp, 2026-10-29.
 
 ## Suggested post time
-Friday 2026-10-30, 08:00 UTC
-Reason: single post of the day.
+Sunday 2026-11-22, 08:00 UTC
+Reason: the morning slot of a day with one post, moved here from 30 October for the MSVC post and placed after the Búzios week.
