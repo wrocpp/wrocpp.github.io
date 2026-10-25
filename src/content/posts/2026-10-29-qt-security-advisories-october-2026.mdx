@@ -1,0 +1,67 @@
+---
+title: "Six Qt security advisories in five days: which versions are fixed, and what to do now"
+slug: "qt-security-advisories-october-2026"
+pubDate: 2026-10-29
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, qt, security, qt-creator]
+summary: "Between 19 and 23 October Qt published six security advisories. Two are rated high: a denial of service in QXmlStreamReader (CVSS 8.7) and one in the SVG parser (7.1). The open-source download directory for 6.11 lists 6.11.2 as the newest release, so the fixes named as 6.11.3 are not downloadable yet. This post lists all six with affected and fixed versions, and the mitigations the advisories give."
+draft: false
+relatedPosts: [sort-qrangemodel-rows-in-qt-6-12, cra-reporting-live-qt-declaration]
+---
+
+Between 19 and 23 October 2026 the Qt Company published six security advisories on its blog. Two are rated high: a denial of service in the XML stream reader, and one in the SVG parser. Every advisory names fixed releases, but on 25 October the open-source download directory for Qt 6.11 listed 6.11.2 as its newest release. Fixes named as 6.11.3 are therefore available as patches, not as a download.
+
+## In short
+
+- Six advisories, all scored with CVSS 4.0. Two are high (8.7 and 7.1), two medium (4.3 and 4.0) and two low (2.1 each).
+- Qt 6.12.0 is out, dated 30 September in the download directory. Four advisories name it as fixed. The other two say "or later".
+- Qt 6.11.3 and 6.8.10 are named as fixed releases, but I found no 6.11.3 in the open-source directory.
+- The open-source archive for Qt 6.8 lists no release after 6.8.5, and 6.8.9 is named as fixed in four advisories.
+- Each advisory links patch diffs. Most give a mitigation: validate untrusted input, or turn HTTP/2 off.
+
+## The six advisories
+
+Every row is from the advisory page. Versions are quoted as the page gives them.
+
+| CVE, date | component | severity | affected | fixed | mitigation given |
+|---|---|---|---|---|---|
+| [CVE-2026-16762](https://www.qt.io/blog/cve-2026-16762), 23 Oct | `QXmlStreamReader` in Qt Core: crafted XML makes parsing use excessive CPU | high, 8.7 | Qt 4.3.0 to 6.8.8, and 6.9.0 to 6.11.1. QtXml and `QDomDocument` are not affected | 6.8.9, 6.11.2, 6.12.0 or later | validate and size-limit untrusted XML before parsing |
+| [CVE-2026-8168](https://www.qt.io/blog/security-advisory-cve-2026-8168), 19 Oct | SVG parser and renderer: deeply nested elements exhaust the stack | high, 7.1 | Qt 4.1.0 to 6.8.8, and 6.9.0 to 6.11.1 | 6.8.9, 6.11.2, 6.12.0 or later | load SVG only from trusted sources, or validate it first |
+| [CVE-2026-101201](https://www.qt.io/blog/security-advisory-cve-2026-101201), 20 Oct | JSON parsing in Qt Core and the Qt 5 Core Compatibility APIs: out-of-bounds read | medium, 4.3 | Qt 5.0 to 6.8.8, and 6.9.0 to 6.11.2 | 6.8.9, 6.11.3 or later | none available |
+| [CVE-2026-105923](https://www.qt.io/blog/security-advisory-cve-2026-105923), 21 Oct | null pointer in the triangulator, reachable through the `VectorImage` QML type | medium, 4.0 | 6.8.0 to 6.8.8, and 6.9.0 to 6.11.2 | 6.8.9, 6.11.3, 6.12.0 or later | do not load untrusted SVG with `VectorImage` |
+| [CVE-2026-95620](https://www.qt.io/blog/security-advisory-cve-2026-95620), 23 Oct | use-after-free in `QNetworkAccessManager` HTTP/2 support: a malicious server can crash the client | low, 2.1 | 6.9.0 to 6.11.2 | 6.11.3, 6.12.0 or later | disable HTTP/2 for affected requests through the request attribute |
+| [CVE-2026-96432](https://www.qt.io/blog/security-advisory-cve-2026-96432), 21 Oct | null pointer dereference in `QNetworkAccessManager`: a malicious server can crash the client | low, 2.1 | 6.8.0 to 6.8.9, and 6.9.0 to 6.11.2 | 6.8.10, 6.11.3 or later | disable HTTP/2, as above |
+
+The JSON advisory lists no 6.12 release as fixed, and says "6.8.9, 6.11.3, or later". The numeric order puts 6.12.0 after 6.11.3, but the page does not say 6.12.0 contains the patches. Check that one against the patch before relying on it.
+
+## Where the fixes are
+
+I read three download listings on 25 October.
+
+| directory | newest release listed |
+|---|---|
+| official releases, Qt 6.12 | 6.12.0, 30 Sep 2026 |
+| official releases, Qt 6.11 | 6.11.2, 18 Aug 2026 |
+| archive, Qt 6.8 | 6.8.5, 16 Oct 2026 |
+
+So an open-source user on Qt 6.11 has two ways to the fixes. One is to move to 6.12.0, which four advisories name as fixed. The other is to apply the patch diffs that the advisories link on the download server. A user on 6.8 has the diffs only. The advisories say 6.8.9 and 6.8.10 are fixed releases. The 6.8 archive listing does not show them, and I did not check commercial channels.
+
+## What to do now
+
+1. Find the Qt version your product links, in every shipped binary and in build images. Many applications bundle their own copy.
+2. If you parse XML, SVG or JSON from outside your process, apply the input limits the advisories give today. The high-rated pair needs only a crafted file or document.
+3. If you cannot upgrade, apply the linked diffs for your branch. The SVG advisory lists ten patches per branch, so use the archive it offers for 6.8 and 6.11.
+4. If your clients talk to servers you do not control, turn HTTP/2 off for those requests. Keep it off until you have 6.11.3 or 6.12.0.
+
+## One more item from the same week
+
+[The Qt blog post of 19 October](https://www.qt.io/blog/qt-creator-21-cmake-changes) describes Qt Creator 21. It has a new CMake language parser, quick fixes for missing source files, and rename and find-usages for CMake targets. The post says the CMake documentation ships as a Qt Help file starting with CMake 4.5.0-rc1. It does not say whether the features are in the beta 2 of 15 October, so I have not tested them.
+
+## What this post does not cover
+
+- I did not reproduce any of the six issues, and I do not rate them beyond the scores on the pages.
+- Commercial release channels were not checked.
+- Third-party packages such as Python wheels bundle their own Qt and may lag behind.
