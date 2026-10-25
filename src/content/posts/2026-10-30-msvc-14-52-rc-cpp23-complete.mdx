@@ -1,0 +1,67 @@
+---
+title: "MSVC 14.52 release candidate: C++23 mode ready for production, and constexpr cmath behind an opt-in"
+slug: "msvc-14-52-rc-cpp23-complete"
+pubDate: 2026-10-30
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, msvc, cpp23, stl, constexpr]
+summary: "Microsoft's release candidate of MSVC Build Tools 14.52, announced on 15 October, calls the C++23 mode ready for production and the STL C++23 feature complete, after constexpr cmath and cstdlib. The stable release is expected in November with Visual Studio 18.12. Compiler Explorer's newest MSVC, v19.51, rejects both new options and fails a constexpr std::sin, which shows what changes."
+draft: false
+relatedPosts: [constexpr-array-evolution, constexpr-exceptions]
+---
+
+Eric Brumer announced the release candidate of MSVC Build Tools 14.52 on 15 October 2026. The post calls the C++23 mode "ready for production use" and says the STL is C++23 feature complete. The stable release is "expected to go stable in November" and will ship with Visual Studio 18.12. This post collects what the announcement states, and what I could check before the release exists.
+
+## In short
+
+- The RC is in the Visual Studio 2026 Insiders channel. The compiler version will be at least 19.52.37025.
+- The switch for C++23 is `/std:c++23`. The old `/std:c++23preview` stays as a deprecated alias.
+- The STL becomes C++23 feature complete with P0533R9, constexpr `<cmath>` and `<cstdlib>`. It needs the opt-in `/Zc:cmath` for now.
+- Compiler Explorer has no 14.52. Its newest MSVC, v19.51, rejects both options, and `std::sin` is not constexpr there.
+- Comments on the post list open items, such as `__cpp_constexpr` still reporting the C++20 value.
+
+## What the announcement says
+
+| area | statement in the post |
+|---|---|
+| C++23 mode | `/std:c++23` is "ready for production use". `/std:c++23preview` is deprecated and will be removed |
+| STL | "C++23 feature complete" after P0533R9. Under `/std:c++23 /Zc:cmath` the constexpr math is MSVC-only for now, and the post says `/std:c++23` will imply `/Zc:cmath` later |
+| more math | under `/std:c++latest /Zc:cmath`, most of P1383R2 is implemented. Some functions are missing from LLVM-libc, among them `acosh`, `sinh` and `erf` for double |
+| library | 19 LWG issue resolutions, a faster `<regex>` in several scenarios, and ARM64 SVE implementations of some algorithms |
+| compiler | P2564R3 immediate escalation in C++23 and later, `/clr` available in C++23 mode, an opt-in `/Zc:functionToObjectPtr`, two new off-by-default warnings |
+| code generation | better inlining, devirtualization and vectorization, ARM64 SVE2 and SME work, more APX forms on x64 |
+| tools | SARIF output with rule names and help links by default, `/PDB4GBSTREAMS` for large symbol streams, AddressSanitizer decoder changes |
+
+## What changes in practice
+
+This snippet needs the constexpr math functions.
+
+```cpp
+#include <cmath>
+#include <cstdlib>
+constexpr double s = std::sin(1.0);
+static_assert(s > 0.84 && s < 0.85);
+constexpr int a = std::abs(-3);
+static_assert(a == 3);
+int main() { return 0; }
+```
+
+I compiled it on 25 October through the Compiler Explorer API with "x64 msvc v19.51 VS18.6", the newest versioned MSVC it offers. With `/std:c++23` the compiler printed "ignoring unknown option '/std:c++23'", and adding `/Zc:cmath` printed the same for that option. Every variant failed with error C2131 on line 3. The note says the failure "was caused by call of undefined function or one not declared 'constexpr'", and points at `sin`.
+
+That is the before. I could not run the after, because no 14.52 build is available on Compiler Explorer. The announcement says it should compile under `/std:c++23 /Zc:cmath`, and I have not verified that.
+
+## Open items from the comments
+
+These come from comments under the post, not from the post.
+
+- One reader reports that 19.52.37025 still reports `__cpp_constexpr` as 202002L in C++23 mode (DevCom-11142415).
+- Stephan T. Lavavej wrote that an ATL fix merged on 6 October, after the RC build. It will be in the stable release.
+- He also wrote that a Clang-related `static_assert` issue is fixed in 14.53 and will not be backported to 14.52.
+
+## What I did not check
+
+- The RC itself. I did not install it, so every statement about 14.52 is the announcement's.
+- The stable date. "November" is the only date given.
+- Non-Windows compilers: the STL of GCC and Clang has its own state for constexpr math.
