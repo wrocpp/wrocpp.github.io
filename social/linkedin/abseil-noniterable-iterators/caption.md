@@ -15,11 +15,9 @@ The part worth being uneasy about is what a caller sees. Same return type, same 
 
 Abseil's position is defensible: this was almost certainly a bug wherever it appeared, so unpredictable results become no results. Both are wrong. Only one of them is quiet in a way that survives your tests.
 
-If you use Abseil hash containers, grep for increment applied to what insert returned. There will probably be nothing, and that is the point of checking.
+If you use Abseil hash containers, grep for increment applied to what insert returned. There will probably be nothing.
 
 https://wrocpp.github.io/posts/abseil-noniterable-iterators/
-
-When did a silent behaviour change last reach your production code?
 
 ## Hashtags
 #cpp #cplusplus #abseil #containers #apidesign
@@ -28,5 +26,5 @@ When did a silent behaviour change last reach your production code?
 A wro.cpp social card reading "The loop compiles and does nothing", about Abseil making insert iterators non iterable.
 
 ## Suggested post time
-Wednesday 2026-10-28, 09:00 CET
-Reason: Weekday morning for a correctness and upgrade hazard read.
+Saturday 2026-11-07, 08:00 UTC
+Reason: the morning slot of a day with one post, moved here from 28 October for the WG21 mailing post.
