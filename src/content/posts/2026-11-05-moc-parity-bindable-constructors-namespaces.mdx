@@ -1,0 +1,73 @@
+---
+title: "Three more moc constructs without moc: BINDABLE, invokable constructors and namespaces"
+slug: "moc-parity-bindable-constructors-namespaces"
+pubDate: 2026-11-05
+author: filip-sajdak
+language: en
+kind: short
+series: cpp26-reflection
+series_order: 42
+audience: working-cpp
+tags: [reflection, cpp26, qt, moc, testing, ai]
+summary: "Four pull requests closed the biggest gaps in the moc conformance matrix of reflect-moc. BINDABLE properties and invokable constructors now equal moc's output row for row, and namespaces do so with three extra lines and an ordering rule. Each has a parity test against a real moc twin, and each test failed against a deliberately broken twin."
+draft: false
+relatedPosts: [moc-parity-matrix-reflection, regenerate-qt-containers-from-a-spec]
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+The <PostLink slug="moc-parity-matrix-reflection">matrix post</PostLink> listed namespaces, invokable constructors and `BINDABLE` as open. Four pull requests later, the first two equal moc's output row for row, and namespaces do so with a stated catch. The matrix now has 48 rows, and as merged on 26 October, 35 are "same" and 6 are partial. Each new test builds the construct once with real moc and once with reflect-moc, and compares them.
+
+## In short
+
+- `BINDABLE` works: the property row carries moc's flag, and a binding set through `QMetaProperty` behaves the same.
+- A public constructor annotated as invokable gives the same constructor table as moc, including the cloned row of each default argument.
+- A namespace gets a meta-object equal to moc's, but the user writes three lines, and their order matters. That row stays "partial".
+- Each parity test was run once against a twin broken on purpose, and failed.
+
+## BINDABLE
+
+The macro-free spelling names the getter that returns the `QBindable`:
+
+```cpp
+class FreeMeter : public rqt::ObjectOf<> {
+ public:
+  [[= rqt::property{.write = "setX", .notify = "xChanged", .bindable = "bindableX"}]] int x() const { return x_.value(); }
+  QBindable<int> bindableX() { return QBindable<int>(&x_); }
+  // ...
+};
+```
+
+The getter may be private. A name that matches nothing stops the build, with the class and the property in the message. The test compares the meta-object dumps, then runs the same trace on both objects. It sets a binding from a source property, changes the source, and removes the binding with `setProperty`. A read-only bindable stays read-only on both. `Q_OBJECT_BINDABLE_PROPERTY` works when `NOTIFY` names a function-form signal. A data-member signal there is untested.
+
+## Invokable constructors
+
+```cpp
+class Widget : public rqt::ObjectOf<> {
+ public:
+  [[= rqt::invokable]] explicit Widget(QObject* parent = nullptr) : ObjectOf(parent) {}
+  [[= rqt::invokable]] Widget(int a, int b = 3, QObject* parent = nullptr) : ObjectOf(parent), sum(a + b) {}
+  // ...
+};
+```
+
+Reflection finds the annotated constructors, and each default argument adds a cloned row, longest first, as in moc. The test compares the constructor rows. Then it calls the consumers: `newInstance` with defaulted arguments and `indexOfConstructor`. It also constructs in place through the static meta-call, and runs a JavaScript `new` through `QJSEngine`. It runs for a QObject class and for a gadget.
+
+Some cases stay out, and none is dropped silently. Four cases stop the build with a message. These are a private constructor, a deleted one, one annotated as a slot, and one with a revision or scriptable flag. A constructor template cannot be annotated, because GCC 16.2's reflection throws when it asks a template for its annotations. A test pins that.
+
+## Namespaces
+
+```cpp
+namespace shared_ns {
+enum class [[= rqt::enum_]] Mode { off, on };
+RQT_NAMESPACE
+}
+```
+
+The macro stands for three lines. Two using-declarations bring in the functions that `Q_ENUM_NS` defines per enum. A variable holds the meta-object, and a check variable guards the order. A namespace is never closed in a header, so the order matters. The lines must come after the enums. An enum declared below them is a build error, and so is an enum in an inline namespace.
+
+The test compares a namespace, a nested namespace and a class with a property of the namespace's enum type. It checks `QMetaEnum::fromType`, `QMetaType::metaObject` and the enumerator of the property against moc. A two-translation-unit test checks that the meta-object has one address with `-Wodr` silent.
+
+## What is left
+
+Five rows are unsupported: private slots and properties, property keywords given a function, plugin metadata and virtual bases. The input of `qmltyperegistrar` needs a build step. I tested only on GCC 16.2 with Qt 6.10.3, and the namespace meta-object with `qmlRegisterUncreatableMetaObject` is untried.

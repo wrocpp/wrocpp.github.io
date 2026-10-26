@@ -169,6 +169,8 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
                    "why": "reflection signature lint, response to Iglberger's safety article, moved from 29 October"},
     "2026-11-03": {"slug": "googletest-live-at-head", "hour": 16,
                    "why": "GoogleTest release news alongside the first tidy-agent episode, moved from 26 October"},
+    "2026-11-05": {"slug": "moc-parity-bindable-constructors-namespaces", "hour": 16,
+                   "why": "the three moc matrix rows that closed after the flagship, beside the Boost modules news"},
 }
 
 
