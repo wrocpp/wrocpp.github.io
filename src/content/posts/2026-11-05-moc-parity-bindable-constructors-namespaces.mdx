@@ -16,7 +16,7 @@ relatedPosts: [moc-parity-matrix-reflection, regenerate-qt-containers-from-a-spe
 
 import PostLink from '../../components/PostLink.astro';
 
-The <PostLink slug="moc-parity-matrix-reflection">matrix post</PostLink> listed namespaces, invokable constructors and `BINDABLE` as open. Four pull requests later, the first two equal moc's output row for row, and namespaces do so with a stated catch. The matrix now has 48 rows, and as merged on 26 October, 35 are "same" and 6 are partial. Each new test builds the construct once with real moc and once with reflect-moc, and compares them.
+The <PostLink slug="moc-parity-matrix-reflection">matrix post</PostLink> listed namespaces, invokable constructors and `BINDABLE` as open. Four pull requests later, the first two equal moc's output row for row, and namespaces do so with a stated catch. The matrix now has 48 rows, and as merged on 27 October, 35 are "same" and 7 are partial. Each new test builds the construct once with real moc and once with reflect-moc, and compares them.
 
 ## In short
 
@@ -70,4 +70,6 @@ The test compares a namespace, a nested namespace and a class with a property of
 
 ## What is left
 
-Five rows are unsupported: private slots and properties, property keywords given a function, plugin metadata and virtual bases. The input of `qmltyperegistrar` needs a build step. I tested only on GCC 16.2 with Qt 6.10.3, and the namespace meta-object with `qmlRegisterUncreatableMetaObject` is untried.
+Plugin metadata joined them on 27 October, as a partial row. The CBOR equals moc's byte for byte on ten JSON files. The JSON file is embedded in a block next to the class, and a file over 32 KB stops the build.
+
+Four rows are unsupported: private slots, private properties, property keywords given a function, and virtual bases. The input of `qmltyperegistrar` needs a build step. I tested only on GCC 16.2 with Qt 6.10.3, and the namespace meta-object with `qmlRegisterUncreatableMetaObject` is untried.
