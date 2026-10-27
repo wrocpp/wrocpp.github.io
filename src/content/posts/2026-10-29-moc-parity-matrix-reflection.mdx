@@ -9,7 +9,7 @@ series: cpp26-reflection
 series_order: 41
 audience: working-cpp
 tags: [reflection, cpp26, qt, moc, testing, ai]
-summary: "I listed 48 things moc processes or generates and gave each a verdict that a test must back. 35 rows are the same: 30 against a real moc's output, 5 by behaviour that moc cannot give. 6 differ in a stated way and 5 are not supported yet. A Qt class and a gadget now need no macro, because the base class finds the class through a default template argument."
+summary: "I listed 48 things moc processes or generates and gave each a verdict that a test must back. 35 rows are the same: 30 against a real moc's output, 5 by behaviour that moc cannot give. 7 differ in a stated way and 4 are not supported yet. A Qt class and a gadget now need no macro, because the base class finds the class through a default template argument."
 draft: false
 relatedPosts: [regenerate-qt-containers-from-a-spec, qt-model-edge-cases-catalogue, qt-class-template-typed-signals-without-moc, qt-object-that-never-names-its-class]
 ---
@@ -19,9 +19,9 @@ import PostLink from '../../components/PostLink.astro';
 ## In short
 
 - The question was how much of moc reflection replaces. I wrote 48 rows, one per construct, each with a verdict and a test.
-- 35 rows are "same". In 30 of them the meta-object equals a real moc's, and the behaviour matches. The other 5 have no twin. 6 rows are partial, 5 are unsupported, 1 needs a build step and 1 is not needed.
+- 35 rows are "same". In 30 of them the meta-object equals a real moc's, and the behaviour matches. The other 5 have no twin. 7 rows are partial, 4 are unsupported, 1 needs a build step and 1 is not needed.
 - A QObject class, a derived class, a widget class and a gadget need no macro. The base class names the class for you.
-- Every open row has a reason. The largest: private slots and properties, plugin metadata, the `qmltyperegistrar` input, and namespaces, which work with three extra lines.
+- Every open row has a reason. The largest: private slots and properties, the `qmltyperegistrar` input, and namespaces and plugin metadata, which work with a stated catch.
 - The container from <PostLink slug="regenerate-qt-containers-from-a-spec">the spec series</PostLink> is one use case. A class template with signals is a row moc cannot have.
 
 ## How a row is proved
@@ -35,8 +35,8 @@ The other 5 are class templates, the class-name override, `qobject_cast` and two
 | verdict | rows | meaning |
 |---|---|---|
 | same | 35 | 30 equal real moc's meta-object and behaviour; 5 are tested without a twin |
-| partial | 6 | works, with a difference the note names |
-| unsupported | 5 | does not build, or is ignored with a message |
+| partial | 7 | works, with a difference the note names |
+| unsupported | 4 | does not build, or is ignored with a message |
 | impossible | 1 | needs a build step that reads moc's JSON |
 | not needed | 1 | there is no generated file to include |
 
@@ -101,6 +101,7 @@ A class template needed one more step. The default must depend on a template par
 | `BINDABLE` | `BINDABLE name` in the property text, or `.bindable` in the annotation | `parity_bindable` |
 | `Q_INVOKABLE` on a constructor | `[[=rqt::invokable]]` on a public constructor, for a class and a gadget | `parity_invokable_constructor` |
 | `Q_NAMESPACE`, `Q_ENUM_NS`, `Q_FLAG_NS` (partial) | `RQT_NAMESPACE`, or three lines | `parity_namespace_meta` |
+| `Q_PLUGIN_METADATA` (partial) | `RQT_PLUGIN_METADATA` after an `#embed` block, with the JSON up to 32 KB | `parity_plugin_loader` |
 | overloaded signals, slots, invokables | one annotation per function | `parity_overloads_function_form` |
 | several signatures in one signal member | `rqt::signal<void(int), void(const QString&)>` | `parity_overloads_multi_member` |
 | `WRITE` and `RESET` with overloads | the same rules as moc, by overload resolution | `parity_overloaded_property` |
@@ -123,7 +124,7 @@ The regenerated spec runs on it. Its author's two corrections are fixed in both 
 | keywords with a function | `DESIGNABLE isDesignable` and its three siblings | the build stops with a message. moc evaluates the function at run time, and a constant table cannot |
 | virtual base | `class D : virtual public QObject` | moc rejects it too, so it is not a parity gap |
 | private | `Q_PRIVATE_SLOT`, `Q_PRIVATE_PROPERTY` | the d-pointer class is usually incomplete in the header |
-| plugin | `Q_PLUGIN_METADATA` | the JSON must be read at compile time and turned into CBOR by constexpr code |
+| plugin | `Q_PLUGIN_METADATA` | partial. The CBOR equals moc's byte for byte, but the file is embedded in a block next to the class, because the compiler fails on an embed inside macro arguments, and the JSON is capped at 32 KB |
 | QML | `QML_ELEMENT` and its family | registered by a call, not by the class: partial |
 | JSON | the input of `qmltyperegistrar` | a build step. A program built from the same classes could print it |
 | partial | default-argument clones of a non-public function; a signal or slot outside its section | the clones exist for public functions only; the compat header does not map the keywords |
