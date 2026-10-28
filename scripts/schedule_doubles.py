@@ -169,6 +169,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
                    "why": "reflection signature lint, response to Iglberger's safety article, moved from 29 October"},
     "2026-11-03": {"slug": "googletest-live-at-head", "hour": 16,
                    "why": "GoogleTest release news alongside the first tidy-agent episode, moved from 26 October"},
+    # The spec author's addendum on a receiver that changes the container notifying it, run in both
+    # bindings, with the matrix test it left out. It runs beside the contract_assert post of the day.
+    "2026-11-04": {"slug": "spec-addendum-nested-changes", "hour": 16,
+                   "why": "the spec addendum on nested changes, queued in both bindings, beside the contract_assert post"},
     "2026-11-05": {"slug": "moc-parity-bindable-constructors-namespaces", "hour": 16,
                    "why": "the three moc matrix rows that closed after the flagship, beside the Boost modules news"},
 }
