@@ -1,0 +1,52 @@
+---
+title: "A queue for changes made during a notification, in both bindings"
+slug: "spec-addendum-nested-changes"
+pubDate: 2026-11-04
+author: filip-sajdak
+language: en
+kind: short
+series: cpp26-reflection
+series_order: 43
+audience: working-cpp
+tags: [reflection, cpp26, qt, models, testing, ai]
+summary: "The spec's author sent an addendum on a receiver that changes the container notifying it: queue the change and drain it when the outermost notification closes. Both bindings now do, twelve acceptance tests failed or crashed the old code, and the matrix, which the addendum leaves out, got the failing test its author said was missing."
+draft: false
+relatedPosts: [qt-model-edge-cases-catalogue, spec-author-corrections-fixed, regenerate-qt-containers-from-a-spec]
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+Leonardo Rossi wrote the container spec and answered a question from <PostLink slug="qt-model-edge-cases-catalogue">the 228-cases post</PostLink>. What happens when a receiver changes the container that is notifying it? The [addendum](https://gist.github.com/96Ven96/100c0ec4917dced4d6c8ac9a4cc06b7e/a2fc33b0d04280c896e72a69a90e234b94ba7c44) says to queue the change. The queue drains in order when the outermost notification closes, before the outer call returns. It adds twelve acceptance tests and says the real kit has used the design since its version 1.3.0.
+
+## What the tests did to the old code
+
+Each binding went to a fresh agent with its own tree, the spec and the addendum, and nothing else. It wrote the twelve tests first and ran them against the old library.
+
+| | binding A (moc, C++20) | binding B (typed signals) |
+|---|---|---|
+| fail on the old code | 8 | 10 |
+| crash on the old code | 1 | 2 |
+| pass as worded | 3 | not run |
+| pass after, Debug and Release | 12 of 12 | 12 of 12 |
+
+The crashes are a receiver connected ahead of the list model (both bindings) and a nested `take` in its own about notification (binding B). Binding B is clean under AddressSanitizer and UBSan. The queue costs 3 to 31 percent more per single change, 5 to 15 ns, and nothing measurable on batches. That is one run on one Mac, with a different load before and after.
+
+## Where an agent tripped
+
+- Three of the tests pass on the old code as the addendum words them. The recorder is connected first, and the nested call comes from the last receiver. The test cannot tell a queued call from an applied one. The agent added a check inside the receiver.
+- A queued call answers `true` even when it can never succeed, such as a removal of an absent key. A refused `take` looks like an absent key.
+- A lambda passed to `editValue` that captures a local by reference now dies silently. The documentation has to say so, and the library cannot check it.
+- Binding A is C++20, so a queued call cannot sit in a `std::function`, which needs a copyable callable. The agent wrote a small type-erased holder. Binding B uses `std::move_only_function`.
+- Both reports read an endless chain of re-queued calls as a hang. Nobody ran it.
+
+## The matrix
+
+The addendum leaves the matrix out because no test shows the failure. A test now does. Sixteen kinds of change, each with a receiver that changes the same matrix, connected after and before the table model: 32 cases.
+
+- 20 crash. 16 of them trip the model tester's change-in-flight check. 4 are the matrix itself, whose outer removal erases at an index it took before the about notification.
+- 4 end out of step. The model and the matrix agree, but the outer add announces an index the nested add already moved.
+- 8 end consistent: a done notification, with the receiver after the model.
+
+The cases are pinned, so the test passes while the failure reproduces. Nothing in the matrix was changed.
+
+The pull request is [#44](https://github.com/wrocpp/reflect-moc/pull/44), merged as `3ea958e898d1c759511a8d5c58cf2357882fc7b8`. The agents' reports and the matrix note are in [`notes`](https://github.com/wrocpp/reflect-moc/tree/3ea958e898d1c759511a8d5c58cf2357882fc7b8/examples/qt/spec_regen/notes). The gist has no licence, so the repository links the addendum and does not copy it. The spec itself is unchanged in that revision, so the v2 with the earlier corrections is not out yet.
