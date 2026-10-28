@@ -175,6 +175,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
                    "why": "the spec addendum on nested changes, queued in both bindings, beside the contract_assert post"},
     "2026-11-05": {"slug": "moc-parity-bindable-constructors-namespaces", "hour": 16,
                    "why": "the three moc matrix rows that closed after the flagship, beside the Boost modules news"},
+    # Lead post from the October LinkedIn batch. It rides the live wave and lands in
+    # the first open second slot instead of evicting a queued post.
+    "2026-11-07": {"slug": "qt-clate-qml-mcp", "hour": 16,
+                   "why": "Qt Clate launch (QML + MCP), beside the Abseil iterators post"},
 }
 
 
