@@ -1,0 +1,136 @@
+---
+title: "A stepping debugger is a coroutine that stops at checkpoints"
+slug: "coroutine-single-stepper"
+pubDate: 2026-11-12
+author: filip-sajdak
+language: en
+kind: flagship
+audience: working-cpp
+tags: [cpp, coroutines, debugging, webassembly]
+summary: "Alexey Ozeritskiy built a debugger for WebAssembly out of coroutines, and the project's design notes are public. A checkpoint before each statement either continues or suspends and hands control back to the host. This post models that mechanism in a C++20 program under 200 lines: breakpoints, step into, over and out, a call stack, and a fast path that never suspends. It is a toy and not their code."
+draft: false
+relatedPosts: [coroutine-return-void-and-value, raii-ffmpeg-libav]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+A stepping debugger can be built from suspend points: a checkpoint before each statement either continues or hands control back to the host.
+Alexey Ozeritskiy built a WebAssembly debugger this way, and I modelled the mechanism in a short C++20 program.
+
+## In short
+
+- Alexey Ozeritskiy wrote on LinkedIn about a debugger for WebAssembly based on coroutines. The project is Qumir, a BSD-2 compiler for the Kumir teaching language, and its design notes are public.
+- The compiler emits a checkpoint before each statement. Most checkpoints do nothing and return at once. A stopping one suspends the program and returns control to the browser.
+- The debugger's state lives inside the WebAssembly module. JavaScript gets only a control call.
+- The notes give a reason for coroutines over JSPI: JSPI support is limited, particularly on mobile browsers.
+- My model is a toy. It has the same shape, runs natively, and does not model variables, a user interface or a browser.
+
+## What the post and the notes say
+
+The LinkedIn post describes a debugger built on a compiler pass.
+For each logical instruction, at the syntax-tree level, the compiler generates a call to a coroutine function named `debug_point`.
+That function decides whether to return control to the browser or to continue.
+The post gives the reason for avoiding JSPI as limited browser support, and names iOS 26 and earlier.
+
+The project's [design notes](https://github.com/QumirLabs/qumir/blob/4e0e5c9277fb4117b6fe4d98a1787ed6830eda3c/docs/arch/browser-debugger.md) add detail.
+I read them at the pinned revision, and these are the parts the toy copies:
+
+- A checkpoint that does not stop returns zero, and the shared await loop continues without calling JavaScript.
+- A stopping checkpoint returns a JavaScript Future, and the program awaits it.
+- The enabled flag, step mode, frame stack and breakpoint flags live in WebAssembly globals and buffers.
+- Stepping is one control call with a mode: continue, into, over, out, pause or stop. Breakpoints have a call of their own.
+- The notes add a time slice for pure loops. Every 1024 checkpoints the program reads the clock, and after 10 ms it yields to the browser so Pause and Stop can run.
+
+One point of wording.
+The post says the debugger is based on C++ coroutines.
+The notes describe the project's own coroutine and Future ABI, lowered through LLVM coroutine intrinsics.
+I read that as the same suspend and resume machinery, and not as the C++20 `co_await` keyword inside the debugger.
+I did not run Qumir for this post, and the browser-support statements are the authors', not mine.
+
+## The model
+
+The state is one object next to the program.
+A checkpoint asks it whether to stop:
+
+```cpp
+bool should_stop(int line) const {
+  if (breakpoints.contains(line)) return true;
+  switch (mode) {
+    case Mode::Continue: return false;
+    case Mode::Into:     return true;
+    case Mode::Over:     return stack.size() <= target_depth;   // same frame or shallower
+    case Mode::Out:      return stack.size() < target_depth;    // strictly shallower
+  }
+  return false;
+}
+```
+
+The checkpoint is an awaiter.
+Its fast path is `await_ready` returning true, so nothing suspends and nothing is stored:
+
+```cpp
+struct Point {
+  int line;
+  bool await_ready() const noexcept {
+    ++session.points_evaluated;
+    if (!session.should_stop(line)) return true;
+    ++session.points_stopped;
+    return false;
+  }
+  void await_suspend(std::coroutine_handle<> h) const noexcept {
+    session.paused = h;
+    session.paused_line = line;
+  }
+  void await_resume() const noexcept {}
+};
+```
+
+The program under debug is a pretend Kumir source with numbered lines, written as coroutines with a checkpoint before each statement.
+Every function that contains a checkpoint, or calls one that does, is a coroutine.
+The driver resumes the innermost suspended coroutine, so a stop deep in the call chain returns straight to the driver.
+
+## A session
+
+This is the output, on GCC 16.2, with each command followed by where the program stopped and the call stack at that point:
+
+```
+break at line 3 (return result), continue:
+  stop at line 3  [main > square]
+step out of square:
+  stop at line 6  [main]
+step into, three times (the last two enter square):
+  stop at line 7  [main]
+  stop at line 2  [main > square]
+  stop at line 3  [main > square]
+clear the breakpoint, step into twice to reach the call on line 7:
+  stop at line 6  [main]
+  stop at line 7  [main]
+step over the call: square runs, no stop inside it:
+  stop at line 8  [main]
+continue to the end:
+  finished=1 result=14
+a fresh run with no breakpoints:
+  result=14, checkpoints evaluated=14 stopped=0
+```
+
+Step over is the useful line.
+From line 7 the call to `square` passes two checkpoints inside it, and neither stops, because the stack is deeper than where the step began.
+The last line is the fast path: 14 checkpoints evaluated, none stopped.
+
+<GodboltEmbed id="EWYanxPhG" gccOnly gccLabel="GCC 16.2" title="A single-stepper made of suspend points" gcc_subtitle="x86-64 GCC 16.2 · -std=c++23 · runs natively, not in WebAssembly" />
+
+The output is the same at `-O0` and `-O2`, and on Compiler Explorer.
+The embed runs natively.
+It shows the coroutine mechanism and not a WebAssembly build.
+
+## What the toy leaves out
+
+It has no variables, so there is nothing like the live variable addresses the notes describe.
+It has no time slice, no user interface and no browser.
+It does not use a function-level call graph pass: I wrote the coroutines by hand.
+In Qumir a compiler pass finds every function that transitively reaches a checkpoint and makes it a coroutine.
+
+That last point has a price, and the next post measures it.
+
+The files are [in the examples repo](https://github.com/wrocpp/cpp26-reflection-examples/tree/405be7bc640c2f82b6e4e9c0af0188c36f57090b/posts/99-coroutine-debugger).
