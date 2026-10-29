@@ -21,8 +21,8 @@ measurement written as a number or a number word.
 | | "One struct" used only as a figure of speech with no checkable count |
 
 Version numbers, standard names, paper numbers (P2795R5), years, dates, clock times, prices and ticket
-numbers never count on their own. A number that counts or measures something does. A candidate flag from a
-script is shown only as a hint: confirm or reject it by reading the headline.
+numbers never count on their own. A number that counts or measures something does. You are shown no
+script flag or hint: read the headline yourself.
 
 Only the headline decides. A number that appears only in the caption lead does not make this `yes`.
 
