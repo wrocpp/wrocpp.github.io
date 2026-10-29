@@ -154,6 +154,9 @@ class Features(unittest.TestCase):
         self.assertEqual(self.rows["demo"]["gap_days"], "2")
         self.assertEqual(self.rows["late-slot"]["gap_days"], "0")
 
+    def test_the_summary_is_read_for_the_labellers(self):
+        self.assertEqual(self.rows["demo"]["summary"], "A summary: with a colon.")
+
     def test_topic_group_uses_the_tags(self):
         self.assertEqual(self.rows["second"]["topic_group"], "qt")
         self.assertEqual(self.rows["demo"]["topic_group"], "reflection")

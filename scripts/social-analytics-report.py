@@ -82,7 +82,7 @@ TAG_GROUPS = (
 OTHER_GROUP = "other"
 
 FEATURE_COLUMNS = (
-    "slug", "date", "kind", "title", "series", "series_order", "tags", "news", "content_type", "topic_group",
+    "slug", "date", "kind", "title", "summary", "series", "series_order", "tags", "news", "content_type", "topic_group",
     "slot", "planned_hour", "day_posts", "gap_days", "disturbance", "card_h1", "lead", "caption_words",
     "h1_number_candidate", "lead_number_candidate",
 )
@@ -120,6 +120,7 @@ class Post:
     date: str
     kind: str
     title: str
+    summary: str
     tags: tuple[str, ...]
     series: str
     series_order: str
@@ -172,7 +173,8 @@ def load_posts(root: Path) -> list[Post]:
         fm = parse_frontmatter(text)
         posts.append(Post(
             slug=fm.get("slug", path.stem), date=fm["pubDate"], kind=fm.get("kind", DEFAULT_KIND),
-            title=fm.get("title", ""), tags=tuple(fm.get("tags", [])), series=fm.get("series", ""),
+            title=fm.get("title", ""), summary=fm.get("summary", ""),
+            tags=tuple(fm.get("tags", [])), series=fm.get("series", ""),
             series_order=fm.get("series_order", ""), body=text.split("---", 2)[2]))
     return posts
 
@@ -252,6 +254,7 @@ def build_features(root: Path, start: str, end: str, *, doubles: dict, collision
         slot, hour = slot_and_hour(post, doubles, collisions)
         rows.append({
             "slug": post.slug, "date": post.date, "kind": post.kind, "title": post.title,
+            "summary": post.summary,
             "series": post.series, "series_order": post.series_order, "tags": ";".join(post.tags),
             "news": "1" if "news" in post.tags else "0", "content_type": content_type(post.body),
             "topic_group": topic_group(post.tags), "slot": slot, "planned_hour": str(hour),
