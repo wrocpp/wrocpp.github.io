@@ -178,6 +178,8 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # RAII for C APIs mini-series (from the October LinkedIn batch, Amit G.'s scope header).
     "2026-11-08": {"slug": "raii-scope-guards", "hour": 16,
                    "why": "RAII scope guards (series part 1), beside the UB-tool post"},
+    "2026-11-09": {"slug": "raii-ffmpeg-libav", "hour": 16,
+                   "why": "RAII over FFmpeg libav objects (series part 2), beside the Boost.Decimal post"},
 }
 
 
