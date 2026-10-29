@@ -178,6 +178,8 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # Coroutines pair (from Alexey Ozeritskiy's LinkedIn post on a WebAssembly debugger).
     "2026-11-12": {"slug": "coroutine-single-stepper", "hour": 16,
                    "why": "a stepping debugger built from suspend points (coroutines part 1), beside the SQL schema post"},
+    "2026-11-13": {"slug": "coroutine-per-function-cost", "hour": 16,
+                   "why": "what a coroutine per function costs (coroutines part 2), beside the test registration post"},
 }
 
 

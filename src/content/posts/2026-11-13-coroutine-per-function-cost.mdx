@@ -1,0 +1,127 @@
+---
+title: "What it costs to make every function a coroutine"
+slug: "coroutine-per-function-cost"
+pubDate: 2026-11-13
+author: filip-sajdak
+language: en
+kind: flagship
+audience: working-cpp
+tags: [cpp, coroutines, performance, debugging]
+summary: "A coroutine debugger needs every function that can reach a checkpoint to be a coroutine. In a toy model on GCC 16.2, that meant one heap allocation of 80 bytes per call, exactly, and a run time at least 50 times the plain function in the quietest runs. A checkpoint that never stops added nothing I could separate from noise. At -O0 the same program overflowed the default stack."
+draft: false
+relatedPosts: [coroutine-single-stepper, coroutine-return-void-and-value, flag-that-moves-code]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+In my toy model, turning a recursive function into a coroutine cost one 80-byte heap allocation per call.
+A checkpoint that never stops added nothing I could tell apart from noise.
+
+## In short
+
+- A coroutine debugger needs every function that can reach a checkpoint to be a coroutine, so the cost is paid per call.
+- Allocations are exact. Plain recursion made none. The coroutine versions made 635,621, one per call, at 80 bytes each.
+- Time is noisy on my machine. The plain function took 0.29 to 0.49 ms in every run. On the Mac no coroutine run was faster than about 16 ms, and the same variant reached 79 ms.
+- The variants with and without a never-stopping checkpoint could not be separated within that noise.
+- At `-O0` and `-O1` the largest run crashed on the default stack. It completed on a 1 GiB stack.
+- This is a toy, not Qumir. The design notes describe several ways the real compiler keeps the cost down.
+
+## Why every function
+
+The <PostLink slug="coroutine-single-stepper">previous post</PostLink> modelled a stepper made of checkpoints.
+A checkpoint that can stop is an `await`, and an `await` can only appear in a coroutine.
+So a function that contains one is a coroutine.
+So is every function that calls it, and every function that calls those, up to the entry point.
+
+In the Qumir design notes a compiler pass does this.
+It finds the transitive callers of every checkpoint with a reverse call graph, and promotes each to a coroutine.
+The cost of that is a frame for every call of every such function, and that is what the model measures.
+
+## The measurement
+
+The program is recursive Fibonacci, chosen because its body is nearly empty.
+Almost all the time is call overhead, which makes it the worst case for this cost.
+It is written three ways:
+
+| variant | what it isolates |
+|---|---|
+| plain function | the baseline |
+| coroutine, no checkpoint | the cost of a coroutine frame |
+| coroutine, checkpoint at entry that never stops | the frame, plus the checkpoint's fast path |
+
+`operator new` is replaced to count allocations, so that column is exact.
+`fib(27)` makes 635,621 calls:
+
+| variant | allocations | per call | bytes each |
+|---|---|---|---|
+| plain function | 0 | 0 | |
+| coroutine, no checkpoint | 635,621 | 1 | 80 |
+| coroutine, checkpoint that never stops | 635,621 | 1 | 80 |
+
+A checkpoint that never stops adds no allocation.
+Its fast path is `await_ready` returning true, so it never suspends.
+
+## The time
+
+Time is where I have to be careful.
+I ran the file eleven times on an Apple M2 Max with other work running.
+Five runs reported a median of seven repeats, and six reported the fastest.
+It moved a lot:
+
+- The plain function took 0.29 to 0.49 ms in every run.
+- No coroutine run on the Mac was faster than about 16 ms. The same variant took up to 79 ms in another run.
+- Sometimes the variant with the checkpoint was faster than the one without.
+
+My first single run said the checkpoint tripled the cost, from 17 to 58 ms.
+That was noise, and repeating the run showed it.
+A single run on this machine would have given me a confident wrong number.
+
+One run on Compiler Explorer, on x86-64 GCC 16.2, gave 0.29 ms for the plain function.
+The frame alone took 11.99 ms, and the frame with the checkpoint took 12.41 ms.
+Compiler Explorer caches the result, so that is one sample, not three.
+
+What I will claim is this.
+In the quietest runs the coroutine versions were at least 40 to 50 times the plain function.
+The checkpoint's fast path cost less than the noise.
+I will not give a ratio beyond that.
+
+<GodboltEmbed id="rsnxqno9P" gccOnly gccLabel="GCC 16.2" title="One allocation per call, counted" gcc_subtitle="x86-64 GCC 16.2 · -std=c++23 -O2 · times vary, allocations do not" />
+
+## The debug build crashed
+
+At `-O0` the same program crashed with a segmentation fault.
+`fib(20)`, with 21,891 calls, ran.
+`fib(22)`, with 57,313 calls, did not.
+`-O1` and `-Og` crashed as well.
+
+On a thread with a 1 GiB stack the `-O0` build completed, so the crash is stack use.
+I expected missing tail calls in the symmetric transfer to be the reason, and I tested that.
+`-O2 -fno-optimize-sibling-calls` still ran, and `-O1 -foptimize-sibling-calls` still crashed.
+So that is not the explanation, and I do not have one.
+
+It matters for a debugger, because a debugger's builds are the unoptimized ones.
+Qumir emits its checkpoints at `-O0`.
+A deep or long call tree under a low optimization level is where this model ran out of stack.
+
+## What Qumir does about it
+
+The design notes name several measures.
+I have not measured any of them.
+
+- Checkpoints exist only with the `--debug-points` option, so an ordinary build has no checkpoints and promotes no function on their account.
+- A non-stopping checkpoint returns zero and the shared await loop continues, without calling into JavaScript.
+- One await loop is shared by every await in a function, instead of one suspension state per checkpoint.
+- The wrapper that creates a stopping checkpoint's future allocates no coroutine frame of its own.
+
+These reduce the cost, and they do not remove the frame per call.
+How large the remaining cost is in Qumir, I do not know.
+
+## Limits
+
+This is a toy.
+It measures C++20 coroutines in GCC 16.2, and Qumir uses LLVM coroutine intrinsics in its own ABI.
+The Fibonacci body is empty, so the ratios are the worst case, and a real program spends most of its time elsewhere.
+I measured one machine, plus one cached run on another.
+
+The files, with the exact output and the stack findings, are [in the examples repo](https://github.com/wrocpp/cpp26-reflection-examples/tree/405be7bc640c2f82b6e4e9c0af0188c36f57090b/posts/99-coroutine-debugger).
