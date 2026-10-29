@@ -8,6 +8,7 @@ import contextlib
 import importlib.util
 import io
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -186,6 +187,41 @@ class CardAtSendTime(unittest.TestCase):
             self.assertEqual((row["card_h1"], row["lead"], row["caption_words"]), ("", "", ""))
 
 
+class PreRegistration(unittest.TestCase):
+    """docs/analytics.md fixes the thresholds before any export is opened; the script must use the same ones."""
+
+    BLOCK = re.compile(r"<!-- preregistration:start -->\n(.*?)\n<!-- preregistration:end -->", re.DOTALL)
+
+    def registered(self):
+        text = (SCRIPTS.parent / "docs" / "analytics.md").read_text()
+        match = self.BLOCK.search(text)
+        self.assertIsNotNone(match, "the registered-values block is missing from docs/analytics.md")
+        pairs = (line.split(" = ", 1) for line in match.group(1).splitlines() if " = " in line)
+        return {name: value for name, value in pairs}
+
+    def test_every_registered_threshold_equals_the_constant_in_the_script(self):
+        registered = self.registered()
+        constants = {k: v for k, v in vars(sa).items() if k.isupper() and isinstance(v, (int, float, str))}
+        thresholds = {k: v for k, v in registered.items() if not re.fullmatch(r"H\d", k)}
+        self.assertTrue(thresholds)
+        for name, text in thresholds.items():
+            with self.subTest(name=name):
+                self.assertIn(name, constants, f"{name} is registered but the script has no such constant")
+                self.assertEqual(str(constants[name]), text)
+
+    def test_the_primary_metrics_are_the_registered_ones(self):
+        registered = self.registered()
+        self.assertEqual({k: v for k, v in registered.items() if re.fullmatch(r"H\d", k)}, sa.PRIMARY_METRICS)
+
+    def test_the_script_has_no_tunable_threshold_that_is_not_registered(self):
+        registered = set(self.registered())
+        tunables = {"MATURITY_DAYS", "MIN_GROUP", "EFFECT_RATIO", "OUTLIER_MULTIPLE", "TREND_DAYS", "FIRST_DAYS",
+                    "SPLIT_DATE", "MIN_PER_HALF", "AGREEMENT_MIN", "COVERAGE_MIN", "PREFIX_CHARS", "SLACK_DAYS",
+                    "FUZZY_MIN"}
+        self.assertEqual(tunables - registered, set())
+        self.assertTrue(all(hasattr(sa, name) for name in tunables))
+
+
 class OutputGuard(unittest.TestCase):
     def run_features(self, root, out):
         sink = io.StringIO()
@@ -240,7 +276,7 @@ class OutputGuard(unittest.TestCase):
             self.run_features(root, out)
             labels = out / "labels.csv"
             header, *rows = labels.read_text().splitlines()
-            filled = [r.replace(",,,", ",x,y,z") for r in rows]
+            filled = [r.replace(",,,,", ",x,y,z,n") for r in rows]
             labels.write_text("\n".join([header, *filled]) + "\n")
             self.run_features(root, out)
             self.assertEqual(labels.read_text().splitlines()[1:], filled)

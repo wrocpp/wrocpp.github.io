@@ -37,6 +37,28 @@ END_OF_DAY = "T23:59:59Z"
 EXIT_NOT_IGNORED = 3
 SLOT_COLLISION = "collision"
 
+# Pre-registered before any export was opened. docs/analytics.md holds the same values in a block that a
+# test compares with these names, so neither can change without the other and without a visible diff.
+MATURITY_DAYS = 7          # posts younger than this at export time are listed, not compared
+MIN_GROUP = 10             # a group smaller than this never gives a verdict
+EFFECT_RATIO = 1.5         # the median ratio a hypothesis must reach to count as supported
+OUTLIER_MULTIPLE = 5       # a post above this many times the median impressions is an outlier
+TREND_DAYS = 7             # imp_index compares a post with its neighbours within this many days
+FIRST_DAYS = 3             # the days after sending that count as "first" for site sessions
+SPLIT_DATE = "2026-09-13"  # a supported verdict must also hold on both sides of this date
+MIN_PER_HALF = 5           # the smaller group needs this many posts on each side of the split
+AGREEMENT_MIN = 0.8        # labels below this agreement between two passes are tightened and redone
+COVERAGE_MIN = 0.95        # the report is complete only if this share of impressions is matched
+PREFIX_CHARS = 60          # the text prefix compared when a LinkedIn row has no wro.cpp link
+SLACK_DAYS = 3             # how far a matched caption may sit from the LinkedIn post date
+FUZZY_MIN = 0.85           # the minimum similarity for a fuzzy text match, unique matches only
+PRIMARY_METRICS = {
+    "H1": "imp_index",
+    "H2": "imp_index",
+    "H3": "comment_repost_rate",
+    "H4": "site_sessions_per_1000",
+}
+
 # Days that went wrong for reasons outside the content, so their posts are never compared.
 DISTURBANCES = {
     "2026-08-27": "deploy-cron-delay",
@@ -64,7 +86,7 @@ FEATURE_COLUMNS = (
     "slot", "planned_hour", "day_posts", "gap_days", "disturbance", "card_h1", "lead", "caption_words",
     "h1_number_candidate", "lead_number_candidate",
 )
-LABEL_COLUMNS = ("slug", "hook_reframe", "hook_number", "person_role")
+LABEL_COLUMNS = ("slug", "hook_reframe", "hook_number", "person_role", "note")
 
 _MONTHS = ("January|February|March|April|May|June|July|August|September|October|November|December|"
            "Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec")
@@ -294,7 +316,7 @@ def _write_label_template(out: Path, rows: list[dict]) -> int:
         writer = csv.writer(handle)
         if not known and not path.stat().st_size:
             writer.writerow(LABEL_COLUMNS)
-        writer.writerows([slug, "", "", ""] for slug in new)
+        writer.writerows([slug] + [""] * (len(LABEL_COLUMNS) - 1) for slug in new)
     return len(new)
 
 
