@@ -1,0 +1,133 @@
+---
+title: "A flag that moved a loop erased a 1.7x gap between two designs"
+slug: "flag-that-moves-code"
+pubDate: 2026-11-10
+author: filip-sajdak
+language: en
+kind: flagship
+audience: working-cpp
+tags: [cpp, performance, compiler-flags, x86, benchmarking]
+summary: "Herik Lima asked whether a flag alone ever made a big difference. In one benchmark on an x86-64 runner it did, but not between optimization levels. An assembler flag that pads code made two builds of the same loop equal, which showed that a 1.7x gap between two designs was code placement. The post gives the numbers, a reproducible check of what the flag does, and what I could not establish."
+draft: false
+relatedPosts: [qt-observable-models-known-limits, verification-asm-llvm-mca, portable-simd]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+One assembler flag erased a 1.7x gap between two builds of a benchmark on an x86-64 runner.
+It changed no source line, and it showed the gap was about where a loop landed, not about either design.
+
+## In short
+
+- Herik Lima asked whether anyone got a significant speedup from compiler flags alone. This is a case where a flag changed a result, in a way that is not about speed.
+- In a Qt model benchmark, one design drained a hash model 1.73 times slower than another at 100,000 entries.
+- Both designs ran the same scan loop. Building both with `-Wa,-mbranches-within-32B-boundaries` made them equal at 8.2 microseconds per removal.
+- Building both with `-falign-loops=64` made both slow, at 15.1. Moving the loop moved the cost.
+- I could not name the hardware mechanism. The runner was an AMD EPYC, and no counters were available.
+
+## The question
+
+Herik Lima wrote a LinkedIn post about optimization flags in GCC.
+It covers the optimization levels, `-march=native` and `-flto`.
+He notes that the higher level can be slower than the lower one for some workloads.
+He also notes that a native build can fail to run on older CPUs.
+He ends by asking whether anyone got a significant improvement just by changing flags, without touching the source.
+
+I have one, and it is not from that list.
+It was a flag that made no code faster.
+It made two builds equal, and that was the finding.
+
+## The gap
+
+The benchmark compared two ways of carrying a key through a Qt signal.
+The setup is in the <PostLink slug="qt-observable-models-known-limits">known-limits post</PostLink>.
+Draining a hash model, which removes entries in random order, was slower with typed signals.
+The gap grew with the size:
+
+| entries | typed / QVariant, time per removal |
+|---|---|
+| 1,000 | 1.11 |
+| 10,000 | 1.62 |
+| 100,000 | 1.73 (16.1 against 9.3 microseconds) |
+
+The spread was under 1 percent, so this was not noise.
+
+## What was the same in both builds
+
+The cost sat in one place.
+The scan that finds a key's row is a four-instruction loop, and it is identical in both builds.
+`perf` put essentially all samples in the model's removal and replace slots, and system time was under 0.01 seconds.
+The signal transport, which the two designs differ in, was not where the time went.
+
+The compiler had placed the loop differently.
+In the typed build the fused compare-and-jump crossed a 32-byte boundary, from address `0x4084fe` to `0x408504`.
+In the other build it did not.
+
+## What the flags did
+
+I rebuilt both designs with two flags that change only where code sits:
+
+| both builds with | time per removal |
+|---|---|
+| nothing extra (the first measurement) | typed 16.1, QVariant 9.3 |
+| `-Wa,-mbranches-within-32B-boundaries` | 8.2, equal |
+| `-falign-loops=64` | 15.1, equal |
+| the key list as a `std::vector` | 7.6, equal |
+
+The first row is at 100,000 entries.
+The repo's text does not restate the entry count for the other rows, and I did not rerun them for this post.
+They are quoted from the [measurements document](https://github.com/wrocpp/reflect-moc/blob/3ea958e898d1c759511a8d5c58cf2357882fc7b8/docs/measurements.md) at a pinned revision.
+
+The flag that pads made them equal and fast.
+The flag that aligns loops to 64 bytes made them equal and slow.
+Neither flag knows anything about either design.
+So the gap was placement.
+
+The fix that stayed was in the code.
+The key list became a vector, scanned with `std::find` instead of `QList::indexOf`.
+
+## What the flag does to code
+
+`-Wa,-mbranches-within-32B-boundaries` is an option to the x86 assembler.
+It pads with NOPs so that no compare-and-jump pair crosses a 32-byte boundary, or ends on one.
+I checked that on x86-64 GCC 16.2 with a small program: one scan loop, placed at 32 different offsets modulo 32.
+The count is a script that reads the disassembly, and it is in the examples.
+
+| build | compare-and-jump pairs | crossing or ending on a 32-byte boundary |
+|---|---|---|
+| default | 96 | 5 |
+| with the flag | 96 | 0 |
+
+<GodboltEmbed id="vTMnYcP9d" gccOnly gccLabel="GCC 16.2" title="One scan loop at 32 offsets, with the padding flag" gcc_subtitle="x86-64 GCC 16.2 · -O2 · -Wa,-mbranches-within-32B-boundaries · binary view" />
+
+This check is narrower than the benchmark, and I will say how.
+All five crossing pairs are at function entry.
+At `-O2` GCC aligns a loop head to 16 bytes, which cancelled my padding for the in-loop pairs, so none of them crossed.
+So it shows what the flag does to layout.
+It does not reproduce the loop that crossed in the benchmark, and it measures no time.
+
+## What I did not establish
+
+I did not find the mechanism.
+The runner's CPU was an AMD EPYC, so this is not the Intel jump-conditional-code erratum by name.
+That erratum is the reason the flag exists.
+Hardware counters were not available in the runner's VM, so cycles and branch misses were never read.
+
+I also did not reproduce the numbers for this post.
+The flag is an x86 assembler option. On this Mac, which is arm64, the toolchain accepted it and warned that the argument was unused.
+
+## What I take from it
+
+A flag that only moves code is a diagnostic, not an optimization.
+Two builds that differ by a ratio, in code they both run, are worth one more build with a placement-only flag.
+If the ratio moves, you were measuring layout.
+
+I would not ship `-Wa,-mbranches-within-32B-boundaries` to fix a benchmark.
+It works by padding, so code grows, and it solves a placement problem by luck rather than by understanding.
+The `std::vector` change removed the loop the compiler kept placing badly.
+
+The next post takes the other half of Herik's list.
+It runs the same flags against `contract_assert` and `NDEBUG` on GCC 16.2.
+
+The files are [in the examples repo](https://github.com/wrocpp/cpp26-reflection-examples/tree/bb765f4df0acde34f5edccfea5e1e6767a440077/posts/98-compiler-flags).

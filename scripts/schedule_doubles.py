@@ -175,6 +175,9 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
                    "why": "the spec addendum on nested changes, queued in both bindings, beside the contract_assert post"},
     "2026-11-05": {"slug": "moc-parity-bindable-constructors-namespaces", "hour": 16,
                    "why": "the three moc matrix rows that closed after the flagship, beside the Boost modules news"},
+    # Compiler flags pair (from Herik Lima's LinkedIn post on optimization flags).
+    "2026-11-10": {"slug": "flag-that-moves-code", "hour": 16,
+                   "why": "an assembler flag that moved a loop (flags part 1), beside the RPC mock post"},
 }
 
 
