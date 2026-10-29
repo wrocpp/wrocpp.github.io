@@ -175,6 +175,9 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
                    "why": "the spec addendum on nested changes, queued in both bindings, beside the contract_assert post"},
     "2026-11-05": {"slug": "moc-parity-bindable-constructors-namespaces", "hour": 16,
                    "why": "the three moc matrix rows that closed after the flagship, beside the Boost modules news"},
+    # From Andrew Alekseev's LinkedIn post on an assembler bootstrapped from find-and-replace.
+    "2026-11-14": {"slug": "constexpr-two-pass-assembler", "hour": 16,
+                   "why": "labels in a compile-time assembler, two passes in one constexpr function, beside the struct layout post"},
 }
 
 
