@@ -1,0 +1,99 @@
+---
+title: "-DNDEBUG does not turn off contract_assert on GCC 16.2"
+slug: "ndebug-does-not-disable-contracts"
+pubDate: 2026-11-11
+author: filip-sajdak
+language: en
+kind: flagship
+audience: working-cpp
+tags: [cpp26, contracts, compiler-flags, release-builds]
+summary: "A release build usually adds -DNDEBUG and expects its checks to vanish. On GCC 16.2 that deletes assert(), but contract_assert is a language feature and keeps running. With -fcontracts it terminates under the default enforce semantic, even with -O3 -flto. Only -fcontract-evaluation-semantic=ignore stops the evaluation. The post gives six measured flag sets and one link error."
+draft: false
+relatedPosts: [flag-that-moves-code, check-a-statement-with-contract-assert, contracts-that-prove-something, cpp26-contracts]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+On GCC 16.2, `-DNDEBUG` deletes the `assert` macro.
+It leaves `contract_assert` running.
+A release build that relied on `NDEBUG` to remove every check keeps the contract checks, and under the default setting a failed one terminates.
+
+## In short
+
+- Herik Lima's release line adds `-DNDEBUG` to the optimization and link-time flags. I ran the same idea against a contract assertion.
+- `assert` is a macro, so `-DNDEBUG` removes it in every build I ran.
+- `contract_assert` is a language feature. With `-fcontracts` and no semantic flag it ran, and a false condition terminated the program.
+- Adding `-O3 -flto` changed nothing. The contract check still terminated.
+- Only `-fcontract-evaluation-semantic=ignore` stopped the evaluation. `observe` reported the violation and continued.
+- Without `-fcontracts` the same file compiled and did not link.
+
+## Why they differ
+
+The assert macro is part of the preprocessor contract.
+`<cassert>` defines it away when `NDEBUG` is set, so the compiler never sees the check.
+A contract assertion is syntax the compiler parses.
+`NDEBUG` has no meaning to it, and what happens to the check is set by the evaluation semantic.
+
+The program has one of each, with a condition that reads a global so the optimizer cannot decide it:
+
+```cpp
+const int x = argc - 1 + g_zero;   // 0 when run without arguments
+assert(x != 0);                    // a macro: -DNDEBUG deletes it
+contract_assert(x != 0);           // a language feature: -DNDEBUG does not touch it
+```
+
+Both conditions are false at run time.
+
+## What ran
+
+Every row is one run on x86-64 GCC 16.2 on Compiler Explorer, built with the flags shown:
+
+| flags | `assert` | `contract_assert` | exit |
+|---|---|---|---|
+| `-fcontracts -O2` | aborts | not reached | 134 |
+| `-fcontracts -O2 -DNDEBUG` | removed | violation, enforce, terminates | 134 |
+| `-fcontracts -O3 -flto -DNDEBUG` | removed | violation, enforce, terminates | 134 |
+| `-fcontracts -O2 -DNDEBUG -fcontract-evaluation-semantic=ignore` | removed | not evaluated | 0 |
+| `-fcontracts -O2 -DNDEBUG -fcontract-evaluation-semantic=observe` | removed | violation reported, continues | 0 |
+| `-O2 -DNDEBUG` | removed | link error | build fails |
+
+The second row prints "after assert", which shows the macro is gone, and then GCC reports the contract:
+
+```
+contract violation in function int main(int, char**) at example.cpp:25: x != 0
+[assertion_kind: assert, semantic: enforce, mode: predicate_false, terminating: yes]
+terminate called without an active exception
+```
+
+The `observe` row is the one in the embed, because it exits 0.
+It prints the same report with `semantic: observe` and `terminating: no`, then carries on to the last line.
+
+<GodboltEmbed id="3W5TMj4sq" gccOnly gccLabel="GCC 16.2" title="NDEBUG removes assert, not contract_assert" gcc_subtitle="x86-64 GCC 16.2 · -fcontracts -O2 -DNDEBUG · observe semantic · runs live" />
+
+## The link error
+
+The last row is the odd one.
+Without `-fcontracts` the file compiled, and the link failed:
+
+```
+undefined reference to `handle_contract_violation(std::contracts::contract_violation const&)'
+```
+
+I did not look into why, and I do not know whether other GCC builds behave the same.
+It means that a flag set missing `-fcontracts` can fail late, at link time, and not at the line that uses the feature.
+
+## What to do with it
+
+For a release build with contracts, `NDEBUG` is the wrong switch.
+The evaluation semantic is the setting.
+`ignore` removes the check, and `observe` keeps it and continues.
+`enforce` keeps it and terminates.
+That is a decision about how a release build fails, and it deserves the same attention as `-O3`.
+
+I have not tested other compilers or other GCC versions, and I did not add `-march=native`, because the Compiler Explorer host is not mine.
+What a check costs at run time is a separate question, and I did not measure it here.
+An earlier post covers <PostLink slug="check-a-statement-with-contract-assert">checking a statement with contract_assert</PostLink>.
+The <PostLink slug="flag-that-moves-code">previous post</PostLink> is the case for measuring before assuming a flag does what its name says.
+
+The file and the table are [in the examples repo](https://github.com/wrocpp/cpp26-reflection-examples/tree/26fa7fcb05a72937d2da53fd8a63f3c3db7e0f8a/posts/98-compiler-flags).

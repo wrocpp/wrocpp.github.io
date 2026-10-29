@@ -178,6 +178,8 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # Compiler flags pair (from Herik Lima's LinkedIn post on optimization flags).
     "2026-11-10": {"slug": "flag-that-moves-code", "hour": 16,
                    "why": "an assembler flag that moved a loop (flags part 1), beside the RPC mock post"},
+    "2026-11-11": {"slug": "ndebug-does-not-disable-contracts", "hour": 16,
+                   "why": "NDEBUG against contract_assert (flags part 2), beside the DI graph post"},
 }
 
 
