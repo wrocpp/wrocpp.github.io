@@ -2,6 +2,7 @@
 """Learn from LinkedIn and GA4 numbers which wro.cpp posts earn attention.
 
 Subcommands:
+  join      Place every LinkedIn row on a blog post (by text), classify the rest, report coverage.
   features  Build one row per blog post in a date window from the repository alone (no analytics data
             needed): kind, topic, news, content type, slot, gap, the card headline and caption lead as they
             were when the post went out, and a candidate flag for a number in the hook. It also writes a
@@ -17,12 +18,14 @@ from __future__ import annotations
 
 import argparse
 import csv
+import difflib
 import importlib.util
 import re
 import subprocess
 import sys
-from dataclasses import dataclass
-from datetime import date
+import unicodedata
+from dataclasses import dataclass, field
+from datetime import date, datetime
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent
@@ -34,8 +37,13 @@ DEFAULT_WINDOW = "2026-07-30:2026-10-29"
 DEFAULT_KIND = "flagship"
 NORMAL_HOUR = 8            # the daily auto-scheduler pushes at 08:00Z
 END_OF_DAY = "T23:59:59Z"
+EXIT_UNRESOLVED = 2
 EXIT_NOT_IGNORED = 3
 SLOT_COLLISION = "collision"
+MIN_LEAD_CHARS = 20        # a caption lead shorter than this is too generic to match a post by prefix
+FUZZY_COMPARE_CHARS = 120  # characters of each text compared by similarity when no prefix matches
+ORGANIC = "Organic"
+CAPTION_HEAD_CHARS = 200   # how much of the caption start is kept as a key for matching LinkedIn text
 
 # Pre-registered before any export was opened. docs/analytics.md holds the same values in a block that a
 # test compares with these names, so neither can change without the other and without a visible diff.
@@ -83,7 +91,7 @@ OTHER_GROUP = "other"
 
 FEATURE_COLUMNS = (
     "slug", "date", "kind", "title", "summary", "series", "series_order", "tags", "news", "content_type", "topic_group",
-    "slot", "planned_hour", "day_posts", "gap_days", "disturbance", "card_h1", "lead", "caption_words",
+    "slot", "planned_hour", "day_posts", "gap_days", "disturbance", "card_h1", "lead", "caption_head", "caption_words",
     "h1_number_candidate", "lead_number_candidate",
 )
 LABEL_COLUMNS = ("slug", "hook_reframe", "hook_number", "person_role", "note")
@@ -227,6 +235,7 @@ def _card_columns(root: Path, post: Post) -> dict:
     return {
         "card_h1": h1,
         "lead": lead,
+        "caption_head": " ".join(body.split())[:CAPTION_HEAD_CHARS],
         "caption_words": str(len(body.split())) if body else "",
         # Separate columns: the card headline is the hook the style guide means; the lead is a second place.
         "h1_number_candidate": "1" if hook_number(h1) else "0",
@@ -275,6 +284,183 @@ def summarise(rows: list[dict]) -> dict:
         "double_days": sum(count >= 2 for count in days.values()),
         "disturbed": sum(bool(r["disturbance"]) for r in rows),
     }
+
+
+class ExportError(Exception):
+    """The LinkedIn export is not in the shape this script was written for."""
+
+
+LINKEDIN_COLUMNS = {
+    "text": "Post title", "link": "Post link", "created": "Created date", "impressions": "Impressions",
+    "clicks": "Clicks", "reactions": "Likes", "comments": "Comments", "reposts": "Reposts",
+}
+LINKEDIN_NUMBERS = ("impressions", "clicks", "reactions", "comments", "reposts")
+LINKEDIN_DATE_FORMAT = "%m/%d/%Y"
+
+
+def normalise_text(text: str) -> str:
+    """Lowercase ASCII letters and digits only, so spacing, punctuation, accents and quotes never matter."""
+    decomposed = unicodedata.normalize("NFKD", text)
+    return re.sub(r"[^a-z0-9]", "", "".join(c for c in decomposed if not unicodedata.combining(c)).lower())
+
+
+def _linkedin_row(raw: dict) -> dict:
+    row = {name: raw[column] for name, column in LINKEDIN_COLUMNS.items()}
+    row["created"] = datetime.strptime(raw[LINKEDIN_COLUMNS["created"]], LINKEDIN_DATE_FORMAT).date().isoformat()
+    for name in LINKEDIN_NUMBERS:
+        row[name] = int(float(raw[LINKEDIN_COLUMNS[name]] or 0))
+    return row
+
+
+def read_linkedin_posts(path: Path) -> list[dict]:
+    with open(path, newline="", encoding="utf-8-sig") as handle:
+        reader = csv.DictReader(handle)
+        missing = [c for c in LINKEDIN_COLUMNS.values() if c not in (reader.fieldnames or [])]
+        if missing:
+            raise ExportError(f"{path.name}: missing column(s) {missing}; found {reader.fieldnames}")
+        rows = []
+        for raw in reader:
+            if raw.get("Post type", ORGANIC) != ORGANIC or raw.get("Campaign name", ""):
+                raise ExportError(f"{path.name}: a sponsored row ({raw[LINKEDIN_COLUMNS['link']]}); this review is organic-only")
+            rows.append(_linkedin_row(raw))
+    return rows
+
+
+@dataclass
+class JoinResult:
+    rows: list = field(default_factory=list)
+    unresolved: list = field(default_factory=list)
+    unadvertised: list = field(default_factory=list)
+    coverage: float = 1.0
+
+
+def _days_apart(a: str, b: str) -> int:
+    return abs((date.fromisoformat(a) - date.fromisoformat(b)).days)
+
+
+def _match_key(post: dict) -> str:
+    """The start of the caption as sent; the first sentence alone can be too short to tell posts apart."""
+    return normalise_text(post.get("caption_head") or post["lead"])
+
+
+def _by_prefix(text: str, near: list[dict]) -> list[dict]:
+    hits = []
+    for post in near:
+        key = _match_key(post)
+        if len(key) >= MIN_LEAD_CHARS and text.startswith(key[:PREFIX_CHARS]):
+            hits.append(post)
+    return hits
+
+
+def _by_similarity(text: str, near: list[dict]) -> list[dict]:
+    hits = []
+    for post in near:
+        key = _match_key(post)
+        ratio = difflib.SequenceMatcher(None, text[:FUZZY_COMPARE_CHARS], key[:FUZZY_COMPARE_CHARS]).ratio()
+        if len(key) >= MIN_LEAD_CHARS and ratio >= FUZZY_MIN:
+            hits.append(post)
+    return hits
+
+
+def match_row(row: dict, feats: list[dict], overrides: dict) -> tuple[str, str]:
+    """(slug, method). An empty slug with method non-blog or ignore is a decision; with no method, unresolved."""
+    decision = overrides.get(row["link"], "")
+    if decision.startswith(("non-blog:", "ignore:")):
+        return "", decision.split(":", 1)[0]
+    if decision:
+        return decision, "override"
+    near = [f for f in feats if _days_apart(f["date"], row["created"]) <= SLACK_DAYS]
+    text = normalise_text(row["text"])
+    for method, finder in (("prefix", _by_prefix), ("fuzzy", _by_similarity)):
+        hits = finder(text, near)
+        same_day = [h for h in hits if h["date"] == row["created"]]
+        if len(hits) == 1 or len(same_day) == 1:
+            return (same_day or hits)[0]["slug"], method
+    return "", ""
+
+
+def _coverage(rows: list[dict]) -> float:
+    counted = [r for r in rows if r["method"] not in ("non-blog", "ignore")]
+    total = sum(r["impressions"] for r in counted)
+    return sum(r["impressions"] for r in counted if r["slug"]) / total if total else 1.0
+
+
+def join_posts(li_rows: list[dict], feats: list[dict], overrides: dict) -> JoinResult:
+    out = JoinResult()
+    for raw in li_rows:
+        slug, method = match_row(raw, feats, overrides)
+        planned = next((f["date"] for f in feats if f["slug"] == slug), "") if slug else ""
+        redated = "1" if planned and planned != raw["created"] else "0"
+        out.rows.append({**raw, "slug": slug, "method": method, "multi_send": "0", "redated": redated})
+    seen: dict = {}
+    for row in out.rows:
+        if row["slug"]:
+            seen.setdefault(row["slug"], []).append(row)
+    for rows in seen.values():
+        if len(rows) > 1:
+            for row in rows:
+                row["multi_send"] = "1"
+    out.unresolved = [r for r in out.rows if not r["slug"] and not r["method"]]
+    out.unadvertised = sorted(f["slug"] for f in feats if f["slug"] not in seen)
+    out.coverage = _coverage(out.rows)
+    return out
+
+
+def _read_csv(path: Path) -> list[dict]:
+    with open(path, newline="", encoding="utf-8-sig") as handle:
+        return list(csv.DictReader(handle))
+
+
+def _read_overrides(path: Path) -> dict:
+    return {r["link"]: r["decision"] for r in _read_csv(path)} if path.exists() else {}
+
+
+def _write_dicts(path: Path, rows: list[dict], columns) -> None:
+    with open(path, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+JOINED_COLUMNS = ("link", "created", "slug", "method", "multi_send", "redated", "impressions", "clicks", "reactions",
+                  "comments", "reposts")
+
+
+def _window_of(li_rows: list[dict], feats: list[dict]) -> list[dict]:
+    first, last = min(r["created"] for r in li_rows), max(r["created"] for r in li_rows)
+    return [f for f in feats if first <= f["date"] <= last]
+
+
+def _report_join(out: JoinResult, feats_count: int) -> list[str]:
+    matched = sum(bool(r["slug"]) for r in out.rows)
+    classified = sum(r["method"] in ("non-blog", "ignore") for r in out.rows)
+    lines = [f"matched {matched}/{len(out.rows)} LinkedIn rows ({out.coverage:.1%} of impressions); "
+             f"classified non-blog/ignored {classified}; unresolved {len(out.unresolved)}; "
+             f"blog posts in range with no LinkedIn row {len(out.unadvertised)} of {feats_count}"]
+    lines += [f"  unresolved: {r['link']}  {r['created']}  {r['text'][:70]!r}" for r in out.unresolved]
+    return lines
+
+
+def cmd_join(args: argparse.Namespace) -> int:
+    folder = Path(args.dir)
+    if not is_safe_to_write(folder / "joined.csv"):
+        print(f"refusing to write in {folder}: git does not ignore it, and the repository is public", file=sys.stderr)
+        return EXIT_NOT_IGNORED
+    try:
+        li_rows = read_linkedin_posts(folder / "linkedin-posts.csv")
+    except ExportError as error:
+        print(f"export problem: {error}", file=sys.stderr)
+        return EXIT_UNRESOLVED
+    feats = _window_of(li_rows, _read_csv(folder / "features.csv")) if li_rows else []
+    out = join_posts(li_rows, feats, _read_overrides(folder / "overrides.csv"))
+    _write_dicts(folder / "joined.csv", out.rows, JOINED_COLUMNS)
+    _write_dicts(folder / "unadvertised.csv", [{"slug": s} for s in out.unadvertised], ("slug",))
+    incomplete = bool(out.unresolved) or out.coverage < COVERAGE_MIN
+    print("\n".join(_report_join(out, len(feats))))
+    if incomplete:
+        print("INCOMPLETE: every row must be placed or classified in overrides.csv" if args.allow_unmatched
+              else f"stopping: unresolved rows or coverage below {COVERAGE_MIN:.0%}; use --allow-unmatched to continue")
+    return 0 if args.allow_unmatched or not incomplete else EXIT_UNRESOLVED
 
 
 def known_past_collisions() -> set:
@@ -346,8 +532,11 @@ def main(argv=None) -> int:
     features.add_argument("--root", default=str(REPO))
     features.add_argument("--window", default=DEFAULT_WINDOW, help="START:END, inclusive, by pubDate")
     features.add_argument("--out", required=True)
+    join = sub.add_parser("join", help="place each LinkedIn row on a blog post and report coverage")
+    join.add_argument("--dir", required=True, help="folder holding features.csv and linkedin-posts.csv")
+    join.add_argument("--allow-unmatched", action="store_true", help="write the files anyway, marked INCOMPLETE")
     args = parser.parse_args(argv)
-    return cmd_features(args)
+    return cmd_join(args) if args.command == "join" else cmd_features(args)
 
 
 if __name__ == "__main__":

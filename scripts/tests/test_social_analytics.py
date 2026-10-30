@@ -225,6 +225,172 @@ class PreRegistration(unittest.TestCase):
         self.assertTrue(all(hasattr(sa, name) for name in tunables))
 
 
+LI_HEADER = ("Post title,Post link,Post type,Campaign name,Posted by,Created date,Campaign start date,"
+             "Campaign end date,Audience,Impressions,Views,Offsite Views,Clicks,Click through rate (CTR),Likes,"
+             "Comments,Reposts,Follows,Engagement rate,Content Type")
+
+
+def li_row(text, link, created, impressions="100", clicks="2", likes="5", comments="0", reposts="0",
+           kind="Organic", campaign=""):
+    return (f'"{text}",{link},{kind},{campaign},Someone,{created},,,All followers,{impressions},,,{clicks},0.02,'
+            f'{likes},{comments},{reposts},0,0.05,')
+
+
+def write_linkedin(path, rows, header=LI_HEADER):
+    path.write_text("\n".join([header, *rows]) + "\n", encoding="utf-8")
+
+
+def feat(slug, day, lead):
+    return {"slug": slug, "date": day, "lead": lead}
+
+
+class NormaliseText(unittest.TestCase):
+    def test_case_accents_punctuation_and_spacing_do_not_matter(self):
+        self.assertEqual(sa.normalise_text("  Bu\u0301zios,  GCC-17: \u201cstage 3\u201d!"), "buziosgcc17stage3")
+
+
+class ReadLinkedIn(unittest.TestCase):
+    def test_reads_numbers_and_converts_the_date(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "posts.csv"
+            write_linkedin(path, [li_row("Hello world", "https://l/1", "10/27/2026", impressions="184", comments="3")])
+            row = sa.read_linkedin_posts(path)[0]
+            self.assertEqual((row["created"], row["impressions"], row["comments"]), ("2026-10-27", 184, 3))
+
+    def test_a_missing_required_column_is_named(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "posts.csv"
+            write_linkedin(path, [], header=LI_HEADER.replace("Impressions,", "Impr,"))
+            with self.assertRaises(sa.ExportError) as ctx:
+                sa.read_linkedin_posts(path)
+            self.assertIn("Impressions", str(ctx.exception))
+
+    def test_a_sponsored_row_is_refused_because_the_review_is_organic_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "posts.csv"
+            write_linkedin(path, [li_row("Ad", "https://l/2", "10/27/2026", kind="Sponsored", campaign="X")])
+            with self.assertRaises(sa.ExportError):
+                sa.read_linkedin_posts(path)
+
+
+class JoinPosts(unittest.TestCase):
+    FEATS = [
+        feat("contracts", "2026-10-27", "Pavel wrote that contracts are glorified assertions, and listed what would help."),
+        feat("ballot", "2026-10-27", "The 12-week ISO ballot on C++26 concluded on 22 October."),
+        feat("old", "2026-10-01", "An unrelated post from another month about enums and flags in C++."),
+    ]
+
+    def li(self, text, link, created, impressions=100):
+        return {"text": text, "link": link, "created": created, "impressions": impressions}
+
+    def test_a_row_whose_text_starts_with_the_caption_lead_matches_by_prefix(self):
+        out = sa.join_posts([self.li("Pavel wrote that contracts are glorified assertions, and listed what would help. More.",
+                                     "l1", "2026-10-27")], self.FEATS, {})
+        self.assertEqual((out.rows[0]["slug"], out.rows[0]["method"]), ("contracts", "prefix"))
+
+    def test_the_same_text_on_a_far_away_date_does_not_match(self):
+        out = sa.join_posts([self.li("An unrelated post from another month about enums and flags in C++. Tail.",
+                                     "l1", "2026-10-27")], self.FEATS, {})
+        self.assertEqual(out.rows[0]["slug"], "")
+        self.assertEqual(len(out.unresolved), 1)
+
+    def test_punctuation_changes_still_match_by_prefix_and_a_word_inserted_matches_fuzzily(self):
+        edited = "Pavel wrote that contracts are glorified assertions and listed what would help"
+        out = sa.join_posts([self.li(edited.replace("glorified", "glorified-"), "l1", "2026-10-27")], self.FEATS, {})
+        self.assertEqual((out.rows[0]["slug"], out.rows[0]["method"]), ("contracts", "prefix"))
+        edited = "Pavel wrote that contracts are only glorified assertions, and listed what would help. Tail."
+        out = sa.join_posts([self.li(edited, "l2", "2026-10-27")], self.FEATS, {})
+        self.assertEqual((out.rows[0]["slug"], out.rows[0]["method"]), ("contracts", "fuzzy"))
+
+    def test_an_override_classifies_a_row_that_is_not_a_blog_post(self):
+        out = sa.join_posts([self.li("Leonardo, the write-up is up: https://lnkd.in/x", "l9", "2026-10-27")],
+                            self.FEATS, {"l9": "non-blog:reply to a commenter"})
+        self.assertEqual(out.rows[0]["method"], "non-blog")
+        self.assertEqual(out.unresolved, [])
+
+    def test_two_rows_for_one_post_are_flagged_as_multi_send(self):
+        text = "The 12-week ISO ballot on C++26 concluded on 22 October. Text."
+        out = sa.join_posts([self.li(text, "l1", "2026-10-27"), self.li(text, "l2", "2026-10-27")], self.FEATS, {})
+        self.assertEqual([r["multi_send"] for r in out.rows], ["1", "1"])
+
+    def test_coverage_is_the_matched_share_of_impressions_and_excludes_classified_non_blog_rows(self):
+        rows = [self.li("Pavel wrote that contracts are glorified assertions, and listed what would help.", "l1", "2026-10-27", 900),
+                self.li("Something nobody can place at all", "l2", "2026-10-26", 100),
+                self.li("Leonardo, the write-up is up", "l3", "2026-10-21", 5000)]
+        out = sa.join_posts(rows, self.FEATS, {"l3": "non-blog:reply"})
+        self.assertAlmostEqual(out.coverage, 0.9)
+        self.assertEqual([r["link"] for r in out.unresolved], ["l2"])
+
+    def test_a_short_first_sentence_matches_through_the_longer_caption_start(self):
+        feats = [{"slug": "short", "date": "2026-10-20", "lead": "Why can you write this?",
+                  "caption_head": 'Why can you write this? match<"x">(s) A string template parameter makes the pattern part of the type.'}]
+        text = "Why can you write this?\n\n  match<\"x\">(s)\n\nA string template parameter makes the pattern part of the type."
+        out = sa.join_posts([self.li(text, "l1", "2026-10-20")], feats, {})
+        self.assertEqual((out.rows[0]["slug"], out.rows[0]["method"]), ("short", "prefix"))
+
+    def test_a_short_lead_without_a_caption_start_is_too_generic_to_match(self):
+        feats = [{"slug": "short", "date": "2026-10-20", "lead": "Why can you write this?"}]
+        out = sa.join_posts([self.li("Why can you write this? A string template.", "l1", "2026-10-20")], feats, {})
+        self.assertEqual(out.rows[0]["slug"], "")
+
+    def test_a_post_sent_on_another_day_than_its_pubdate_is_flagged_as_redated(self):
+        lead = "Pavel wrote that contracts are glorified assertions, and listed what would help."
+        same = sa.join_posts([self.li(lead, "l1", "2026-10-27")], self.FEATS, {})
+        moved = sa.join_posts([self.li(lead, "l1", "2026-10-29")], self.FEATS, {})
+        self.assertEqual((same.rows[0]["redated"], moved.rows[0]["redated"]), ("0", "1"))
+
+    def test_blog_posts_with_no_linkedin_row_are_listed_and_not_counted_as_zero(self):
+        out = sa.join_posts([self.li("Pavel wrote that contracts are glorified assertions, and listed what would help.",
+                                     "l1", "2026-10-27")], self.FEATS, {})
+        self.assertEqual(sorted(out.unadvertised), ["ballot", "old"])
+
+
+class JoinCommand(unittest.TestCase):
+    def prepare(self, root):
+        build_repo(root)
+        (root / ".gitignore").write_text(".notes/\n")
+        out = root / ".notes" / "analytics" / "t"
+        out.mkdir(parents=True)
+        with contextlib.redirect_stdout(io.StringIO()):
+            sa.main(["features", "--root", str(root), "--window", "2026-09-01:2026-09-30", "--out", str(out)])
+        return out
+
+    def run_join(self, root, out, *extra):
+        sink = io.StringIO()
+        with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+            code = sa.main(["join", "--dir", str(out), *extra])
+        return code, sink.getvalue()
+
+    def test_exit_2_and_a_loud_list_when_a_row_cannot_be_placed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out = self.prepare(root)
+            write_linkedin(out / "linkedin-posts.csv", [li_row("Nothing matches this text at all", "https://l/9", "09/03/2026")])
+            code, text = self.run_join(root, out)
+            self.assertEqual(code, sa.EXIT_UNRESOLVED)
+            self.assertIn("https://l/9", text)
+
+    def test_allow_unmatched_still_writes_the_files_and_stamps_the_report_incomplete(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out = self.prepare(root)
+            write_linkedin(out / "linkedin-posts.csv", [li_row("Nothing matches this text at all", "https://l/9", "09/03/2026")])
+            code, text = self.run_join(root, out, "--allow-unmatched")
+            self.assertEqual(code, 0, text)
+            self.assertIn("INCOMPLETE", text)
+            self.assertTrue((out / "joined.csv").exists())
+
+    def test_refuses_to_write_next_to_data_in_a_directory_git_does_not_ignore(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            build_repo(root)
+            out = root / "analytics"
+            out.mkdir()
+            write_linkedin(out / "linkedin-posts.csv", [])
+            code, _ = self.run_join(root, out)
+            self.assertEqual(code, sa.EXIT_NOT_IGNORED)
+
+
 class OutputGuard(unittest.TestCase):
     def run_features(self, root, out):
         sink = io.StringIO()
