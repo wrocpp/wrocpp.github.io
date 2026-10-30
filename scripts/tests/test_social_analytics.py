@@ -321,6 +321,19 @@ class JoinPosts(unittest.TestCase):
         self.assertAlmostEqual(out.coverage, 0.9)
         self.assertEqual([r["link"] for r in out.unresolved], ["l2"])
 
+    def test_when_two_nearby_posts_open_alike_the_one_from_the_same_day_wins(self):
+        opening = "Everything in this series so far synchronizes on the calling thread, and this episode changes that."
+        feats = [{"slug": "earlier", "date": "2026-10-20", "lead": opening},
+                 {"slug": "later", "date": "2026-10-22", "lead": opening}]
+        out = sa.join_posts([self.li(opening + " Details.", "l1", "2026-10-22")], feats, {})
+        self.assertEqual(out.rows[0]["slug"], "later")
+
+    def test_two_nearby_posts_that_open_alike_and_neither_from_that_day_stay_unresolved(self):
+        opening = "Everything in this series so far synchronizes on the calling thread, and this episode changes that."
+        feats = [{"slug": "a", "date": "2026-10-20", "lead": opening}, {"slug": "b", "date": "2026-10-22", "lead": opening}]
+        out = sa.join_posts([self.li(opening + " Details.", "l1", "2026-10-21")], feats, {})
+        self.assertEqual((out.rows[0]["slug"], len(out.unresolved)), ("", 1))
+
     def test_a_short_first_sentence_matches_through_the_longer_caption_start(self):
         feats = [{"slug": "short", "date": "2026-10-20", "lead": "Why can you write this?",
                   "caption_head": 'Why can you write this? match<"x">(s) A string template parameter makes the pattern part of the type.'}]
@@ -542,6 +555,201 @@ class Groups(unittest.TestCase):
         self.assertFalse(h3(self.post()))
         self.assertTrue(h4(self.post(content_type="demo")))
         self.assertFalse(h4(self.post(content_type="code")) or h4(self.post(content_type="commentary")))
+
+
+def joined(slug, sent, impressions=1000, comments=0, reposts=0, clicks=10, reactions=5, multi="0", method="prefix"):
+    return {"link": f"https://l/{slug}", "created": sent, "slug": slug, "method": method, "multi_send": multi,
+            "redated": "0", "impressions": str(impressions), "clicks": str(clicks), "reactions": str(reactions),
+            "comments": str(comments), "reposts": str(reposts)}
+
+
+def featrow(slug, date, **kw):
+    base = {"slug": slug, "date": date, "kind": "short", "news": "0", "content_type": "commentary",
+            "topic_group": "other", "slot": "1", "planned_hour": "8", "day_posts": "1", "disturbance": "",
+            "series_order": "", "card_h1": "h", "lead": "l"}
+    return {**base, **kw}
+
+
+def labelrow(slug, **kw):
+    return {"slug": slug, "hook_number": "no", "hook_reframe": "no", "person_role": "none", **kw}
+
+
+class Records(unittest.TestCase):
+    EXPORT = "2026-10-29"
+
+    def build(self, rows, feats, labels=None, ga4=None):
+        labels = labels or {f["slug"]: labelrow(f["slug"]) for f in feats}
+        return sa.build_records(rows, {f["slug"]: f for f in feats}, labels, self.EXPORT, ga4)
+
+    def test_a_post_younger_than_the_maturity_rule_is_listed_but_not_compared(self):
+        recs = self.build([joined("old", "2026-10-01"), joined("new", "2026-10-25")],
+                          [featrow("old", "2026-10-01"), featrow("new", "2026-10-25")])
+        self.assertEqual({r["slug"]: r["excluded"] for r in recs}, {"old": "", "new": "immature"})
+
+    def test_a_disturbed_day_excludes_by_the_blog_date_and_by_the_sent_date(self):
+        recs = self.build([joined("a", "2026-08-10"), joined("b", "2026-08-27")],
+                          [featrow("a", "2026-08-27", disturbance="deploy-cron-delay"), featrow("b", "2026-08-27")])
+        self.assertEqual({r["slug"]: r["excluded"] for r in recs}, {"a": "disturbed", "b": "disturbed"})
+
+    def test_a_double_send_is_excluded_and_a_disturbed_post_is_not_called_immature(self):
+        recs = self.build([joined("x", "2026-10-28", multi="1")], [featrow("x", "2026-10-28")])
+        self.assertEqual(recs[0]["excluded"], "multi_send")
+
+    def test_non_blog_rows_are_left_out_of_the_records(self):
+        recs = self.build([joined("a", "2026-09-01"), {**joined("", "2026-09-02"), "slug": "", "method": "non-blog"}],
+                          [featrow("a", "2026-09-01")])
+        self.assertEqual([r["slug"] for r in recs], ["a"])
+
+    def test_imp_index_is_computed_only_among_compared_posts_and_outliers_are_flagged(self):
+        days = [f"2026-09-{d:02d}" for d in range(1, 8)]
+        rows = [joined(f"p{i}", d, impressions=1000) for i, d in enumerate(days)]
+        rows[3] = joined("p3", days[3], impressions=9000)
+        rows.append(joined("young", "2026-10-28", impressions=1))
+        feats = [featrow(r["slug"], r["created"]) for r in rows]
+        recs = {r["slug"]: r for r in self.build(rows, feats)}
+        self.assertAlmostEqual(recs["p3"]["imp_index"], 9.0)
+        self.assertTrue(recs["p3"]["outlier"])
+        self.assertFalse(recs["p0"]["outlier"])
+        self.assertIsNone(recs["young"]["imp_index"])
+
+    def test_site_sessions_per_thousand_use_the_first_days_after_sending(self):
+        ga4 = {"p": {"2026-09-10": 4, "2026-09-11": 2, "2026-09-12": 1, "2026-09-13": 50}}
+        recs = self.build([joined("p", "2026-09-10", impressions=2000)], [featrow("p", "2026-09-10")], ga4=ga4)
+        self.assertAlmostEqual(recs[0]["site_per_1000"], (4 + 2 + 1) / 2000 * 1000)
+
+    def test_without_ga4_the_site_metric_is_absent(self):
+        recs = self.build([joined("p", "2026-09-10")], [featrow("p", "2026-09-10")])
+        self.assertIsNone(recs[0]["site_per_1000"])
+
+
+class FactorTables(unittest.TestCase):
+    def test_a_group_row_shows_its_size_median_and_pooled_rates(self):
+        rows = [{"kind": "short", "imp_index": 1.0, "impressions": 1000, "clicks": 10, "comments": 1, "reposts": 0},
+                {"kind": "short", "imp_index": 3.0, "impressions": 3000, "clicks": 30, "comments": 0, "reposts": 0},
+                {"kind": "flagship", "imp_index": 2.0, "impressions": 2000, "clicks": 4, "comments": 0, "reposts": 0}]
+        table = {r["group"]: r for r in sa.factor_table(rows, "kind")}
+        self.assertEqual((table["short"]["n"], table["short"]["median_imp_index"]), (2, 2.0))
+        self.assertAlmostEqual(table["short"]["comment_repost_per_1000"], 0.25)
+        self.assertAlmostEqual(table["short"]["clicks_per_1000"], 10.0)
+        self.assertAlmostEqual(table["short"]["share_with_comment"], 0.5)
+        self.assertEqual(table["flagship"]["n"], 1)
+
+
+class Ga4Reader(unittest.TestCase):
+    def write(self, text):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        path = Path(self.tmp.name) / "ga4.csv"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def test_reads_sessions_by_post_and_day_skipping_the_comment_preamble(self):
+        path = self.write("# ----------------------------------------\n# Landing page\n# Start date: 20260730\n\n"
+                          "Landing page + query string,Date,Sessions,Engaged sessions\n"
+                          "/posts/alpha/?utm_source=linkedin&utm_campaign=post-05,20260901,\"1,204\",10\n"
+                          "/posts/alpha/,20260902,3,2\n/toolset/beta/,20260901,7,5\n/,20260901,99,50\n")
+        out = sa.read_ga4_landing_by_date(path)
+        self.assertEqual(out["alpha"], {"2026-09-01": 1204, "2026-09-02": 3})
+        self.assertEqual(out["beta"], {"2026-09-01": 7})
+        self.assertNotIn("", out)
+
+    def test_rows_from_other_sources_are_ignored_when_the_file_names_the_source(self):
+        path = self.write("Landing page,Session source / medium,Date,Sessions\n"
+                          "/posts/alpha/,linkedin / social,20260901,5\n/posts/alpha/,google / organic,20260901,40\n")
+        self.assertEqual(sa.read_ga4_landing_by_date(path)["alpha"], {"2026-09-01": 5})
+
+    def test_a_missing_column_is_named(self):
+        path = self.write("Landing page,Sessions\n/posts/alpha/,5\n")
+        with self.assertRaises(sa.ExportError) as ctx:
+            sa.read_ga4_landing_by_date(path)
+        self.assertIn("Date", str(ctx.exception))
+
+
+class ReportCommand(unittest.TestCase):
+    def prepare(self, tmp, with_ga4=False):
+        root = Path(tmp)
+        (root / ".gitignore").write_text(".notes/\n")
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        out = root / ".notes" / "analytics" / "t"
+        out.mkdir(parents=True)
+        slugs = [f"post-{i:02d}" for i in range(30)]
+        base = sa.date.fromisoformat("2026-08-01")
+        feats, labels, rows = [], [], []
+        for i, slug in enumerate(slugs):
+            day = (base + sa.timedelta(days=i * 2)).isoformat()
+            hooked = i % 3 == 0
+            feats.append(featrow(slug, day, news="1" if i % 2 else "0", content_type="demo" if i % 4 else "code"))
+            labels.append(labelrow(slug, hook_number="yes" if hooked else "no"))
+            rows.append(joined(slug, day, impressions=2000 if hooked else 1000, comments=1 if hooked else 0))
+        sa._write_dicts(out / "features.csv", feats, tuple(feats[0]))
+        sa._write_dicts(out / "labels.csv", labels, tuple(labels[0]))
+        sa._write_dicts(out / "joined.csv", rows, sa.JOINED_COLUMNS)
+        days = [{"Date": (base + sa.timedelta(days=n)).strftime("%m/%d/%Y"), "Impressions (total)": "1000"} for n in range(60)]
+        sa._write_dicts(out / "linkedin-daily.csv", days, ("Date", "Impressions (total)"))
+        if with_ga4:
+            lines = ["Landing page + query string,Date,Sessions"] + [
+                f"/posts/{s}/,{r['created'].replace('-', '')},{3 if i % 4 else 1}" for i, (s, r) in enumerate(zip(slugs, rows))]
+            (out / "ga4-linkedin-landing-by-date.csv").write_text("\n".join(lines) + "\n")
+        return root, out, slugs
+
+    def run_report(self, out, *extra):
+        sink = io.StringIO()
+        with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+            code = sa.main(["report", "--dir", str(out), "--export-date", "2026-10-29", *extra])
+        return code, sink.getvalue()
+
+    def test_writes_the_private_report_and_an_aggregate_summary_with_no_post_names(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, out, slugs = self.prepare(tmp, with_ga4=True)
+            code, text = self.run_report(out)
+            self.assertEqual(code, 0, text)
+            for name in ("report.md", "summary.md", "posts.csv"):
+                self.assertTrue((out / name).exists(), name)
+            summary = (out / "summary.md").read_text()
+            self.assertFalse([s for s in slugs if s in summary], "the aggregate summary must not name posts")
+            self.assertIn("H1", summary)
+            self.assertIn("pre-registration commit", summary)
+            self.assertTrue(any(s in (out / "report.md").read_text() for s in slugs))
+
+    def test_h4_says_it_needs_ga4_when_the_file_is_absent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, out, _ = self.prepare(tmp, with_ga4=False)
+            code, text = self.run_report(out)
+            self.assertEqual(code, 0, text)
+            self.assertIn("needs GA4", (out / "summary.md").read_text())
+
+    def test_refuses_to_give_verdicts_when_the_registered_values_differ_from_the_script(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as fake_repo:
+            root, out, _ = self.prepare(tmp)
+            doc = (SCRIPTS.parent / "docs" / "analytics.md").read_text()
+            (Path(fake_repo) / "docs").mkdir()
+            (Path(fake_repo) / "docs" / "analytics.md").write_text(doc.replace("MIN_GROUP = 10", "MIN_GROUP = 6"))
+            with mock.patch.object(sa, "REPO", Path(fake_repo)):
+                code, text = self.run_report(out)
+            self.assertEqual(code, sa.EXIT_UNRESOLVED)
+            self.assertIn("MIN_GROUP", text)
+            self.assertFalse((out / "summary.md").exists())
+
+    def test_the_hypotheses_use_the_registered_primary_metrics(self):
+        self.assertEqual({k: v["metric"] for k, v in sa.HYPOTHESES.items()}, sa.PRIMARY_METRICS)
+
+    def test_stops_when_the_join_left_a_row_unplaced(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, out, _ = self.prepare(tmp)
+            rows = sa._read_csv(out / "joined.csv")
+            rows.append({**rows[0], "link": "https://l/lost", "slug": "", "method": ""})
+            sa._write_dicts(out / "joined.csv", rows, sa.JOINED_COLUMNS)
+            code, text = self.run_report(out)
+            self.assertEqual(code, sa.EXIT_UNRESOLVED)
+            self.assertIn("join", text)
+
+    def test_refuses_to_write_where_git_does_not_ignore(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, out, _ = self.prepare(tmp)
+            (root / ".gitignore").write_text("")
+            code, _ = self.run_report(out)
+            self.assertEqual(code, sa.EXIT_NOT_IGNORED)
 
 
 class OutputGuard(unittest.TestCase):
