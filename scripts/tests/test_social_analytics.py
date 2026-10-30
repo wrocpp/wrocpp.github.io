@@ -391,6 +391,159 @@ class JoinCommand(unittest.TestCase):
             self.assertEqual(code, sa.EXIT_NOT_IGNORED)
 
 
+def rec(day, value, impressions=1000, comments=0, reposts=0, **extra):
+    """An invented comparable post for the statistics tests."""
+    return {"sent": day, "imp_index": value, "impressions": impressions, "comments": comments, "reposts": reposts,
+            "site_per_1000": value, **extra}
+
+
+def run_of(day_numbers, value, start="2026-08-01"):
+    base = sa.date.fromisoformat(start)
+    return [rec((base + sa.timedelta(days=n)).isoformat(), value) for n in day_numbers]
+
+
+class Statistics(unittest.TestCase):
+    def test_median_and_quartiles(self):
+        self.assertEqual(sa.median([3, 1, 2]), 2)
+        self.assertEqual(sa.median([4, 1, 3, 2]), 2.5)
+        self.assertEqual(sa.quartiles([1, 2, 3, 4, 5, 6, 7, 8]), (2.5, 6.5))
+
+    def test_pooled_rate_is_comments_plus_reposts_per_thousand_impressions(self):
+        rows = [rec("2026-08-01", 1, impressions=1000, comments=2, reposts=1),
+                rec("2026-08-02", 1, impressions=3000, comments=0, reposts=0)]
+        self.assertAlmostEqual(sa.comment_repost_rate(rows), 0.75)
+
+    def test_imp_index_divides_by_the_median_of_the_neighbours_within_the_trend_window(self):
+        pool = [rec("2026-09-10", None, impressions=100), rec("2026-09-11", None, impressions=300),
+                rec("2026-09-12", None, impressions=600), rec("2026-09-30", None, impressions=9999)]
+        self.assertAlmostEqual(sa.imp_index(pool[1], pool), 300 / sa.median([100, 600]))
+
+    def test_a_post_with_no_neighbour_has_no_index(self):
+        lone = rec("2026-09-10", None, impressions=100)
+        self.assertIsNone(sa.imp_index(lone, [lone, rec("2026-12-31", None)]))
+
+
+class Verdict(unittest.TestCase):
+    """The registered rule: group sizes, effect ratio, drop the best post, both halves, and the placebo."""
+
+    def judge(self, a, b):
+        return sa.judge(a, b, sa.median_of("imp_index"), a + b)
+
+    def spread(self, n, value, start="2026-08-01", step=2):
+        return run_of([i * step for i in range(n)], value, start)
+
+    def test_a_group_below_the_minimum_gives_too_little_data_whatever_the_ratio(self):
+        out = self.judge(self.spread(sa.MIN_GROUP - 1, 3.0), self.spread(40, 1.0))
+        self.assertEqual(out["verdict"], "too little data")
+
+    def test_a_clear_and_stable_effect_is_supported(self):
+        a = run_of(range(0, 60, 3), 1.6)           # both sides of 2026-09-13
+        b = run_of(range(1, 60, 3), 1.0) + run_of(range(2, 60, 3), 1.0)
+        out = self.judge(a, b)
+        self.assertEqual(out["verdict"], "supported", out)
+        self.assertAlmostEqual(out["ratio"], 1.6)
+
+    def test_an_effect_below_the_registered_ratio_is_not_supported(self):
+        a = run_of(range(0, 60, 3), 1.3)
+        b = run_of(range(1, 60, 3), 1.0) + run_of(range(2, 60, 3), 1.0)
+        self.assertEqual(self.judge(a, b)["verdict"], "too little data")
+
+    def test_an_effect_that_flips_in_one_half_is_not_supported(self):
+        early = run_of(range(0, 40, 3), 2.5)        # before 2026-09-13
+        late = run_of(range(43, 75, 3), 0.7)        # after it
+        b = run_of(range(1, 75, 3), 1.0) + run_of(range(2, 75, 3), 1.0)
+        out = self.judge(early + late, b)
+        self.assertNotEqual(out["verdict"], "supported", out)
+
+    def test_the_best_post_of_a_is_dropped_by_the_registered_robustness_check(self):
+        rows = [rec("2026-08-01", 1.0), rec("2026-08-02", 9.0), rec("2026-08-03", 2.0)]
+        kept = sa.without_best(rows, sa.median_of("imp_index"))
+        self.assertEqual(sorted(r["imp_index"] for r in kept), [1.0, 2.0])
+        out = self.judge(run_of(range(0, 60, 3), 1.6), run_of(range(1, 60, 3), 1.0) + run_of(range(2, 60, 3), 1.0))
+        self.assertAlmostEqual(out["ratio_without_best"], 1.6)
+
+    def test_a_ratio_that_only_equals_the_placebo_ratio_is_not_supported(self):
+        # The value depends only on the parity of the calendar day: 1.7 on even days, 1.0 on odd days. A sits on
+        # even days only and B mostly on odd days, so A/B = 1.7, but the even/odd placebo ratio is also 1.7.
+        base = sa.date.fromisoformat("2026-08-01")
+        days = [base + sa.timedelta(days=n) for n in range(0, 89)]
+        even = [d for d in days if d.toordinal() % 2 == 0]
+        odd = [d for d in days if d.toordinal() % 2 == 1]
+        value = lambda d: 1.7 if d.toordinal() % 2 == 0 else 1.0
+        a = [rec(d.isoformat(), value(d)) for d in even[::2][:20]]
+        b = [rec(d.isoformat(), value(d)) for d in odd[:30] + even[1::2][:10]]
+        out = self.judge(a, b)
+        self.assertAlmostEqual(out["ratio"], 1.7)
+        self.assertAlmostEqual(out["noise_floor"], 1.7)
+        self.assertNotEqual(out["verdict"], "supported", out)
+
+    def test_a_group_that_is_not_better_in_the_whole_window_and_either_half_is_contradicted(self):
+        a = run_of(range(0, 60, 3), 0.8)
+        b = run_of(range(1, 60, 3), 1.0) + run_of(range(2, 60, 3), 1.0)
+        self.assertEqual(self.judge(a, b)["verdict"], "contradicted")
+
+    def test_not_better_overall_but_better_in_one_half_is_not_called_contradicted(self):
+        early = run_of(range(0, 36, 6), 1.4)         # 6 posts before 2026-09-13: A ahead
+        late = run_of(range(43, 80, 3), 0.4)         # after it: A far behind, so the whole window is below 1
+        b = run_of(range(1, 80, 3), 1.0) + run_of(range(2, 80, 3), 1.0)
+        out = self.judge(early + late, b)
+        self.assertLessEqual(out["ratio"], 1.0, out)
+        self.assertGreater(out["ratio_early"], 1.0, out)
+        self.assertEqual(out["verdict"], "too little data")
+
+    def test_a_group_with_too_few_posts_on_one_side_of_the_split_is_undecided_even_if_both_sides_look_good(self):
+        early = run_of(range(0, 36, 4), 1.8)         # 9 posts before 2026-09-13
+        late = run_of([45, 55, 65], 1.8)             # only 3 after it, fewer than MIN_PER_HALF
+        b = run_of(range(1, 80, 3), 1.0) + run_of(range(2, 80, 3), 1.0)
+        out = self.judge(early + late, b)
+        self.assertGreater(out["ratio_early"], 1.0)
+        self.assertGreater(out["ratio_late"], 1.0)
+        self.assertEqual((out["halves_ok"], out["verdict"]), (False, "too little data"), out)
+
+    def test_a_pooled_rate_that_rests_on_one_post_is_not_supported(self):
+        # B: 1 comment per 1,000 impressions. A: one post with 20 comments carries the early half; the late half
+        # is only just above B. Overall 2.6x, but without that one post A is below B.
+        def post(day, comments):
+            return rec(day, 1.0, impressions=1000, comments=comments)
+        a = ([post(d, c) for d, c in zip(("2026-08-02", "2026-08-05", "2026-08-08", "2026-08-11", "2026-08-14"), (20, 0, 0, 0, 0))]
+             + [post(d, c) for d, c in zip(("2026-09-20", "2026-09-23", "2026-09-26", "2026-09-29", "2026-10-02"), (6, 0, 0, 0, 0))])
+        b = [post(d, 1) for d in [x["sent"] for x in run_of(range(1, 80, 2), 1.0)]]
+        out = sa.judge(a, b, sa.comment_repost_rate, a + b)
+        self.assertGreaterEqual(out["ratio"], sa.EFFECT_RATIO)
+        self.assertGreater(out["ratio_early"], 1.0)
+        self.assertGreater(out["ratio_late"], 1.0)
+        self.assertLessEqual(out["ratio_without_best"], 1.0)
+        self.assertNotEqual(out["verdict"], "supported", out)
+
+    def test_the_noise_floor_is_symmetric_whichever_parity_is_higher(self):
+        base = sa.date.fromisoformat("2026-08-01")
+        pool = [rec((base + sa.timedelta(days=n)).isoformat(), 1.7 if (base + sa.timedelta(days=n)).toordinal() % 2 else 1.0)
+                for n in range(0, 60)]
+        self.assertAlmostEqual(sa.noise_floor(sa.median_of("imp_index"), pool), 1.7)
+
+    def test_too_few_posts_on_one_side_of_the_split_leaves_it_undecided(self):
+        a = run_of(range(0, 30, 2), 1.8)            # every A post is before 2026-09-13
+        b = run_of(range(1, 60, 3), 1.0) + run_of(range(2, 60, 3), 1.0)
+        self.assertEqual(self.judge(a, b)["verdict"], "too little data")
+
+
+class Groups(unittest.TestCase):
+    def post(self, **kw):
+        base = {"news": "0", "content_type": "commentary", "hook_number": "no", "hook_reframe": "no",
+                "person_role": "none"}
+        return {**base, **kw}
+
+    def test_each_hypothesis_puts_a_post_in_a_or_b_by_its_registered_definition(self):
+        h1, h2, h3, h4 = (sa.HYPOTHESES[k]["in_a"] for k in ("H1", "H2", "H3", "H4"))
+        self.assertTrue(h1(self.post(hook_number="yes")) and h1(self.post(hook_reframe="yes")))
+        self.assertFalse(h1(self.post()))
+        self.assertTrue(h2(self.post(news="1")) and not h2(self.post()))
+        self.assertTrue(h3(self.post(person_role="answer")) and h3(self.post(person_role="credit")))
+        self.assertFalse(h3(self.post()))
+        self.assertTrue(h4(self.post(content_type="demo")))
+        self.assertFalse(h4(self.post(content_type="code")) or h4(self.post(content_type="commentary")))
+
+
 class OutputGuard(unittest.TestCase):
     def run_features(self, root, out):
         sink = io.StringIO()

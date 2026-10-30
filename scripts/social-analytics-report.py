@@ -25,7 +25,7 @@ import subprocess
 import sys
 import unicodedata
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent
@@ -461,6 +461,118 @@ def cmd_join(args: argparse.Namespace) -> int:
         print("INCOMPLETE: every row must be placed or classified in overrides.csv" if args.allow_unmatched
               else f"stopping: unresolved rows or coverage below {COVERAGE_MIN:.0%}; use --allow-unmatched to continue")
     return 0 if args.allow_unmatched or not incomplete else EXIT_UNRESOLVED
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Statistics and the registered verdict rule (docs/analytics.md, "The verdict rule").
+# ---------------------------------------------------------------------------------------------------------------
+
+def median(values):
+    ordered = sorted(values)
+    if not ordered:
+        return None
+    middle = len(ordered) // 2
+    return ordered[middle] if len(ordered) % 2 else (ordered[middle - 1] + ordered[middle]) / 2
+
+
+def quartiles(values):
+    ordered = sorted(values)
+    half = len(ordered) // 2
+    return median(ordered[:half]), median(ordered[len(ordered) - half:])
+
+
+def median_of(key):
+    def stat(rows):
+        return median([r[key] for r in rows if r.get(key) is not None])
+    return stat
+
+
+def comment_repost_rate(rows):
+    """Comments plus reposts per 1,000 impressions, pooled over the rows, because most posts have none."""
+    impressions = sum(r["impressions"] for r in rows)
+    return 1000 * sum(r["comments"] + r["reposts"] for r in rows) / impressions if impressions else None
+
+
+def stat_for(metric):
+    return {"imp_index": median_of("imp_index"), "comment_repost_rate": comment_repost_rate,
+            "site_sessions_per_1000": median_of("site_per_1000")}[metric]
+
+
+HYPOTHESES = {
+    "H1": {"claim": "a headline with a checkable number or a reframed habit earns more attention",
+           "in_a": lambda r: r["hook_number"] == "yes" or r["hook_reframe"] == "yes", "metric": "imp_index"},
+    "H2": {"claim": "news earns more attention than evergreen", "in_a": lambda r: r["news"] == "1",
+           "metric": "imp_index"},
+    "H3": {"claim": "naming a person draws more conversation",
+           "in_a": lambda r: r["person_role"] in ("answer", "credit"), "metric": "comment_repost_rate"},
+    "H4": {"claim": "a runnable demo brings more readers to the site",
+           "in_a": lambda r: r["content_type"] == "demo", "metric": "site_sessions_per_1000"},
+}
+
+
+def imp_index(post, pool):
+    """Impressions over the median of the other posts within TREND_DAYS of it, which removes follower growth."""
+    others = [p["impressions"] for p in pool if p is not post and _days_apart(p["sent"], post["sent"]) <= TREND_DAYS]
+    baseline = median(others)
+    return post["impressions"] / baseline if baseline else None
+
+
+def without_best(rows, stat):
+    best = max(rows, key=lambda r: (stat([r]) if stat([r]) is not None else float("-inf")))
+    return [r for r in rows if r is not best]
+
+
+def _ratio(stat, a, b):
+    top, bottom = (stat(a) if a else None), (stat(b) if b else None)
+    return top / bottom if top is not None and bottom else None
+
+
+def _halves(rows):
+    return ([r for r in rows if r["sent"] < SPLIT_DATE], [r for r in rows if r["sent"] >= SPLIT_DATE])
+
+
+def _halves_usable(a, b):
+    smaller = a if len(a) <= len(b) else b
+    early, late = _halves(smaller)
+    return len(early) >= MIN_PER_HALF and len(late) >= MIN_PER_HALF
+
+
+def noise_floor(stat, pool):
+    """How big a ratio even/odd calendar days alone produce: the size a real effect has to beat."""
+    even = [r for r in pool if date.fromisoformat(r["sent"]).toordinal() % 2 == 0]
+    odd = [r for r in pool if date.fromisoformat(r["sent"]).toordinal() % 2 == 1]
+    placebo = _ratio(stat, even, odd)
+    return max(placebo, 1 / placebo) if placebo else 1.0
+
+
+def _is_supported(out):
+    return (out["ratio"] >= EFFECT_RATIO and out["ratio_without_best"] is not None and out["ratio_without_best"] > 1
+            and out["ratio_early"] is not None and out["ratio_early"] > 1
+            and out["ratio_late"] is not None and out["ratio_late"] > 1 and out["ratio"] > out["noise_floor"])
+
+
+def _is_contradicted(out):
+    return (out["ratio"] <= 1 and out["ratio_early"] is not None and out["ratio_early"] <= 1
+            and out["ratio_late"] is not None and out["ratio_late"] <= 1)
+
+
+def judge(a, b, stat, pool):
+    """The registered rule. `pool` is every compared post, for the placebo. Returns the verdict and its numbers."""
+    out = {"n_a": len(a), "n_b": len(b), "stat_a": stat(a) if a else None, "stat_b": stat(b) if b else None,
+           "ratio": _ratio(stat, a, b), "verdict": "too little data", "lean": "", "ratio_without_best": None,
+           "ratio_early": None, "ratio_late": None, "noise_floor": noise_floor(stat, pool), "halves_ok": False}
+    if min(len(a), len(b)) < MIN_GROUP or out["ratio"] is None:
+        return out
+    out["ratio_without_best"] = _ratio(stat, without_best(a, stat), b)
+    (a_early, a_late), (b_early, b_late) = _halves(a), _halves(b)
+    out["ratio_early"], out["ratio_late"] = _ratio(stat, a_early, b_early), _ratio(stat, a_late, b_late)
+    out["halves_ok"] = _halves_usable(a, b)
+    out["lean"] = "A" if out["ratio"] > 1 else "B"
+    if out["halves_ok"] and _is_supported(out):
+        out["verdict"] = "supported"
+    elif out["halves_ok"] and _is_contradicted(out):
+        out["verdict"] = "contradicted"
+    return out
 
 
 def known_past_collisions() -> set:
