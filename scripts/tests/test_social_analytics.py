@@ -658,6 +658,21 @@ class Ga4Reader(unittest.TestCase):
                           "/posts/alpha/,linkedin / social,20260901,5\n/posts/alpha/,google / organic,20260901,40\n")
         self.assertEqual(sa.read_ga4_landing_by_date(path)["alpha"], {"2026-09-01": 5})
 
+    def test_reads_a_polish_export_with_no_source_column_and_says_it_mixes_every_source(self):
+        path = self.write("# ----------------------------------------\r\n# Strona docelowa: Strona docelowa \u2013 analiza\r\n"
+                          "# Wszyscy u\u017cytkownicy\r\n# Data rozpocz\u0119cia: 20260730\r\n\r\n"
+                          "Strona docelowa,Data,Sesje,Aktywni u\u017cytkownicy,\u015aredni czas\r\n"
+                          "/posts/alpha,20260901,21,19,77.5\r\n/posts/alpha,20260902,3,3,10\r\n/,20260901,99,50,1\r\n")
+        self.assertEqual(sa.read_ga4_landing_by_date(path), {"alpha": {"2026-09-01": 21, "2026-09-02": 3}})
+        self.assertEqual(sa.ga4_scope(path), "all-sources")
+
+    def test_a_file_split_by_source_is_linkedin_scoped_in_either_language(self):
+        english = self.write("Landing page,Session source / medium,Date,Sessions\n/posts/a/,linkedin / social,20260901,5\n")
+        self.assertEqual(sa.ga4_scope(english), "linkedin")
+        polish = self.write("Strona docelowa,\u0179r\u00f3d\u0142o sesji / medium,Data,Sesje\n/posts/a,linkedin / social,20260901,5\n")
+        self.assertEqual(sa.ga4_scope(polish), "linkedin")
+        self.assertEqual(sa.read_ga4_landing_by_date(polish), {"a": {"2026-09-01": 5}})
+
     def test_a_missing_column_is_named(self):
         path = self.write("Landing page,Sessions\n/posts/alpha/,5\n")
         with self.assertRaises(sa.ExportError) as ctx:
@@ -711,12 +726,34 @@ class ReportCommand(unittest.TestCase):
             self.assertIn("pre-registration commit", summary)
             self.assertTrue(any(s in (out / "report.md").read_text() for s in slugs))
 
+    def test_h4_refuses_a_verdict_from_a_file_that_mixes_every_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, out, _ = self.prepare(tmp, with_ga4=True)       # the fixture's GA4 file has no source column
+            code, text = self.run_report(out)
+            self.assertEqual(code, 0, text)
+            summary = (out / "summary.md").read_text()
+            self.assertIn("needs LinkedIn-filtered GA4", summary)
+            self.assertNotIn("| supported |", summary.split("## Cadence")[0].split("H4")[1])
+
+    def test_h4_gets_a_verdict_when_the_file_is_split_by_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, out, slugs = self.prepare(tmp, with_ga4=True)
+            lines = (out / "ga4-linkedin-landing-by-date.csv").read_text().splitlines()
+            rows = ["Landing page + query string,Session source / medium,Date,Sessions"] + [
+                ln.replace(",2026", ",linkedin / social,2026", 1) for ln in lines[1:]]
+            (out / "ga4-linkedin-landing-by-date.csv").write_text("\n".join(rows) + "\n")
+            code, text = self.run_report(out)
+            self.assertEqual(code, 0, text)
+            self.assertNotIn("needs LinkedIn-filtered GA4", (out / "summary.md").read_text())
+
     def test_h4_says_it_needs_ga4_when_the_file_is_absent(self):
         with tempfile.TemporaryDirectory() as tmp:
             root, out, _ = self.prepare(tmp, with_ga4=False)
             code, text = self.run_report(out)
             self.assertEqual(code, 0, text)
-            self.assertIn("needs GA4", (out / "summary.md").read_text())
+            summary = (out / "summary.md").read_text()
+            self.assertIn("needs GA4: no GA4 file", summary)
+            self.assertNotIn("descriptive only", summary)
 
     def test_refuses_to_give_verdicts_when_the_registered_values_differ_from_the_script(self):
         from unittest import mock

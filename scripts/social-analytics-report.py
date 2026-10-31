@@ -622,6 +622,12 @@ FEATURE_KEYS = ("kind", "news", "content_type", "topic_group", "slot", "planned_
 LABEL_KEYS = ("hook_number", "hook_reframe", "person_role")
 GA4_LINKEDIN_SOURCE = re.compile(r"linkedin|lnkd", re.IGNORECASE)
 GA4_PATH = re.compile(r"^/(?:posts|toolset)/([a-z0-9-]+)/?$")
+GA4_COLUMN_NAMES = {"page": ("landing page", "strona docelowa"), "date": ("date", "data"),
+                    "sessions": ("sessions", "sesje")}
+GA4_DISPLAY_NAMES = {"page": "Landing page", "date": "Date", "sessions": "Sessions"}
+GA4_SOURCE_WORDS = ("source", "\u017ar\u00f3d\u0142o", "zrodlo")   # English and Polish column names
+GA4_NEEDS_LINKEDIN = ("needs LinkedIn-filtered GA4: this file counts every source, and the registered metric "
+                      "is LinkedIn sessions")
 FACTORS = ("kind", "news", "content_type", "topic_group", "slot", "series", "hook_number", "hook_reframe",
            "person_role", "weekday", "planned_hour")
 
@@ -717,32 +723,55 @@ def _ga4_lines(path: Path) -> list[str]:
             if ln.strip() and not ln.lstrip().startswith("#")]
 
 
-def _ga4_columns(path: Path, fields: list[str]) -> tuple[str, str | None]:
-    page = next((f for f in fields if f.lower().startswith("landing page")), None)
-    present = (("Landing page", page), ("Date", "Date" in fields), ("Sessions", "Sessions" in fields))
-    missing = [name for name, found in present if not found]
+def _ga4_find(fields, names, exact):
+    for field in fields:
+        low = field.lower()
+        if (low in names) if exact else low.startswith(names):
+            return field
+    return None
+
+
+def _ga4_columns(path: Path, fields: list[str]) -> dict:
+    found = {"page": _ga4_find(fields, GA4_COLUMN_NAMES["page"], exact=False),
+             "date": _ga4_find(fields, GA4_COLUMN_NAMES["date"], exact=True),
+             "sessions": _ga4_find(fields, GA4_COLUMN_NAMES["sessions"], exact=True)}
+    missing = [GA4_DISPLAY_NAMES[name] for name, column in found.items() if not column]
     if missing:
         raise ExportError(f"{path.name}: missing column(s) {missing}; found {fields}")
-    return page, next((f for f in fields if "source" in f.lower()), None)
+    found["source"] = next((f for f in fields if any(word in f.lower() for word in GA4_SOURCE_WORDS)), None)
+    return found
 
 
-def _ga4_add(out: dict, row: dict, page: str) -> None:
-    slug = _slug_of_path(row[page])
+def _ga4_add(out: dict, row: dict, cols: dict) -> None:
+    slug = _slug_of_path(row[cols["page"]])
     if slug:
         days = out.setdefault(slug, {})
-        day = _ga4_day(row["Date"])
-        days[day] = days.get(day, 0) + int(row["Sessions"].replace(",", "") or 0)
+        day = _ga4_day(row[cols["date"]])
+        days[day] = days.get(day, 0) + int(row[cols["sessions"]].replace(",", "") or 0)
 
 
 def read_ga4_landing_by_date(path: Path) -> dict:
     """Sessions per post per day. Comment lines start with #; a source column, if present, selects LinkedIn."""
     reader = csv.DictReader(_ga4_lines(path))
-    page, source = _ga4_columns(path, reader.fieldnames or [])
+    cols = _ga4_columns(path, reader.fieldnames or [])
     out: dict = {}
     for row in reader:
-        if not source or GA4_LINKEDIN_SOURCE.search(row[source]):
-            _ga4_add(out, row, page)
+        if not cols["source"] or GA4_LINKEDIN_SOURCE.search(row[cols["source"]]):
+            _ga4_add(out, row, cols)
     return out
+
+
+def _ga4_header_and_preamble(path: Path) -> tuple[str, str]:
+    lines = path.read_text(encoding="utf-8-sig").splitlines()
+    header = next((ln for ln in lines if ln.strip() and not ln.startswith("#")), "")
+    return header.lower(), "\n".join(ln for ln in lines if ln.startswith("#"))
+
+
+def ga4_scope(path: Path) -> str:
+    """'linkedin' if the file splits by source or names LinkedIn in its preamble; otherwise every source is mixed."""
+    header, preamble = _ga4_header_and_preamble(path)
+    split_by_source = any(word in header for word in GA4_SOURCE_WORDS)
+    return "linkedin" if split_by_source or GA4_LINKEDIN_SOURCE.search(preamble) else "all-sources"
 
 
 def _usable(pool, metric):
@@ -757,18 +786,30 @@ def _judge_pool(spec, pool):
     return judge(a, b, stat_for(spec["metric"]), a + b)
 
 
-def _hypothesis_row(name, spec, comparable, ga4_present):
+def _site_blocked(spec, scope):
+    """Why the site metric cannot give a verdict, or an empty string."""
+    if spec["metric"] != "site_sessions_per_1000":
+        return ""
+    if scope is None:
+        return "needs GA4: no GA4 file"
+    return "" if scope == "linkedin" else GA4_NEEDS_LINKEDIN
+
+
+def _hypothesis_row(name, spec, comparable, scope):
     row = {"id": name, "claim": spec["claim"], "metric": spec["metric"]}
-    if spec["metric"] == "site_sessions_per_1000" and not ga4_present:
-        return {**row, "verdict": "needs GA4: no GA4 file"}
+    blocked = _site_blocked(spec, scope)
+    if scope is None and blocked:
+        return {**row, "verdict": blocked}
     for label, pool in (("", comparable), ("_no_outliers", [r for r in comparable if not r["outlier"]])):
         row.update({f"{k}{label}": v for k, v in _judge_pool(spec, pool).items()})
+    if blocked:
+        row["verdict"] = row["verdict_no_outliers"] = f"{blocked} (numbers are descriptive only)"
     return row
 
 
-def verdict_rows(records, ga4_present: bool) -> list[dict]:
+def verdict_rows(records, scope) -> list[dict]:
     comparable = [r for r in records if not r["excluded"]]
-    return [_hypothesis_row(name, spec, comparable, ga4_present) for name, spec in HYPOTHESES.items()]
+    return [_hypothesis_row(name, spec, comparable, scope) for name, spec in HYPOTHESES.items()]
 
 
 def _cadence_labels(rec):
@@ -911,14 +952,15 @@ POSTS_COLUMNS = ("slug", "sent", "excluded", "outlier", "imp_index", "impression
 def _context(folder: Path, args) -> dict:
     ga4_path = Path(args.ga4) if args.ga4 else folder / "ga4-linkedin-landing-by-date.csv"
     ga4 = read_ga4_landing_by_date(ga4_path) if ga4_path.exists() else None
+    scope = ga4_scope(ga4_path) if ga4 is not None else None
     joined = _read_csv(folder / "joined.csv")
     records = build_records(joined, {r["slug"]: r for r in _read_csv(folder / "features.csv")},
                             {r["slug"]: r for r in _read_csv(folder / "labels.csv")}, args.export_date, ga4)
     daily_path = folder / "linkedin-daily.csv"
-    return {"records": records, "verdicts": verdict_rows(records, ga4 is not None), "export_date": args.export_date,
+    return {"records": records, "verdicts": verdict_rows(records, scope), "export_date": args.export_date,
             "cadence": cadence_views(records, _read_csv(daily_path) if daily_path.exists() else []),
             "registered_at": _git(REPO, "log", "-1", "--format=%H", "--", "docs/analytics.md") or "unknown",
-            "labels_sha": hashlib.sha256((folder / "labels.csv").read_bytes()).hexdigest()}
+            "labels_sha": hashlib.sha256((folder / "labels.csv").read_bytes()).hexdigest(), "ga4_scope": scope}
 
 
 def cmd_report(args: argparse.Namespace) -> int:
