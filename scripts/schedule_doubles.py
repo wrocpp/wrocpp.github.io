@@ -179,6 +179,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # It runs beside the reflection series post of the day and lands before the Buzios meeting.
     "2026-11-10": {"slug": "what-the-three-profile-papers-say", "hour": 16,
                    "why": "flagship on the three October profile papers, beside the reflection series post, before Buzios"},
+    # The initialization profile of P4222R3 run on the two Compiler Explorer builds, with a thread
+    # case from outside the papers. It runs beside the reflection series post and lands before Buzios.
+    "2026-11-13": {"slug": "init-profile-against-real-code", "hour": 16,
+                   "why": "short on the initialization profile run against real code, beside the reflection series post, before Buzios"},
 }
 
 
