@@ -180,6 +180,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # the day on matching UB cases to checking tools.
     "2026-11-08": {"slug": "generator-enumerate-by-value", "hour": 16,
                    "why": "allocation cost of a by-value std::generator enumerate, beside the UB checking-tool post"},
+    # G2 of the generator arc: where a const& coroutine argument dies, by compiler. It runs beside the
+    # Meeting C++ program post of the day.
+    "2026-11-24": {"slug": "generator-const-reference-lifetime", "hour": 16,
+                   "why": "const& generator argument lifetime by compiler, beside the Meeting C++ program post"},
 }
 
 
