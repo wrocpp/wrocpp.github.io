@@ -175,11 +175,6 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
                    "why": "the spec addendum on nested changes, queued in both bindings, beside the contract_assert post"},
     "2026-11-05": {"slug": "moc-parity-bindable-constructors-namespaces", "hour": 16,
                    "why": "the three moc matrix rows that closed after the flagship, beside the Boost modules news"},
-    # Coroutines pair (from Alexey Ozeritskiy's LinkedIn post on a WebAssembly debugger).
-    "2026-11-12": {"slug": "coroutine-single-stepper", "hour": 16,
-                   "why": "a stepping debugger built from suspend points (coroutines part 1), beside the SQL schema post"},
-    "2026-11-13": {"slug": "coroutine-per-function-cost", "hour": 16,
-                   "why": "what a coroutine per function costs (coroutines part 2), beside the test registration post"},
 }
 
 
