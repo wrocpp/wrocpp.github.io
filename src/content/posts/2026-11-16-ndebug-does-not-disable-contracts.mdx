@@ -1,7 +1,7 @@
 ---
 title: "-DNDEBUG does not turn off contract_assert on GCC 16.2"
 slug: "ndebug-does-not-disable-contracts"
-pubDate: 2026-11-11
+pubDate: 2026-11-16
 author: filip-sajdak
 language: en
 kind: flagship
@@ -9,7 +9,7 @@ audience: working-cpp
 tags: [cpp26, contracts, compiler-flags, release-builds]
 summary: "A release build usually adds -DNDEBUG and expects its checks to vanish. On GCC 16.2 that deletes assert(), but contract_assert is a language feature and keeps running. With -fcontracts it terminates under the default enforce semantic, even with -O3 -flto. Only -fcontract-evaluation-semantic=ignore stops the evaluation. The post gives six measured flag sets and one link error."
 draft: false
-relatedPosts: [flag-that-moves-code, check-a-statement-with-contract-assert, contracts-that-prove-something, cpp26-contracts]
+relatedPosts: [check-a-statement-with-contract-assert, contracts-that-prove-something, cpp26-contracts]
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -94,6 +94,5 @@ That is a decision about how a release build fails, and it deserves the same att
 I have not tested other compilers or other GCC versions, and I did not add `-march=native`, because the Compiler Explorer host is not mine.
 What a check costs at run time is a separate question, and I did not measure it here.
 An earlier post covers <PostLink slug="check-a-statement-with-contract-assert">checking a statement with contract_assert</PostLink>.
-The <PostLink slug="flag-that-moves-code">previous post</PostLink> is the case for measuring before assuming a flag does what its name says.
 
 The file and the table are [in the examples repo](https://github.com/wrocpp/cpp26-reflection-examples/tree/26fa7fcb05a72937d2da53fd8a63f3c3db7e0f8a/posts/98-compiler-flags).

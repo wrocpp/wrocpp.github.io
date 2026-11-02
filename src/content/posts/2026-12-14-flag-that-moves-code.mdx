@@ -1,7 +1,7 @@
 ---
 title: "A flag that moved a loop erased a 1.7x gap between two designs"
 slug: "flag-that-moves-code"
-pubDate: 2026-11-10
+pubDate: 2026-12-14
 author: filip-sajdak
 language: en
 kind: flagship
@@ -9,7 +9,7 @@ audience: working-cpp
 tags: [cpp, performance, compiler-flags, x86, benchmarking]
 summary: "Herik Lima asked whether a flag alone ever made a big difference. In one benchmark on an x86-64 runner it did, but not between optimization levels. An assembler flag that pads code made two builds of the same loop equal, which showed that a 1.7x gap between two designs was code placement. The post gives the numbers, a reproducible check of what the flag does, and what I could not establish."
 draft: false
-relatedPosts: [qt-observable-models-known-limits, verification-asm-llvm-mca, portable-simd]
+relatedPosts: [qt-observable-models-known-limits, verification-asm-llvm-mca, portable-simd, ndebug-does-not-disable-contracts]
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -127,7 +127,7 @@ I would not ship `-Wa,-mbranches-within-32B-boundaries` to fix a benchmark.
 It works by padding, so code grows, and it solves a placement problem by luck rather than by understanding.
 The `std::vector` change removed the loop the compiler kept placing badly.
 
-The next post takes the other half of Herik's list.
-It runs the same flags against `contract_assert` and `NDEBUG` on GCC 16.2.
+An earlier post took the other half of Herik's list.
+<PostLink slug="ndebug-does-not-disable-contracts">It runs `-DNDEBUG` against `contract_assert`</PostLink> on GCC 16.2.
 
 The files are [in the examples repo](https://github.com/wrocpp/cpp26-reflection-examples/tree/bb765f4df0acde34f5edccfea5e1e6767a440077/posts/98-compiler-flags).
