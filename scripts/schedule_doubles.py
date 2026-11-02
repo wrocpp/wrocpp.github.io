@@ -183,6 +183,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # case from outside the papers. It runs beside the reflection series post and lands before Buzios.
     "2026-11-13": {"slug": "init-profile-against-real-code", "hour": 16,
                    "why": "short on the initialization profile run against real code, beside the reflection series post, before Buzios"},
+    # The invalidation profile of P4418R0 run on the experimental GCC build, with cases the paper
+    # does not show. It runs beside the reflection series post and lands before Buzios.
+    "2026-11-15": {"slug": "invalidation-profile-against-real-code", "hour": 16,
+                   "why": "short on the invalidation profile run against the paper's examples, beside the reflection series post, before Buzios"},
 }
 
 
