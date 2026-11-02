@@ -175,6 +175,11 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
                    "why": "the spec addendum on nested changes, queued in both bindings, beside the contract_assert post"},
     "2026-11-05": {"slug": "moc-parity-bindable-constructors-namespaces", "hour": 16,
                    "why": "the three moc matrix rows that closed after the flagship, beside the Boost modules news"},
+    # What the by-value std::generator enumerate in Alex Dathskovsky's LinkedIn post allocates on GCC
+    # and Clang, with the libstdc++, libc++ and MSVC STL support table. It runs beside the post of
+    # the day on matching UB cases to checking tools.
+    "2026-11-08": {"slug": "generator-enumerate-by-value", "hour": 16,
+                   "why": "allocation cost of a by-value std::generator enumerate, beside the UB checking-tool post"},
 }
 
 
