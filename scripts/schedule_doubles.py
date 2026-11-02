@@ -179,6 +179,9 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # 2 November. It runs beside the co_yield in template for post of the day.
     "2026-11-25": {"slug": "five-spellings-of-a-64-byte-compare", "hour": 16,
                    "why": "64-byte compare codegen on GCC, Clang and MSVC, from the r/cpp thread, beside the co_yield in template for post"},
+    # Part two of the 64-byte compare: why the early exit stops the vectorizer and what to write instead.
+    "2026-11-29": {"slug": "early-exit-loop-vectorization", "hour": 16,
+                   "why": "chunked early-exit compare and std::simd on a 64-byte block, second part of the r/cpp compare thread"},
 }
 
 
