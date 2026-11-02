@@ -19,3 +19,6 @@ scripts/__pycache__/
 
 # preflight build output (npm run check:future)
 dist-preflight/
+
+# private working notes and analytics exports: the repo is public, so these must never be committed
+.notes/
