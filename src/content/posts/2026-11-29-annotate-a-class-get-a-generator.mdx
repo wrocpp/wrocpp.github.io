@@ -1,0 +1,151 @@
+---
+title: "Annotate a class, get a generator: what reflection can and cannot do"
+slug: "annotate-a-class-get-a-generator"
+pubDate: 2026-11-29
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp, cpp26, reflection, annotations, coroutines]
+summary: "Annotations on data members and member functions drive a std::generator on GCC 16.2 and trunk: skip a field, rename one, run annotated steps lazily. Reflection cannot turn an ordinary method into a coroutine. A wrapper around a vector-returning method builds 1000 elements for 3 consumed, the coroutine version 7."
+draft: false
+relatedPosts: [annotations, co-yield-inside-template-for, generator-const-reference-lifetime, reflection-dangling-signature]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+A reader asked whether reflection can build a `co_yield` version of an ordinary class when you annotate its functions or members.
+Half of that works.
+Annotations choose which members and functions a generator walks, and under what name.
+Reflection does not turn a function into a coroutine, and a wrapper around a method that returns a vector is not lazy.
+All runs were on Compiler Explorer, GCC 16.2 and GCC trunk (17.0.0 20261102), `-std=c++26 -freflection`, on 2 November 2026.
+
+## In short
+
+- `[[=skip{}]]` and `[[=label{"user_name"}]]` on data members drive a `fields(object)` generator. It builds and prints the same on both compilers.
+- `[[=step{"parse"}]]` on member functions drives `run_steps(object)`. Breaking after the second step leaves the third uncalled: `executed 2 of 3 steps`.
+- An annotation payload must be a structural type. A `std::string_view` member is rejected.
+- A reflection adapter around a vector-returning method still builds the whole vector: 1000 elements for 3 consumed, against 7 as a coroutine.
+- C++26 reflection has no code injection, so it cannot write the coroutine for you.
+
+## Annotated members
+
+The generator's mechanics are in [co_yield inside template for](/posts/co-yield-inside-template-for/).
+The reflected members go into a `constexpr` array outside the coroutine, and an `index_sequence` fold yields one element per index.
+Here the array is filtered first, by a `consteval` function that reads each member's annotations:
+
+```cpp
+template <class T>
+consteval std::vector<std::meta::info> kept_members() {
+  std::vector<std::meta::info> kept;
+  for (auto member : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))
+    if (!has_annotation(member, ^^skip)) kept.push_back(member);
+  return kept;
+}
+```
+
+The annotated struct and its output:
+
+```cpp
+struct User {
+  int id = 7;
+  [[=skip{}]] std::string password = "hunter2";
+  [[=label{"user_name"}]] std::string login = "ada";
+  double score = 2.5;
+};
+```
+
+```
+id = 7
+user_name = ada
+score = 2.5
+```
+
+<GodboltEmbed id="bx33jv579" gccOnly gccLabel="GCC 16.2" title="Annotated members as a std::generator" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection · skips one member, renames another" />
+
+The loop over `annotations_of` is hand-written; I did not use a typed lookup.
+For what annotations are and how to read one, see [the annotations post](/posts/annotations/).
+
+The label type is the part that surprised me.
+An annotation value has to be a structural type.
+With a `std::string_view` payload, GCC 16.2 stops at the use site:
+
+```
+error: annotation does not have structural type
+```
+
+I only tried `std::string_view`.
+The working `label` holds a `char text[24]` filled by a `consteval` constructor, and the generator returns it through `std::define_static_string`.
+The 24-character limit is a number I chose, named `kLabelCapacity` in the example.
+
+## Annotated functions, run lazily
+
+The same shape works for member functions.
+`run_steps` collects the functions annotated with `step`, and each `co_yield` calls one only when the consumer asks for the next element:
+
+```cpp
+struct Pipeline {
+  int executed = 0;
+  [[=step{}]] int load() { ++executed; return 3; }
+  [[=step{"parse"}]] std::string parse() { ++executed; return "ok"; }
+  [[=step{"validate"}]] bool validate() { ++executed; return true; }
+  void helper() {}
+};
+```
+
+A consumer that stops after `parse` prints:
+
+```
+load -> 3
+parse -> ok
+executed 2 of 3 steps
+```
+
+`validate` was never called, and `helper` was never considered, since it has no annotation.
+An unnamed `step{}` falls back to the function's identifier.
+
+<GodboltEmbed id="zjoj5cGzG" gccOnly gccLabel="GCC 16.2" title="Annotated member functions run lazily" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection · breaks after the second step" />
+
+The laziness comes from the generator, not from reflection.
+Reflection only picked which functions go into the array, and in what order.
+The functions run in declaration order, which is what `members_of` returned on both compilers here.
+
+## What does not work: a lazy twin of a method
+
+The tempting next step is an adapter that takes any method returning a range and makes it lazy: `lazily<^^Catalog::evens>(catalog, 1000)`.
+It compiles and yields the right values.
+It is not lazy, because the method behind it has already built the whole container by the time the first element comes out.
+
+```
+0 2 4 | adapter: 1000 elements built for 3 consumed
+0 2 4 | coroutine: 7 elements built for 3 consumed
+```
+
+The second line is the same method written as a `std::generator` coroutine.
+Both lines came out the same on GCC 16.2 and trunk.
+
+<GodboltEmbed id="q8ETW1v38" gccOnly gccLabel="GCC 16.2" title="A wrapper does not make a method lazy" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection · 1000 elements built against 7" />
+
+Getting the second line from the first means rewriting the method body into a coroutine. Reflection in C++26 cannot do that.
+[P2996R13](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p2996r13.html), the reflection paper, names code injection as a desirable direction still to pursue, not as part of it.
+Its `define_aggregate` takes a vector of non-static data member descriptions, so it adds data members and not functions.
+[P3294R2](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3294r2.html) proposes code injection through token sequences, as an addition to P2996.
+I read those two papers.
+I did not check whether a later revision of either changed this.
+
+## So the answer is
+
+Reflection can enumerate, filter, name and call.
+That is enough for a generator over an annotated class, if the generator is written once by hand and the annotations only steer it.
+It cannot write the coroutine, and it cannot hold a reflection value in the coroutine frame, which is why every example keeps reflection outside it.
+Pick the hand-written coroutine when a method must be lazy.
+
+## What I did not run
+
+- Clang with reflection: `std::meta` is missing on Compiler Explorer's Clang trunk, so there is no result either way.
+- MSVC, and any GCC older than 16.2.
+- A `const char*` annotation payload. I only ran `std::string_view`.
+- At `-O2 -Wall -Wextra -Werror`, all three examples stop on `-Wmismatched-new-delete` inside `<generator>` on both compilers, the same warning described in the [template for post](/posts/co-yield-inside-template-for/). I do not know why.
+- Timing. The counts are exact; I measured no speed.
+
+The files are [in the examples repo](https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/110-annotated-generators).
