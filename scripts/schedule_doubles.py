@@ -175,11 +175,6 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
                    "why": "the spec addendum on nested changes, queued in both bindings, beside the contract_assert post"},
     "2026-11-05": {"slug": "moc-parity-bindable-constructors-namespaces", "hour": 16,
                    "why": "the three moc matrix rows that closed after the flagship, beside the Boost modules news"},
-    # RAII for C APIs mini-series (from the October LinkedIn batch, Amit G.'s scope header).
-    "2026-11-08": {"slug": "raii-scope-guards", "hour": 16,
-                   "why": "RAII scope guards (series part 1), beside the UB-tool post"},
-    "2026-11-09": {"slug": "raii-ffmpeg-libav", "hour": 16,
-                   "why": "RAII over FFmpeg libav objects (series part 2), beside the Boost.Decimal post"},
 }
 
 
