@@ -175,6 +175,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
                    "why": "the spec addendum on nested changes, queued in both bindings, beside the contract_assert post"},
     "2026-11-05": {"slug": "moc-parity-bindable-constructors-namespaces", "hour": 16,
                    "why": "the three moc matrix rows that closed after the flagship, beside the Boost modules news"},
+    # A 64-byte compare written five ways and built on five compilers, from an r/cpp thread of
+    # 2 November. It runs beside the co_yield in template for post of the day.
+    "2026-11-25": {"slug": "five-spellings-of-a-64-byte-compare", "hour": 16,
+                   "why": "64-byte compare codegen on GCC, Clang and MSVC, from the r/cpp thread, beside the co_yield in template for post"},
 }
 
 
