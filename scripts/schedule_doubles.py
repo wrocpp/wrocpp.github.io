@@ -175,6 +175,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
                    "why": "the spec addendum on nested changes, queued in both bindings, beside the contract_assert post"},
     "2026-11-05": {"slug": "moc-parity-bindable-constructors-namespaces", "hour": 16,
                    "why": "the three moc matrix rows that closed after the flagship, beside the Boost modules news"},
+    # A flagship on the three profile papers dated 22 October (P3704R1, P4222R3, P4418R0).
+    # It runs beside the reflection series post of the day and lands before the Buzios meeting.
+    "2026-11-10": {"slug": "what-the-three-profile-papers-say", "hour": 16,
+                   "why": "flagship on the three October profile papers, beside the reflection series post, before Buzios"},
 }
 
 
