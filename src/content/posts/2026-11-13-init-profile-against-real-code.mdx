@@ -1,0 +1,142 @@
+---
+title: "What the initialization profile says about code it was not written for"
+slug: "init-profile-against-real-code"
+pubDate: 2026-11-13
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [wg21, profiles, safety, clang, gcc, initialization]
+summary: "I ran the examples of P4222R3, the initialization profile, on the two experimental Compiler Explorer builds, plus one case from outside the paper. Both builds reject the paper's wrong examples and accept its right ones, with a handful of differences between them. Neither build says anything about a thread that starts before the member it counts into is initialized."
+draft: false
+relatedPosts: [what-the-three-profile-papers-say, profiles-p4415-implementation-status, erroneous-behavior]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+Both experimental builds of the initialization profile on Compiler Explorer reject the wrong examples in [P4222R3](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4222r3.pdf) and accept the right ones. They differ on a few details, and neither says anything about a `std::jthread` that starts before the atomic it increments is initialized. These are research forks, not shipping compilers. I ran everything on 2 November 2026 on `clang_profiles_init` and `gcontracts-p4324-trunk`, and I report what each printed. The profile itself is summarised in <PostLink slug="what-the-three-profile-papers-say">the post on the three papers</PostLink>.
+
+## In short
+
+- The paper's `[[uninit]]` and `[[ref_to_uninit]]` examples give the same accept or reject result on both builds. The message wording differs.
+- P4415R0 says the GCC build accepts member-wise assignment of an `[[uninit]]` aggregate. On 2 November both builds rejected it. They now differ on whole-object assignment instead.
+- Rule-level suppression works on the Clang build, and a misspelled rule name only produces a warning. The GCC build rejects every rule name I tried.
+- Both builds accept a thread member declared before the counter it uses. They also accept a constructor that reads a member before its initializer.
+
+## What I ran
+
+The Clang build is `clang_profiles_init`, listed as "x86-64 clang (std::init profile - P4222)". I used `-std=c++26 -fprofiles` and repeated every case with `-std=c++23 -pedantic-errors`, which gave the same results. The GCC build is `gcontracts-p4324-trunk` with `-std=c++23 -pedantic-errors`. Its include path names a `20261102` build. Every file starts with `[[profiles::enforce(std::init)]];`, before any include, as the framework paper P3589R3 requires. P4415R0 by Michael Wong, Krystian Stasiowski and Ville Voutilainen describes the two forks. My <PostLink slug="profiles-p4415-implementation-status">earlier post</PostLink> ran its invalidation cases, so those do not repeat here.
+
+The paper says "The profile is completely compile-time enforced." The runs are all compile-time, apart from the two embeds that execute the accepted code.
+
+## The paper's examples
+
+Each row is a P4222R3 example, compiled on its own. "Both" means both builds gave the same verdict.
+
+| Case (section of P4222R3) | Clang build | GCC build |
+|---|---|---|
+| `int loc;` and `int x = loc5;` after `int loc5 [[uninit]];` (4.1) | rejected | rejected |
+| `int loc4 [[uninit]] = 4;` (4.1) | rejected | rejected |
+| `std::vector<int> v2 [[uninit]];` and `std::string s2 [[uninit]];` (4.1) | rejected, "runs a constructor" | rejected, "non-trivial default initialization" |
+| `int loc6 [[uninit]]; loc6 = 7; int y = loc6;` (4.1) | accepted | accepted |
+| `f(&x)` on `[[uninit]]` `x` with `f(X* [[ref_to_uninit]])`, and `g(&x)` with a plain `g(X*)` (4.2) | `g(&x)` rejected | `g(&x)` rejected |
+| `f(&y)` on an initialized `y` (4.2) | rejected | rejected |
+| `X z = x;` after `f(&x)`, so `x` is still `[[uninit]]` (4.2) | rejected | rejected |
+| read of an `[[uninit]]` member, `struct { int a [[uninit]]; }` | rejected | rejected |
+| `int y = f(); int f() { return y; }` at namespace scope (3) | rejected, "requires constant initialization" | rejected, "non-constant initialization" |
+| `int* p2 [[uninit]];` in a function (4.2) | rejected, "cannot be applied to a pointer" | accepted |
+| `std::byte x;` with no initializer | accepted | rejected |
+
+The last two rows are the only ones where the builds differ on a paper example. On `int* p2 [[uninit]];` the paper's own comment reads "p2 is uninitialized", so I took it as allowed. Clang's message tells you to initialize the pointer to `nullptr` instead. The paper exempts the byte types from the rule against reading uninitialized memory, so I tried `std::byte x;`. I did not find the declaration case spelled out.
+
+Three examples need a way to say "this function initializes its argument", and there the builds use different spellings:
+
+- **`[[must_init]]` on a parameter.** The GCC build accepts the paper's `h(&x)` followed by `X z = x;`. It rejects a `[[must_init]]` function with an empty body: "function may return without the pointee of 'p' being definitely assigned". The Clang build prints a warning that `must_init` is an unknown attribute and ignores it.
+- **`now_init(...)` on an array.** The paper's `span<X> s{now_init(aar10), 20}` is accepted on the GCC build once `<utility>` is included. The same span built straight from the array is rejected. The Clang build has no `std::now_init`.
+- **`[[now_init]]` on a function.** This is Clang's spelling. A call to a function marked this way makes the following read legal, and the GCC build ignores the attribute with a warning. The Clang build also accepted a `[[now_init]]` function whose body is empty and a read after the call. It does not check the promise.
+
+## Rule-level suppression
+
+P3589R3 section 1.1.2 gives the suppression form, `[[profiles::suppress(std::init, rule: "...", justification: "...")]]`, and says `rule:` names one rule of the profile. P4415R0 reports twelve named `std::init` rules on the Clang build and none on the GCC build.
+
+On the Clang build I tried 51 candidate names, spelled with underscores. Nine drew no warning:
+
+```
+uninit_decl            uninit_read          uninit_with_initializer
+ref_to_uninit          pointer_marker       uninit_write
+static_runtime_init    double_destroy       destroy_uninit
+```
+
+I did not find the other three. The same names appear with dashes in the warning flags, such as `-Wprofile-std-init-uninit-decl`. In a `rule:` argument the dashed spelling is not found.
+
+A misspelled name is not an error:
+
+```
+<source>:89:17: warning: profile 'std::init' has no rule 'uninit-decl'; did you mean 'uninit_decl'? [-Wunknown-profiles]
+<source>:90:9: error: variable 'raw' must be initialized or marked '[[uninit]]' under profile 'std::init' [-Wprofile-std-init-uninit-decl]
+```
+
+That is `clang_profiles_init` with `-std=c++26 -fprofiles -DSHOW_WRONG_RULE`. The warning is on by default and the suppression does nothing, so the original error stays. If the suppressed code had no other problem, the warning would be the only sign. The right name, with a `justification:`, silences the declaration rule only: in `int raw; raw = 4; return raw;` the later read was fine.
+
+The GCC build answers every name, right or wrong, with `profile 'std::init' has no sub-rule 'uninit_decl' to suppress` and then reports the original error. A suppression with a justification and no rule is a parse error there, `expected 'rule'`. The bare form, with neither argument, works on both builds.
+
+The first embed holds the accepted forms, including one `rule:` suppression, so it runs on the Clang build only.
+
+<GodboltEmbed id="fsad41GWc" compilerLabel="clang_profiles_init" title="Initialization profile: accepted forms, one macro per rejected case" gcc_subtitle="clang_profiles_init · -std=c++26 -fprofiles · runs live, prints 3 4 4 4" />
+
+The file has one `SHOW_` macro for each rejected row, and the README lists them. The source is in [the examples repository](https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/105-init-profile).
+
+## Two papers that disagree
+
+[P4222R3](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4222r3.pdf) rejects member-wise assignment of an `[[uninit]]` aggregate. [P4415R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4415r0.pdf) says the GCC branch accepts it and the Clang branch accepts only whole-object initialization. P4415R0 dates the GCC change that rejects whole-object `[[uninit]]` on a mixed class to 21 October, and says the member-wise question is with the author.
+
+```cpp
+struct P { int a; int b; };
+int member_wise() { P p [[uninit]]; p.a = 1; p.b = 2; return p.a + p.b; }
+int whole()       { P p [[uninit]]; p = P{1, 2};        return p.a + p.b; }
+```
+
+On 2 November the two builds gave this:
+
+| | Clang build | GCC build |
+|---|---|---|
+| `member_wise` | rejected: "writing a member of an '[[uninit]]' object does not initialize it" | rejected: "member 'P::a' of 'p' is written before 'p' is initialized as a whole" |
+| `whole` | rejected: "calling member function 'operator=' binds its implicit object parameter to uninitialized memory" | accepted |
+| `std::construct_at(&p, P{1, 2})` | accepted | accepted |
+
+So today's GCC build agrees with P4222R3 on the member-wise case, which P4415R0 reported otherwise. The divergence moved to whole-object assignment. GCC's own note says to initialize the whole object first, "for example by assigning a braced initializer to it, or with `std::construct_at`". The Clang build rejects the first of those two.
+
+## A case from outside the paper
+
+The case comes from [a LinkedIn post](https://lnkd.in/p/d9Xiewbs) by Jelle Bakker (C++ Doctor). It is the second case, "Timing Is Everything", in their ebook "25 C++ Cases That Will Humble You". A class starts a `std::jthread` that counts in a loop. The thread member is declared before the atomic counter it increments, so the thread can run before the counter is initialized. I wrote my own version of the same bug with a different loop and different names:
+
+```cpp
+struct Ticker {
+    std::jthread worker;                 // starts running in the constructor...
+    std::atomic<unsigned> ticks = 0;     // ...before this member is initialized
+
+    Ticker()
+        : worker{[this](std::stop_token stop) {
+              while (!stop.stop_requested()) {
+                  ticks.fetch_add(1, std::memory_order_relaxed);
+              }
+          }} {}
+};
+```
+
+Both builds compiled it with no output at all, and the program ran and exited 0 on both. With `-Wall -Wextra -Weffc++` the GCC build was silent too. Declaring `worker` last, which the file does under `-DTHREAD_LAST`, changes nothing in the output either, so the profile does not distinguish the two orders.
+
+<GodboltEmbed id="qrGb8fxMv" compilerLabel="clang_profiles_init" title="A thread member declared before its counter, through the init profile" gcc_subtitle="clang_profiles_init · -std=c++26 -fprofiles -pthread · runs live, prints done" />
+
+The single-threaded version of the same mistake is also accepted. Take a constructor written `Pair() : a(b), b(1) {}`. Member `a` reads a `b` that does not exist yet. Both builds accepted it under the profile.
+
+The Clang build printed a warning, `field 'b' is uninitialized when used here`. The GCC build printed `member 'b' is used uninitialized` once I added `-Wall -Wextra`. Both come from the ordinary `-Wuninitialized` warning, not from the profile. Section 5.1 of P4222R3 says a constructor is checked to initialize every member not marked `[[uninit]]`. I did not find a rule about the order in which members are initialized, and the builds flagged none. The ordering bug in the thread case is covered in <PostLink slug="thread-member-declared-before-its-counter">its own post</PostLink>.
+
+## What I did not check
+
+- I ran the examples that are short enough to compile alone. I did not run the longer ones in sections 4.4 to 4.8 of P4222R3, the class templates, or the range algorithms.
+- P4415R0 says twelve rule names exist on the Clang build. I found nine, by guessing.
+- I did not read the source of either fork, so I cannot say why a case is accepted.
+- Both builds follow development branches. The results are those of 2 November 2026.
+- I did not run the thread under a sanitizer here. The paper does not claim the profile covers it.
