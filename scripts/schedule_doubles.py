@@ -175,6 +175,11 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
                    "why": "the spec addendum on nested changes, queued in both bindings, beside the contract_assert post"},
     "2026-11-05": {"slug": "moc-parity-bindable-constructors-namespaces", "hour": 16,
                    "why": "the three moc matrix rows that closed after the flagship, beside the Boost modules news"},
+    # The response to Leonardo Rossi's contracts post, ahead of the November meeting: their migration
+    # example under enforce, observe and ignore, and which names in a predicate are const. It runs beside
+    # the evergreen struct-layout post.
+    "2026-11-14": {"slug": "contracts-check-that-acts", "hour": 16,
+                   "why": "response to a reader's contracts post before the Buzios meeting, alongside the evergreen post"},
 }
 
 
