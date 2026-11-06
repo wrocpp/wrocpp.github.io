@@ -175,6 +175,11 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
                    "why": "the spec addendum on nested changes, queued in both bindings, beside the contract_assert post"},
     "2026-11-05": {"slug": "moc-parity-bindable-constructors-namespaces", "hour": 16,
                    "why": "the three moc matrix rows that closed after the flagship, beside the Boost modules news"},
+    # Two libstdc++ security fixes reached master and the 14, 15 and 16 branches on 29 October,
+    # and no point release has them. A vector<bool> built from a size within 62 of SIZE_MAX is
+    # accepted by GCC 16.2 and rejected by trunk. It runs beside the Boost decimal post of the day.
+    "2026-11-09": {"slug": "vector-bool-size-wraps-to-zero", "hour": 16,
+                   "why": "libstdc++ CVE-2026-114691 news short, GCC 16.2 against trunk, beside the Boost decimal post"},
 }
 
 
