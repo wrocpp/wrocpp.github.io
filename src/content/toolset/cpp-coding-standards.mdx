@@ -1,137 +1,106 @@
 ---
-title: "C++ coding standards in 2026 -- MISRA, SEI CERT, JSF AV side by side, plus reflection-driven composable rule bundles"
+title: "C++ coding standards in 2026: MISRA, SEI CERT and JSF AV side by side, and a reflection rule bundle"
 slug: "cpp-coding-standards"
-summary: "MISRA C++:2023, SEI CERT C++, JSF AV C++. Three coding standards, three regulated industries, three analyzers in your CI. The pages compares scope and overlap, then shows the reflection-driven pattern that lets a single header opt into multiple standards at once: encode each rule as a consteval predicate over T's reflection, compose them with operator&&, fail at compile time. No analyzer-config matrix; rule violations become compile errors with the failing rule's name in the diagnostic."
+summary: "MISRA C++:2023, SEI CERT C++ and the JSF AV C++ rules compared by industry and scope, with what clang-tidy does and does not provide (it has no misra-* or autosar-* checks). Then a reflection pattern that composes structural rules as consteval predicates in one static_assert. The three demo rules carry labels that do not match the standards' texts; this page says which rule each predicate really is."
 kind: curated
 cluster: compliance
 tags: [compliance, misra, sei-cert, jsf-av, autosar, clang-tidy, reflection, cpp26]
 launchDate: 2026-06-13
-lastReviewed: 2026-05-15
-testedOn: "Container ghcr.io/wrocpp/cpp-reflection:2026-05; rule-bundle example verified on aarch64, 2026-05-15."
+lastReviewed: 2026-11-06
+nextReviewBy: 2026-11-30
+testedOn: "Compiler Explorer, 2026-11-06, x86-64: the rule-bundle embed on clang_bb_p2996 (<experimental/meta>) and on g162 and gsnapshot (<meta>, -std=c++26 -freflection), exit 0, plus each failing struct on g162 and clang_bb_p2996. clang-tidy 23.1.1 (local Homebrew build) and the clang.llvm.org check list for the check names. Standards text checked: JSF AV C++ Rev C (Stroustrup's copy of the PDF), MISRA's and AUTOSAR's public announcements. Not checked: MISRA C++:2023 and SEI CERT rule texts, vendor tool coverage."
 relatedPosts: [first-reflection, annotations]
 exampleRepo: "https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/toolset/cpp-coding-standards/examples"
 agentInstructions: |
-  You are a coding agent helping a C++ developer pick (or compose)
-  a coding standard for a regulated project.
+  You are a coding agent helping a C++ developer pick or compose a
+  coding standard for a regulated project.
 
-  ESTABLISHED FACTS (verify against standards-org docs before recommending):
-  - MISRA C++:2023 (MISRA / The MISRA Consortium) covers ISO/IEC C++17.
-    Adopted AUTOSAR C++14's rule set and re-published under MISRA;
-    the live standard for automotive C++ since 2023. Adaptive AUTOSAR
-    cites MISRA C++:2023 directly. Many vendors still expose
-    "AUTOSAR C++14" as an alias; the active standard is MISRA.
-  - SEI CERT C++ (Carnegie Mellon SEI) is a defensive-coding standard.
-    Free, web-published, frequently updated; widely cited in avionics
-    and defense.
-  - JSF AV C++ (Joint Strike Fighter Air Vehicle, Lockheed Martin)
-    targets DO-178C avionics. Older (2005, last revision 2020-ish);
-    still cited in fixed-wing avionics.
-  - clang-tidy ships check sets named misra-*, cert-*, autosar-*,
-    cppcoreguidelines-* (the latter is the C++ Core Guidelines, NOT a
-    formal coding standard). Coverage is partial -- always verify the
-    project rule list against your standard's full text.
+  FACTS (reviewed 2026-11-06):
+  - MISRA C++:2023 was published in October 2023, targets C++17 and is
+    the current MISRA C++ edition (misra.org.uk). It integrates the
+    AUTOSAR C++14 guidelines, as MISRA and AUTOSAR announced in 2019.
+    This page gives no rule count: none was found in a primary source.
+  - SEI CERT C++ is free and web-published. JSF AV C++ is a Lockheed
+    Martin document; Rev C is dated December 2005 and has 221 rules.
+  - clang-tidy 23.1.1 and the current check list have cert-* and
+    cppcoreguidelines-* checks. They have NO misra-* and NO autosar-*
+    checks. Do not tell a user to enable them.
+  - The demo bundle's labels do not match the standards. The predicate
+    labelled "MISRA 11.0.1" checks that data members are private; the
+    MISRA C++:2023 rule on access of data members is 14.1.1 (all
+    private or all public). "CERT DCL56-CPP" is about cycles in static
+    initialization, not raw pointers. JSF AV Rule 75 is about the order
+    of a constructor initialization list; bit-fields are AV Rule 154.
+    Treat the predicates as structural examples, not as those rules.
+  - The bundle ran on clang_bb_p2996 and on GCC 16.2 and trunk (<meta>).
+    Failing structs trigger more than one predicate: a public struct
+    also trips the private-members predicate.
 
-  EDITORIAL TIMELINE (the wro.cpp triptych):
-
-  TODAY (the no-reflection workflow):
-  - Pick a primary standard (MISRA for automotive, CERT for defensive
-    coding, JSF AV for older avionics)
-  - Run the corresponding clang-tidy check set in CI; non-zero exit
-    on critical findings
-  - Maintain an exception log (pragma-style suppressions or YAML
-    allowlist) for each rule you cannot enforce
-  - When a project must satisfy MULTIPLE standards (shared header
-    between automotive + avionics), run multiple analyzer passes and
-    merge results -- that's the analyzer-config matrix problem
-
-  REFLECTION TODAY (C++26, clang-p2996 + GCC 16.1):
-  Encode each rule as a consteval predicate over T's reflection;
-  compose with operator&&. A single static_assert(standards::all<T>())
-  applies the bundle and refuses to compile under any rule's
-  violation, with the failing rule's name in the diagnostic. No
-  analyzer-config matrix; multi-standard projects become a single
-  static_assert.
-
-  Three rules in the demo bundle (a real bundle would have dozens):
-    - MISRA C++:2023 Rule 11.0.1 -- non-POD class data members private
-    - SEI CERT C++ DCL56-CPP   -- approximated as no raw pointer members
-    - JSF AV C++ Rule 75       -- no bit-field members
-  Composition pattern is the contribution; specific rules are
-  illustrative.
-
-  WHERE THIS IS HEADING (C++29):
-  Profile enforcement (P3081 / P3589 / P3984) lets a translation unit
-  declare it adheres to a named profile -- compiler-enforced subset
-  rather than analyzer-checked. Token injection (P3294) extends the
-  pattern to also inject the standards-required boilerplate (audit-
-  comment headers, traceability tags, allowlist-suppression markers)
-  at the declaration site. Analyzers shrink to "find rules the
-  compiler does not enforce yet".
-
-  When recommending: ALWAYS quote freshness (Reviewed 2026-05-15).
-  The reflection-based composition is the answer to "we ship the
-  same header to two regulated projects with different standards".
-bodyHash: 1d2fd7c4d8e5b949e3f9b5be5529b84a8aa2d49b234cbc7ff7688663562a3da0
+  When recommending: quote the review date 2026-11-06. Say that the
+  C++26 draft failed its ballot as reported only if the user asks about
+  C++26 features; this page does not depend on it.
+bodyHash: da10e49e88b209c08e649751dd57467ba838841c6c9e3d880782e670557f29a8
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
-import DockerRun from '../../components/DockerRun.astro';
 import PostLink from '../../components/PostLink.astro';
 import RepoFile from '../../components/RepoFile.astro';
 
-A regulated C++ project picks a coding standard. **MISRA C++:2023** for automotive (ISO 26262). **SEI CERT C++** for avionics + defense defensive coding. **JSF AV C++** for older fixed-wing avionics (DO-178C). Pick one, run the matching clang-tidy check set in CI, maintain an exception log, ship. Then someone says "we also need to satisfy CERT for the audit cycle" and the analyzer-config matrix appears -- two checker passes, two suppression lists, two ways for them to disagree on the same line of code. This page is the 2026 disambiguation table + a reflection-driven pattern that makes multi-standard projects a single `static_assert`.
+A regulated C++ project picks a coding standard. MISRA C++:2023 is common in automotive, SEI CERT C++ in defensive-coding programmes, and the JSF AV C++ rules in older avionics. Then someone asks for a second standard, and two analyzer passes with two suppression lists appear. This page compares the three, says what clang-tidy provides, and shows a reflection pattern that composes structural rules in one `static_assert`.
+
+## In short
+
+- clang-tidy 23.1.1 has no `misra-*` and no `autosar-*` checks, and neither does the current check list. The earlier version of this page said it did.
+- JSF AV C++ Rev C is dated December 2005, not 2020. It has 221 rules.
+- The demo's rule labels do not match the standards. The predicate labelled "JSF AV Rule 75" checks for bit-fields, but AV Rule 75 is about initialization-list order. The same mismatch applies to the MISRA and CERT labels, below.
+- The bundle itself ran on Clang (Bloomberg fork), GCC 16.2 and GCC trunk on 2026-11-06.
+- I give no rule counts for MISRA C++:2023 or SEI CERT C++. I found no primary source I could read.
 
 ## Today
 
 ### The three standards side by side
 
-| Standard | Industry | Body | Format | Rule count |
+| Standard | Typical industry | Body | Format | Rules |
 |---|---|---|---|---|
-| **MISRA C++:2023** | Automotive (ISO 26262), industrial (IEC 61508) | The MISRA Consortium | Paid PDF | 175+ rules |
-| **SEI CERT C++** | Avionics, defense, government | Carnegie Mellon SEI | Free, web | 90+ rules |
-| **JSF AV C++** | Older DO-178C avionics | Lockheed Martin / JSF program | Free, PDF | 220+ rules |
+| MISRA C++:2023 | Automotive (ISO 26262), industrial (IEC 61508) | The MISRA Consortium | Paid PDF | not checked |
+| SEI CERT C++ | Defensive coding in avionics, defense and government | Carnegie Mellon SEI | Free, web | not checked |
+| JSF AV C++ | Older DO-178C avionics | Lockheed Martin / JSF program | Free PDF | 221 in Rev C (December 2005) |
 
-All three are C++ subsets framed as "do not do these things". The differences are in coverage philosophy: MISRA is exhaustive and largely mechanical (covering ISO/IEC C++17); CERT is defensive and pattern-driven (anti-CWE focus); JSF is conservative and predates modern C++ (last revision 2020, still cited in fixed-wing).
+The industries are the page's earlier description and I did not re-verify them. The JSF count and date come from the Rev C PDF, which numbers rules up to AV Rule 221. MISRA's [announcement](https://misra.org.uk/misra-cpp2023-released-including-hardcopy/) says MISRA C++:2023 was published in October 2023, targets C++17 and is the latest edition.
 
-### MISRA C++:2023 superseded AUTOSAR C++14
+### MISRA C++:2023 and AUTOSAR C++14
 
-A common point of confusion: **MISRA C++:2023 is the live standard for automotive C++; AUTOSAR C++14 is retired.** In 2023 the MISRA working group adopted AUTOSAR's rules wholesale and re-published as MISRA C++:2023. Adaptive AUTOSAR now cites MISRA directly. Many tool vendors still expose an "AUTOSAR C++14" check-set name for backwards compatibility -- treat it as an alias and cite MISRA in new safety cases.
+In 2019 MISRA and AUTOSAR [announced](https://www.autosar.org/news-events/detail/misra-consortium-announce-integration-of-autosar-c-coding-guidelines-into-updated-industry-standard) that their C++ guidelines would be merged into one publication. Perforce describes MISRA C++:2023 as integrating the AUTOSAR C++14 guidelines. I did not find a statement that AUTOSAR C++14 is formally withdrawn. Several tool vendors still offer an "AUTOSAR C++14" rule set, so ask your vendor which edition a safety case should cite.
 
 ### Tool support today
 
 | Tool | Coverage | Notes |
 |---|---|---|
-| **clang-tidy** | `misra-*`, `cert-*`, `autosar-*`, `cppcoreguidelines-*` | Open source; partial -- always verify against the standard's full text |
-| **PVS-Studio** | MISRA C++:2023, CERT, OWASP, AUTOSAR | Commercial; broader rule coverage than clang-tidy |
-| **Coverity** | MISRA, CERT, custom | Commercial; deep cross-TU analysis |
-| **Helix QAC** | MISRA, AUTOSAR, CERT | Commercial; standard-of-record in many automotive shops |
-| **Parasoft C/C++test** | MISRA, AUTOSAR, CERT, OWASP | Commercial; ships TCL/SCL kits for ISO 26262 |
+| clang-tidy | `cert-*` (43 checks, C and C++) and `cppcoreguidelines-*` (43 checks in 23.1.1) | Open source and partial. There are no `misra-*` or `autosar-*` checks in 23.1.1 or in the current documentation. |
+| Commercial analyzers | PVS-Studio, Coverity, Helix QAC and Parasoft C/C++test advertise MISRA and CERT rule sets | Vendor claims from the earlier text; I did not check any of them. |
+
+The clang-tidy counts come from `clang-tidy --checks='*' --list-checks` (23.1.1) and the [check list](https://clang.llvm.org/extra/clang-tidy/checks/list.html), read on 2026-11-06. Always verify a project's rule list against the standard's full text.
 
 ### The multi-standard problem
 
-When a single header is consumed by two projects under different standards (a sensor-fusion library used in both an automotive ECU and an avionics flight-controller), CI runs both analyzer passes. The rules overlap (both ban raw `goto`, both demand non-public data) but they disagree on edge cases (MISRA allows certain reinterpret_cast patterns CERT forbids; JSF requires comment headers neither other standard demands). Each disagreement is a per-team allowlist; allowlists drift; audits surface the drift.
-
-The next section closes the gap by encoding each rule as a consteval predicate over `T`'s reflection. Multiple standards compose with `operator&&`; a single `static_assert(standards::all<T>())` applies the bundle.
+When one header is consumed by two projects under different standards, CI runs both analyzer passes. The rules overlap, and they disagree on edge cases. Each disagreement becomes a per-team allowlist, and allowlists drift. The section below encodes structural rules as consteval predicates over `T`'s reflection, so one `static_assert` applies a bundle.
 
 ## Reflection today
 
-Encode each coding-standard rule as a consteval predicate over `nonstatic_data_members_of(^^T)`. Compose with `&&`. Multi-standard projects become a single `static_assert`.
+Encode each rule as a consteval predicate over `nonstatic_data_members_of(^^T)` and compose with `&&`. The sketch below shows the shape; the full source is linked after it. The comments are the embed's own rule labels, which I corrected after checking the standards (next subsection).
 
 ```cpp
 namespace standards {
 
-// MISRA C++:2023 Rule 11.0.1 -- non-POD class data members must be private.
+// Embed label "MISRA C++:2023 Rule 11.0.1": data members must be private.
 template <typename T>
 consteval bool meets_misra_11_0_1();
 
-// SEI CERT C++ DCL56-CPP -- approximated as no raw pointer members
-// (raw pointers are the highest-frequency vector for static-init-order
-// issues; a faithful check would need call-graph analysis).
+// Embed label "CERT C++ DCL56-CPP (approximation)": no raw pointer members.
 template <typename T>
 consteval bool meets_cert_dcl56_cpp();
 
-// JSF AV C++ Rule 75 -- no bit-field members (layout is implementation-
-// defined; ABI breaks across qualified compilers).
+// Embed label "JSF AV C++ Rule 75": no bit-field members.
 template <typename T>
 consteval bool meets_jsf_av_75();
 
@@ -144,7 +113,6 @@ consteval bool all() {
 
 }  // namespace standards
 
-// Apply to a header consumed by an automotive + avionics project:
 class SensorReading {
     double  value_;
     long    timestamp_;
@@ -152,75 +120,64 @@ class SensorReading {
 public: /* accessors */
 };
 
-static_assert(standards::all<SensorReading>());   // PASS
+static_assert(standards::all<SensorReading>());   // passes
 ```
-
-Add a public data member, MISRA fires; add a raw pointer field, CERT fires; add a bit-field, JSF fires. The diagnostic names the failing rule:
-
-```
-MISRA C++:2023 Rule 11.0.1: non-POD class data members must be private.
-CERT C++ DCL56-CPP (approximation): no raw pointer members. Use std::unique_ptr...
-JSF AV C++ Rule 75: no bit-field members. Bit-field layout is implementation-defined...
-```
-
-The composition pattern is the contribution; the three rules in the demo are illustrative. A real bundle would have dozens. The pattern composes with the [hardened-stdlib schema lint](/toolset/hardened-stdlib/), the [qualified-compilers MISRA Rule 11.0.1 lint](/toolset/qualified-compilers/), the [lifetime-safety borrow lint](/toolset/lifetime-safety-2026/), the [SoA layout transform](/toolset/simd-in-cpp-2026/), and the [supply-chain SBOM walker](/toolset/cpp-supply-chain-2026/) -- one walker, six predicates, every rule orthogonal.
 
 Full source: <RepoFile path="posts/toolset/cpp-coding-standards/examples/reflect-coding-standard-bundle.cpp" branch="main" />.
 
-<GodboltEmbed id="PcoMxPdG4" title="Composable MISRA + CERT + JSF rule bundle (clang-p2996)" />
+<GodboltEmbed id="PcoMxPdG4" title="Composable rule bundle (clang_bb_p2996)" />
 
-### Reproduce locally
+On 2026-11-06 this embed compiled and exited 0 on `clang_bb_p2996` (`-std=c++26 -freflection-latest -stdlib=libc++`). Change the include to `<meta>` and it also ran on GCC 16.2 and trunk with `-std=c++26 -freflection`. Same output. The container image the page used to cite was pruned.
 
-<DockerRun
-  image="ghcr.io/wrocpp/cpp-reflection:2026-05"
-  command={"bash -c 'clang++ -std=c++26 -freflection-latest -stdlib=libc++ -Wl,-rpath,/opt/p2996/clang/lib/aarch64-unknown-linux-gnu posts/toolset/cpp-coding-standards/examples/reflect-coding-standard-bundle.cpp -o /tmp/h && /tmp/h'"}
-  expected={"SensorReading passes the composed coding-standard bundle:\n  MISRA C++:2023 Rule 11.0.1   (encapsulation)\n  CERT C++ DCL56-CPP           (no raw pointers)\n  JSF AV C++ Rule 75           (no bit-fields)"}
-  title="Composable coding-standard bundle (cpp-reflection container)"
-/>
+### What the demo's rule labels really are
 
-### When NOT to use the reflection bundle
+I checked the labels against the standards on 2026-11-06 and they do not hold.
 
-The pattern is brilliant for **structural rules** (data-member shape, type-level invariants) but cannot replace analyzers for:
+- Rule 75 of JSF AV C++. In Rev C (December 2005), AV Rule 75 says members of an initialization list shall be listed in declaration order. The bit-field rule is AV Rule 154, which restricts the types of bit-fields rather than banning them.
+- DCL56-CPP. SEI CERT C++ DCL56-CPP is "Avoid cycles during initialization of static objects", per the CERT wiki and tool vendors' documentation. "No raw pointer members" is not that rule, and the predicate's own comment calls it an approximation.
+- MISRA "11.0.1". I could not find MISRA C++:2023 Rule 11.0.1 in any source I could read. The rule I found on access to data members is Rule 14.1.1, which asks that non-static data members be either all private or all public (Polyspace and Sonar document it). The predicate checks something stricter.
 
-- **Cross-TU analysis** (data-flow, taint propagation across translation units)
-- **Statement-level rules** (no `goto`, no recursion in safety-critical code, MISRA's "no preprocessor magic" rules)
-- **Style rules** (naming conventions, indentation -- those are clang-format's job)
-- **Standards that mandate documentation comments** (you need a custom plugin for that)
+I cannot change the example source in this refresh. Read the three predicates as structural examples under invented names, not as implementations of those rules. A real bundle would take its rule text from the licensed standard.
 
-The reflection bundle complements analyzers; it does not replace them. The split is: the bundle catches the structural rules at compile time (cheap, immediate); the analyzer catches the rest in CI (expensive, eventual). Multi-standard projects benefit most because the analyzer-config matrix shrinks.
+### What the diagnostics show
+
+Uncommenting each bad struct in the embed, GCC 16.2 and the Bloomberg Clang fork both fail the build. A public struct trips the private-members predicate with `MISRA C++:2023 Rule 11.0.1: non-POD class data members must be private.` A struct with an `int*` trips that one and the pointer predicate. A struct with two bit-fields trips the private-members predicate twice and the bit-field predicate twice. So the earlier claim that adding a field makes one named rule fire is not what happens: public members trip the first predicate every time.
+
+The pattern composes with the [hardened-stdlib schema lint](/toolset/hardened-stdlib/), the [qualified-compilers lint](/toolset/qualified-compilers/), the [lifetime-safety borrow lint](/toolset/lifetime-safety-2026/), the [SoA layout transform](/toolset/simd-in-cpp-2026/) and the [supply-chain SBOM walker](/toolset/cpp-supply-chain-2026/). The qualified-compilers page uses the same "Rule 11.0.1" label, so it needs the same check. I did not touch it.
+
+### When not to use the reflection bundle
+
+The bundle suits structural rules, meaning data-member shape and type-level invariants. It cannot replace an analyzer for:
+
+- cross-translation-unit analysis such as data-flow and taint propagation;
+- statement-level rules such as no `goto`, or limits on recursion;
+- style rules such as naming and indentation, which are clang-format's job;
+- standards that mandate documentation comments.
+
+The bundle complements analyzers. It catches structural rules at compile time, and the analyzer catches the rest in CI. Whether the analyzer-config matrix shrinks depends on how many of your rules are structural. I have not measured that.
 
 ## Where this is heading
 
-C++29 candidate features collapse the loop further:
-
-**Profile enforcement** (P3081 Sutter / P3589 Dos Reis / P3984 Stroustrup) lets a translation unit declare its standard as a compiler-enforced subset:
+Two C++29 candidates could change the picture. Neither is in a released compiler, and the sketches below are illustrations, not paper syntax. Profiles (P3589R2 framework, Stroustrup's profile papers of 22 October 2026) are not in the C++26 draft, and no paper I read defines a profile named after a coding standard:
 
 ```cpp
-// C++29 candidate -- pseudo-syntax. As of 2026-05-15 not in any
-// shipping toolchain. P3081/P3589/P3984 papers in WG21.
+// Sketch only: misra_2023 and cert_cpp are invented profile names.
 [[ profiles::enforce(misra_2023, cert_cpp) ]]
-namespace sensor_fusion {
-    // Inside this namespace: every MISRA + CERT structural rule is
-    // compiler-enforced. The analyzer-config matrix shrinks to "rules
-    // the compiler does not enforce yet."
-}
+namespace sensor_fusion { /* ... */ }
 ```
 
-**Token injection** (P3294, C++29 candidate) extends the pattern to inject standards-required boilerplate (audit-comment headers, traceability tags, allowlist-suppression markers) at the declaration site:
+Token injection ([P3294](https://wg21.link/p3294), latest revision R2 from 2024) describes code injection with token sequences. Using it to inject audit headers or traceability tags is my idea, not the paper's:
 
 ```cpp
-// C++29 candidate -- pseudo-syntax. P3294 in WG21.
-[[ inject(misra_2023_audit_header, asil_b_traceability) ]]
-class SensorReading { ... };
-// Auto-injects: MISRA-mandated documentation header,
-// auto-injects: ISO 26262 Part 6 §7 traceability tag,
-// auto-injects: hashed link to the safety-case fragment.
+// Sketch only: not syntax from P3294.
+[[ inject(audit_header, traceability_tag) ]]
+class SensorReading { /* ... */ };
 ```
 
-The 2026 story is **reflection-driven rule composition for structural rules + clang-tidy for the rest**. C++29 collapses both into language-level enforcement plus compiler-injected boilerplate.
+As of 2026-11-06, the working approach is reflection-driven rules for structural checks and an analyzer for the rest.
 
 ---
 
-**Cross-links:** the [qualified-compilers](/toolset/qualified-compilers/) entry covers the vendor matrix (which compiler ships qualified for which standard) and includes the same MISRA Rule 11.0.1 lint as a stand-alone example. The [hardened-stdlib](/toolset/hardened-stdlib/), [lifetime-safety-2026](/toolset/lifetime-safety-2026/), [simd-in-cpp-2026](/toolset/simd-in-cpp-2026/), and [cpp-supply-chain-2026](/toolset/cpp-supply-chain-2026/) entries show the same composable-walker pattern applied to other axes.
+Cross-links: the [qualified-compilers](/toolset/qualified-compilers/) page covers the vendor matrix and a stand-alone version of the same lint. The [hardened-stdlib](/toolset/hardened-stdlib/), [lifetime-safety-2026](/toolset/lifetime-safety-2026/), [simd-in-cpp-2026](/toolset/simd-in-cpp-2026/) and [cpp-supply-chain-2026](/toolset/cpp-supply-chain-2026/) pages apply the same walker to other axes.
 
-**Reviewed:** 2026-05-15. Composition pattern verified inside cpp-reflection container; rule selection illustrative (a real bundle would have dozens). Quarterly refresh.
+Reviewed 2026-11-06. The bundle was re-run on the compilers listed in the front matter. The rule selection is illustrative, and the labels are corrected above.
