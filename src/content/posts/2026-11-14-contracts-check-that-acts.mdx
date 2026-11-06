@@ -1,0 +1,214 @@
+---
+title: "Where a C++26 contract check stops being const"
+slug: "contracts-check-that-acts"
+pubDate: 2026-11-14
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp26, contracts, release-builds, correctness]
+summary: "Leonardo Rossi's rule is that a check never acts. On GCC 16.2 a contract predicate cannot call a non-const member directly, but eight other ways to change state compile and run. The post runs a migration example under enforce, observe and ignore and answers their two questions with measured facts."
+draft: true
+relatedPosts: [contracts-that-prove-something, cpp26-contracts, contracts-dispute, c26-dis-ballot-result, dis-ballot-contracts-papers, check-a-statement-with-contract-assert]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+Leonardo Rossi's rule for a check is that it never acts: it reads state and returns a bool.
+C++26 contracts enforce part of that rule.
+On GCC 16.2 a precondition that calls a non-const member on a parameter or on `*this` does not compile.
+Eight other ways to change state do compile, and each one ran.
+
+## In short
+
+- My reworded version of Leonardo's migration example behaves as they described. Enforce stops the program, observe reports and carries on, ignore moves the revision from 6 to 9 in silence.
+- A direct call to a non-const member in a predicate is a compile error. With `-fpermissive` GCC downgrades it to a warning, and the call happens.
+- Pointers, `mutable` members, function calls, `const_cast` and lambdas that name a global all compile in a predicate and act.
+- Ignore keeps the predicate compiled. A predicate that names an undefined function links under ignore and fails to link under the other semantics.
+- libstdc++ 16.2 hardening does not use contract assertions, so ignore does not switch it off.
+- None of the documents I read says that the committee decides in November.
+
+## What Leonardo asked
+
+Leonardo Rossi, a C++ and Qt engineer, wrote [a post on schema migrations](LEONARDO_FIRST_POST_URL).
+Readers raised "debug what you ship" in its comments.
+The follow-up, [on contracts](LEONARDO_CONTRACTS_POST_URL), keeps the rule "pedantic in debug, minimal in release" with one constraint: checks never act.
+They like contracts because a predicate sees everything it names as const.
+
+Two questions end the post.
+Should we use contracts as they are, or wait for a design that can also be a guarantee?
+And would you use the ignore semantic in a release build?
+The migration code below is my wording of their example, with other names and numbers.
+
+## The migration example under three semantics
+
+A registry starts at revision 6.
+The call asks for revision 9, which skips 7 and 8.
+
+```cpp
+void migrateTo(Registry& registry, const std::uint32_t target)
+    pre(target == registry.revision() + 1)
+    post(registry.revision() == target)
+{
+  registry.setRevision(target);
+}
+```
+
+The build picks what happens, with `-fcontract-evaluation-semantic`.
+I ran the file on GCC 16.2 and on GCC trunk (17.0.0 of 6 November), at `-O0` and `-O2`.
+All four builds gave the same results:
+
+| semantic | exit | what happened |
+|---|---|---|
+| enforce (the default) | 134 | a report, then SIGABRT before the function body ran |
+| observe | 0 | the same report, then `revision is now 9` |
+| ignore | 0 | `revision is now 9` and nothing else |
+| quick_enforce | 134 | no report; `start` is the only output |
+
+The enforce report reads:
+
+```text
+contract violation in function void {anonymous}::migrateTo(Registry&, uint32_t) at /app/example.cpp:28: target == registry.revision() + 1
+[assertion_kind: pre, semantic: enforce, mode: predicate_false, terminating: yes]
+terminate called without an active exception
+```
+
+The observe report differs in two fields: `semantic: observe` and `terminating: no`.
+The embed runs the observe build, because it exits 0.
+A <PostLink slug="check-a-statement-with-contract-assert">`contract_assert` statement</PostLink> in a function body follows the same const rule.
+
+<GodboltEmbed id="xqrM15j7r" gccOnly gccLabel="GCC 16.2" title="One skipped migration, three semantics" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -fcontracts -O2 · observe semantic · runs live" />
+
+Building with `-DSHOW_ERROR` adds a function whose precondition calls a non-const member.
+GCC 16.2 stops with this message:
+
+```text
+error: passing 'const {anonymous}::Registry' as 'this' argument discards qualifiers [-fpermissive]
+```
+
+## Which names are const
+
+The mechanics of `pre` and `post` are in <PostLink slug="cpp26-contracts">an earlier post</PostLink>.
+P2900R14 section 3.4.2 makes every id-expression that names a variable declared outside the predicate a const lvalue.
+The const is shallow.
+Each row below is one predicate, with the same result on GCC 16.2 and on trunk:
+
+| the predicate | P2900R14 | GCC |
+|---|---|---|
+| calls a non-const member on a reference parameter or on `*this` | error (3.4.2) | error, message above |
+| assigns through a reference parameter | error | `assignment of read-only location '(const int)reference'` |
+| increments a namespace-scope variable | error (the paper's example assigns) | `increment of read-only location '(const int){anonymous}::g_counter'` |
+| increments a by-value parameter | error | `increment of read-only location '(const int)value'` |
+| calls a non-const member through a pointer parameter | allowed, the const is shallow | compiles, acts |
+| increments a `mutable` member | allowed | compiles, acts |
+| calls a const member that increments a `mutable` or static counter | allowed, side effects discouraged (3.5.8) | compiles, acts |
+| calls a function with a side effect | allowed (3.5.8) | compiles, acts |
+| `const_cast` on a name | allowed, undefined on a truly const object | compiles, acts |
+| a lambda that increments a global | error, in the paper's lambda example | compiles, acts |
+| a lambda that increments its own local | not const | compiles, no outside effect |
+
+"Acts" means the program below printed 1 for that row under observe.
+It also printed 1 under enforce and 0 under ignore, at `-O0` and `-O2`, on both compilers.
+The paper does not promise that count.
+Section 3.5.8 lets an implementation evaluate a predicate zero, one or many times.
+
+<GodboltEmbed id="zd1cYMs3Y" gccOnly gccLabel="GCC 16.2" title="Nine predicates, how often each one acted" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -fcontracts -O2 · observe semantic · runs live" />
+
+The lambda row differs from the paper, which calls it an error in section 3.4.2.
+Three Clang forks on Compiler Explorer built the same file.
+Those labelled P4324 and P3850 rejected the lambda row: `cannot assign to variable 'g_counter' because it is considered 'const' inside of a contract`.
+The one labelled EricWF built and ran it.
+I did not check which design each fork implements.
+
+The first row is a diagnostic that `-fpermissive` can downgrade.
+With that flag the non-const call compiled with a warning, and one call changed the revision from 0 to 1 under enforce and observe.
+Under ignore it stayed 0.
+Their statement that such a check does not compile holds for the default flags.
+
+## By-value parameters in a postcondition
+
+A by-value parameter that a postcondition names must be const on every declaration, including a later one with no postcondition (3.4.4).
+That is why the example takes `const std::uint32_t target`.
+GCC 16.2 rejects four ways of breaking it.
+They are a non-const parameter, const on the first declaration only, a later redeclaration without const, and an array parameter.
+The messages are variations of `a value parameter used in a postcondition must be const`.
+
+The paper makes a coroutine definition that names a value parameter in a postcondition ill-formed.
+GCC 16.2 and trunk accept it and run it.
+
+## What ignore keeps in place
+
+Ignore does not evaluate the predicate.
+It still parses it, and the names in it count as used (3.5.4).
+[Cppreference](https://en.cppreference.com/w/cpp/language/definition) says every odr-used non-inline function needs a definition, and a compiler need not diagnose a missing one.
+
+I tested a predicate that calls a function declared and never defined:
+
+| semantic | `-O0` and `-O2`, GCC 16.2 and trunk |
+|---|---|
+| ignore | links, `half(8) = 4` |
+| observe, enforce, quick_enforce | `undefined reference to '(anonymous namespace)::isEven(int)'` |
+
+So under ignore GCC emits no reference to the function, and the link succeeds.
+The standard does not promise that.
+<PostLink slug="contracts-that-prove-something">The earlier post on provable contracts</PostLink> reports the same link result for GCC 16.2.
+Ignore is not the same as deleting the check, the way `-DNDEBUG` deletes an `assert`.
+The predicate must stay valid code.
+
+## Does ignore change library hardening?
+
+P4433R0, note 6, says that under P3878R1 a standard library does not count as hardened if it evaluates its hardened preconditions with observe.
+That is a statement about the library specification in the standard.
+I checked GCC's library.
+
+In libstdc++ 16.2, `vector::operator[]` expands to a plain call to `std::__glibcxx_assert_fail`.
+The preprocessed `<vector>` contains no `contract_assert`.
+With `-D_GLIBCXX_ASSERTIONS`, an index past the end aborted with the library's own message under all four semantics, and without `-fcontracts`.
+So ignore did not change libstdc++ hardening on GCC 16.2.
+At `-O2` without the macro, the same read printed 0 and exited 0, because [the libstdc++ manual](https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_macros.html) defines `_GLIBCXX_ASSERTIONS` by default only without optimization.
+
+## Debug what you ship, in one codebase
+
+The [Chrome Security 2026 Q3 update](https://www.chromium.org/Home/chromium-security/quarterly-updates/) says Chrome 152 started converting DCHECK to CHECK.
+It lands up to 5000 conversions per milestone and continues until at least Chrome 159.
+The update gives the reason as hardening invariants and flagging logic mistakes before they escalate.
+It does not define the terms. DCHECK is Chromium's debug-build check and CHECK stays in release, which is my background knowledge.
+The update gives no cost figures, and I read only its Q3 section.
+
+## The ballot, as each source says it
+
+This section reports and does not judge.
+Earlier posts cover <PostLink slug="contracts-dispute">the dispute</PostLink>, <PostLink slug="c26-dis-ballot-result">the ballot result</PostLink> and <PostLink slug="dis-ballot-contracts-papers">the contracts papers of the September mailing</PostLink>.
+Mateusz Pusz ([25 October](https://train-it.eu/blog/cpp26-contracts-the-ballot-result/)) writes that the ballot closed on 23 October and the draft was disapproved.
+Pusz expects the No votes to be about contracts, and notes that the national-body comments are not public.
+Andreas Fertig ([3 November](https://andreasfertig.com/blog/2026/11/cpp26-dis-failed-how-does-cpp-survive/)), a member of the German delegation, gives personal views and also reads the comments as being about contracts.
+
+[P4238R1](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4238r1.pdf) (1 September; Falco, Voutilainen, García Sánchez, Spicer) asks national bodies to vote No.
+Its abstract says "No record indicates that the opposition had been answered".
+Section 3 says objections were met with rebuttals, and the paper says no rule was broken.
+[P4433R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4433r0.pdf) (23 October; Doumler, Berne and 14 co-authors) was written before the result was known.
+It names P4238R1 among papers published around a public petition, and calls that group's claims untrue: no genuine consensus, a hasty design, objections not heard.
+It calls the estimate of a delay of months not realistic.
+It asks Búzios to confirm by poll that, if the ballot failed, WG21 should seek another ballot without altering or removing contracts.
+
+On what happens in November, the sources differ.
+Pusz and P4433R0 say the SC22 chair chooses the course, and WG21 recommends.
+Fertig writes that every route needs a majority in WG21, and expects the 16 November meeting to try to break the deadlock.
+The agenda N5058 (16 September) for Búzios, 16 to 21 November, lists "Work on C++29 features" and no DIS item.
+The telecon agenda N5064 (29 October) has no contracts item.
+None of these documents says that the committee decides in November, and I did not see the updated Búzios agenda.
+
+## My answer to the two questions
+
+> OPINION: to be supplied by the author
+
+## What I did not run
+
+- GCC 16.2 and trunk on Compiler Explorer, plus the Clang forks on one example.
+- No libc++ or Microsoft library, and no measurement of what a check costs.
+- The national-body comments, which are not public.
+- A follow-up post on Monday measures the build flags that people expect to switch contracts off.
+
+The examples are [in the examples repo](https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/113-contracts-check-that-acts).
+Thanks to Leonardo Rossi for the post and the two questions.
