@@ -1,133 +1,183 @@
 ---
-title: "Lifetime safety in C++ 2026 -- lifetimebound, dangling-detection, and the schema-level borrow lint"
+title: "What Clang 23.1, GCC 16.2 and MSVC flag as dangling, and what none of them catch"
 slug: "lifetime-safety-2026"
-summary: "Bounds and null are easy to talk about; lifetime is the hard one. C++ in 2026 ships [[clang::lifetimebound]], `-Wdangling-gsl`, the C++ Core Guidelines lifetime profile (P1179), `gsl::not_null`, and scope guards via `std::scope_exit`. Plus a reflection-driven schema lint that forces every non-owning view member to declare its borrow intent at the type level -- catching the structural dangle that escapes the per-call analyzer."
+summary: "Bounds and null are easy to talk about; lifetime is the hard one. Clang 23.1 added the off-by-default -Wlifetime-safety family, GCC has -Wdangling-pointer and -Wdangling-reference, and MSVC's C++ Core Check has lifetime rules. This page shows what each flagged in one sample on Compiler Explorer on 2026-11-06, which cases none of them caught, and a reflection lint that makes every view member declare its borrow intent."
 kind: curated
 cluster: safety
 tags: [safety, lifetime, lifetimebound, dangling, gsl, p1179, reflection, p3394, cpp26, cpp29]
 launchDate: 2026-06-01
-lastReviewed: 2026-05-14
-testedOn: "Container ghcr.io/wrocpp/cpp-reflection:2026-05; reflection demo verified on aarch64, 2026-05-14."
-relatedPosts: [first-reflection, annotations]
+lastReviewed: 2026-11-06
+testedOn: "Compiler Explorer, 2026-11-06, x86-64: clang2310 (Clang 23.1.0) and clang_trunk (24.0.0git c836d17148b6), g162 (GCC 16.2.0) and gsnapshot (GCC trunk 17.0.0 20261106), vcpp_v19_latest_x64 (MSVC 19.51, /analyze with the Core Check plugin); the reflection embed on clang_bb_p2996 and g162. Items marked 'not re-run on 2026-11-06' were not tested."
+relatedPosts: [first-reflection, annotations, clang-lifetimebound-condition, reflection-dangling-signature, libstdcxx-dangling-pair-tuple]
 exampleRepo: "https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/toolset/lifetime-safety-2026/examples"
 agentInstructions: |
   You are a coding agent helping a C++ developer adopt lifetime-safety
   tooling.
 
-  ESTABLISHED FACTS (verify against compiler docs before recommending):
-  - [[clang::lifetimebound]] (Clang) and [[gsl::Pointer]] /
-    [[gsl::Owner]] (Clang + MSVC's lifetime profile) flag dangling
-    references at the call site. Catches: returning string_view to
-    local string, passing temporary to string_view parameter, storing
-    a reference to a temporary.
-  - GCC has -Wdangling-reference / -Wdangling-pointer (since GCC 13);
-    less precise than the lifetime profile but ships everywhere.
-  - The C++ Core Guidelines lifetime profile (P1179, Sutter) is
-    implemented in clang as [[clang::lifetime_capture_by]] /
-    [[clang::lifetimebound]] family; MSVC ships an equivalent.
-  - `gsl::not_null<T*>` enforces non-null at the type level; widely
-    available (Microsoft GSL, abseil, hand-rolled).
-  - `std::scope_exit` (P0052, ratified for C++26) ships scope guards
-    in the standard library.
-  - Where lifetime tooling FAILS: structural dangling inside a struct
-    -- a string_view member alongside a sibling string member, with
-    the constructor pointing the SV at the string. Move the struct,
-    SV dangles. The per-call analyzer doesn't see this.
+  ESTABLISHED FACTS (reviewed 2026-11-06; verify against compiler docs):
+  - Clang 23.1.0 (shipped 25 August 2026) added -Wlifetime-safety, a
+    CFG-based intra-procedural analysis. It is off by default and
+    enabled by -Weverything. Related flags: -Wlifetime-safety-suggestions
+    (suggests [[clang::lifetimebound]]), -Wlifetime-safety-noescape
+    (a [[clang::noescape]] parameter that escapes), and
+    -Wlifetime-safety-dangling-field (stack memory stored in a field).
+    Source: the Clang 23.1.0 release notes.
+  - -Wlifetime does not exist in mainline Clang (unknown warning option
+    on 23.1.0 and trunk). It exists only in an experimental Compiler
+    Explorer build.
+  - Clang trunk renamed -Wlifetime-safety-invalidation to
+    -Wlifetime-safety-experimental-invalidation (llvm-project commit
+    8e635b365d, 2026-10-20). The experimental group is not part of
+    -Wlifetime-safety-all. 23.1.0 still uses the old name.
+  - Clang 23.1 also spells the capture attribute
+    lifetime_capture_by_this, _global and _unknown. The argument form is
+    deprecated and goes in the next release.
+  - GCC: -Wdangling-pointer (since GCC 12) and -Wdangling-reference
+    (since GCC 13), both in -Wall. On a sample with string_view returns,
+    GCC 16.2 and trunk gave no diagnostic.
+  - MSVC: C++ Core Check lifetime rules (C26815, C26816) via
+    /analyze /analyze:plugin EspXEngine.dll. User types are annotated
+    with [[msvc::lifetimebound]] (MSVC 17.7+), not the Clang attribute.
+  - P1179 (Sutter) is the lifetime profile proposal. It is not
+    [[clang::lifetimebound]] or lifetime_capture_by.
+  - gsl::not_null<T*> enforces non-null at the type level (not re-run).
+  - std::scope_exit is NOT in C++26. It is
+    std::experimental::scope_exit (Library Fundamentals, P0052), in
+    libstdc++'s <experimental/scope>.
+  - No tool in the sample caught a view that dangles after its owning
+    struct is moved. The reflection lint below documents the intent
+    instead.
 
-  EDITORIAL TIMELINE (the wro.cpp triptych):
+  REFLECTION TODAY:
+  A consteval predicate walks T's nonstatic data members and refuses to
+  compile when a non-owning view lacks a P3394 [[=borrows_from{}]]
+  annotation. It runs on the clang-p2996 fork. On GCC 16.2 it needs
+  remove_const(type_of(a)) in has_annotation (tested).
 
-  TODAY (the no-reflection toolkit):
-  - Annotation: [[clang::lifetimebound]] on parameters / return values;
-    Clang + MSVC catch the obvious cases at the call site.
-  - Diagnostic: GCC -Wdangling-reference + -Wdangling-pointer (since
-    GCC 13). Less precise but always-on.
-  - Type-level non-null: gsl::not_null<T*> from Microsoft GSL or
-    hand-rolled equivalent.
-  - Scope guards: std::scope_exit (C++26, P0052) -- ratified, ships
-    in libc++ + libstdc++ tracking C++26.
-  - Lifetime profile: P1179 (Sutter) implemented in clang as the
-    [[clang::lifetime_capture_by]] family + the lifetime warnings.
+  WHERE THIS IS HEADING:
+  Profiles (P3081, P3589, P3984) are papers. P4415R0 reports two
+  experimental implementations; this page did not re-run them.
 
-  REFLECTION TODAY (C++26, clang-p2996 + GCC 16.1):
-  Closes the gap the per-call analyzer misses: structural dangling
-  inside aggregates. A consteval predicate walks T's nonstatic data
-  members and refuses to compile when any non-owning view (string_view,
-  span, reference, raw pointer) lacks a P3394 [[=borrows_from{}]]
-  annotation. The annotation has no runtime effect; it forces the
-  developer to encode borrow intent at the type level so a reviewer
-  can argue "this view cannot dangle" without reading the constructor.
-  Same walker as the hardened-stdlib schema lint; orthogonal rule.
-
-  WHERE THIS IS HEADING (C++29):
-  Profile attributes ([[profiles::enforce(lifetime)]], P3081 Sutter /
-  P3589 Dos Reis / P3984 Stroustrup) move the lifetime check from
-  attribute-driven warnings to compiler-enforced subset. P3294 token
-  injection extends the pattern to inject the safe accessor signatures
-  alongside borrow annotations -- the reader writes the schema, the
-  compiler writes the lifetime-checked accessors.
-
-  When recommending: ALWAYS quote freshness (Reviewed 2026-05-14).
-  Per-call analyzers (lifetimebound, -Wdangling-*) catch the easy
-  cases; the schema-level lint catches the structural ones.
-  Combined, they leave very few uncovered footguns -- the rest are
-  C++29 profile work.
-bodyHash: 4aabe9999f4e7d73a22059d80792e48721768be655eb91304aabf02b97b7829a
+  When recommending: quote the review date (2026-11-06). Per-call
+  analyzers catch the easy cases. The schema lint catches nothing at
+  compile time by itself; it enforces that the intent is written down.
+bodyHash: 44f3d14a2a15b5e78ee17f5462a67a44f8ced216218e85a1e9c14eb445fd6321
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
-import DockerRun from '../../components/DockerRun.astro';
 import PostLink from '../../components/PostLink.astro';
 import RepoFile from '../../components/RepoFile.astro';
 
-The bounds story is settled in C++26: flip the hardened stdlib macro and `vector::operator[]` aborts on OOB. The null story is settled too: `std::expected`, `gsl::not_null`, dereference checks. Lifetime is the hard one. A function that returns `std::string_view` of a local `std::string`, a struct that holds a `string_view` next to its source `string` and gets moved, a coroutine that captures a reference and resumes after the referent vanishes -- the failure modes are everywhere and the diagnostics are uneven across compilers. This page is the 2026 toolkit: per-call analyzers (lifetimebound, dangling warnings), type-level invariants (gsl::not_null, scope_exit), and the reflection-driven schema lint that closes the structural gap the per-call analyzers miss.
+Bounds and null have settled answers in the standard library. Lifetime does not. A function returns a `string_view` of a local `string`, a struct holds a `string_view` next to its source `string` and gets moved, a coroutine resumes after its referent is gone, and compilers diagnose these unevenly. This page records what Clang, GCC and MSVC flagged in one sample on 2026-11-06.
+
+## In short
+
+- As of 2026-11-06, Clang 23.1.0 (released 25 August) has `-Wlifetime-safety`, which is off by default and on in `-Weverything`. In my sample it caught a parameter escaping into a field and a temporary that dies too soon.
+- `-Wlifetime` is not a mainline Clang flag. The earlier CMake recipe used it, and Clang 23.1.0 and trunk answer `unknown warning option`.
+- Clang trunk renamed `-Wlifetime-safety-invalidation` to `-Wlifetime-safety-experimental-invalidation` on 2026-10-20. Clang 23.1.0 still uses the old name.
+- GCC 16.2 gave no diagnostic for any of the `string_view` cases in the sample. `-Wdangling-pointer` is from GCC 12, not 13.
+- No tool in the sample flagged a view that dangles after its owning struct is moved. `std::scope_exit` is not in C++26.
 
 ## Today
 
-### The four moves that ship in production
+### What I ran
 
-1. **Annotate borrowing intent at the call site** with `[[clang::lifetimebound]]` on parameters / return values. Clang + MSVC's lifetime profile catch returning a `string_view` to a local `string`, passing a temporary to a `string_view` parameter, or storing a reference to a temporary.
-2. **Turn on dangling diagnostics in the compiler.** GCC ships `-Wdangling-reference` (GCC 13+) and `-Wdangling-pointer`. Less precise than the lifetime profile but always-on across libraries.
-3. **Encode non-null at the type level** with `gsl::not_null<T*>` (from Microsoft GSL or hand-rolled). Compiler enforces the constructor precondition; the rest of the code skips null-check noise.
-4. **Use `std::scope_exit`** (P0052, ratified into C++26) for cleanup that must run regardless of how the scope exits. RAII without writing a destructor class.
+This sample has five dangling cases. It compiles without error on every compiler below.
 
-### What each tool catches (and misses)
+```cpp
+std::string_view pick_local() {
+    std::string s = "a string long enough to defeat the small buffer";
+    return s;                                  // view of a local
+}
+std::string_view from_param(std::string s) { return s; }   // view of a parameter
 
-| Tool | Catches | Misses |
+struct DanglingView {
+    std::string_view view;
+    DanglingView(std::string s) : view(s) {}   // parameter escapes to a field
+};
+
+struct Frame {
+    std::string payload;
+    std::string_view header;
+    explicit Frame(std::string p) : payload(std::move(p)), header(payload) {}
+};
+
+int use_temp() {
+    std::string_view sv = std::string("a temporary long enough to live on the heap");
+    return static_cast<int>(sv.size());        // temporary already destroyed
+}
+
+Frame moved_frame() {
+    Frame a{"a payload long enough to live on the heap, not in the buffer"};
+    Frame b = std::move(a);                    // header still points into a.payload
+    return b;
+}
+```
+
+| Compiler and options | Flagged | Not flagged |
 |---|---|---|
-| `[[clang::lifetimebound]]` | Return-of-local-view, temporary-bound-to-view-param | Borrow stored in a struct; cross-TU lifetime |
-| GCC `-Wdangling-reference` | Common return-of-local + temporary patterns | Anything cross-TU; struct-internal borrows |
-| MSVC lifetime profile | The Clang lifetimebound set + some struct cases | Cross-TU; deep call-graph propagation |
-| `gsl::not_null<T*>` | Null pointer at construction; deref guarantees | Lifetime; only addresses null |
-| `std::scope_exit` | "I forgot to release the resource" | Doesn't address borrowing or null |
+| Clang 23.1.0, `-Wall -Wextra` | `pick_local` and `from_param` (`-Wreturn-stack-address`), `use_temp` (`-Wdangling-gsl`) | `DanglingView`, `moved_frame` |
+| Clang 23.1.0, `-Wlifetime-safety -Wlifetime-safety-suggestions` | the three above, plus `DanglingView` (`-Wlifetime-safety-dangling-field`) and `use_temp` again (`-Wlifetime-safety-use-after-scope`) | `moved_frame` |
+| Clang trunk, same options, then with `-Wlifetime-safety-all -Wlifetime-safety-strict -Wlifetime-safety-dangling-field-moved` | the same as 23.1.0 | `moved_frame` |
+| GCC 16.2, `-Wall -Wextra -Wdangling-reference -Wdangling-pointer` | nothing | all five |
+| GCC trunk, `-Wall -Wextra` | nothing | all five |
+| MSVC 19.51, `/W4 /analyze /analyze:plugin EspXEngine.dll` | `pick_local` and `from_param` (C26816), `use_temp` (C26815, C26449) | `DanglingView`, `moved_frame` |
 
-The pattern is clear: per-call analyzers cover the obvious cases, type-level invariants close specific axes, but **structural dangling inside an aggregate** -- a `string_view` member alongside a sibling `string` member -- escapes them all. That's the gap the next section closes.
+The new Clang diagnostic for `DanglingView` reads:
+
+```
+warning: stack memory associated with parameter 's' escapes to the field 'view' which will dangle [-Wlifetime-safety-dangling-field]
+```
+
+So "structural dangling escapes every per-call analyzer" is only partly true on 2026-11-06. Clang 23.1 catches the parameter-to-field case. The moved-struct case, where the view still points into the moved-from `payload`, was caught by none of them.
+
+GCC's two warnings do fire on the cases they were written for. With `-O2`, `const int& r = std::max(1, 2);` gave `warning: possibly dangling reference to a temporary [-Wdangling-reference]`, and a pointer to a block-scope variable used after the block gave `using dangling pointer 'p' to 'x' [-Wdangling-pointer=]`. They did not fire on any `string_view` conversion above. GCC's manual puts both warnings in `-Wall`. `-Wdangling-pointer` arrived in GCC 12 and `-Wdangling-reference` in GCC 13.
+
+### The tools and their flags
+
+1. Clang `[[clang::lifetimebound]]` annotates a parameter whose lifetime the return value borrows. The 23.1.0 suggestion diagnostic names it: `parameter in intra-TU function should be marked [[clang::lifetimebound]]`. The attribute is documented in the Clang attribute reference (not re-run on 2026-11-06).
+2. Clang `-Wlifetime-safety` is a CFG-based intra-procedural analysis (23.1.0 release notes). It is off by default and enabled by `-Weverything`; `-Wno-lifetime-safety` or `-fno-lifetime-safety` turns it off. Related flags that I ran and that compiled: `-Wlifetime-safety-suggestions`, `-Wlifetime-safety-noescape` and `-Wlifetime-safety-dangling-field`.
+3. Clang's capture attribute has new spellings in 23.1: `lifetime_capture_by_this`, `lifetime_capture_by_global` and `lifetime_capture_by_unknown`. Passing `this`, `global` or `unknown` as an argument is deprecated and goes in the next release.
+4. MSVC's lifetime checks are C26815 and C26816 in the C++ Core Check. User types need `[[msvc::lifetimebound]]`, available since MSVC 17.7. They do not read the Clang attribute.
+5. `gsl::not_null<T*>` from Microsoft GSL or a hand-rolled equivalent encodes non-null at the type level. It does not address lifetime (not re-run on 2026-11-06).
+6. `std::experimental::scope_exit` from Library Fundamentals (P0052) runs a cleanup on every scope exit. libstdc++ ships it in `<experimental/scope>`.
+
+The earlier version of this page said `std::scope_exit` was "ratified into C++26". It is not. The C++26 draft's header list has no scope header (eel.is/c++draft/headers, read 2026-11-06), and `#include <scope>` fails on GCC 16.2 with `fatal error: scope: No such file or directory`. The experimental header `<experimental/scope>` compiled and ran.
+
+The earlier text also said P1179 is implemented as `lifetime_capture_by`. P1179 is Sutter's lifetime profile proposal, and the Clang attribute is a separate feature.
+
+### The trunk rename
+
+On Clang trunk, `-Wlifetime-safety-invalidation` is now `-Wlifetime-safety-experimental-invalidation`. Commit `8e635b365d` of 2026-10-20 in llvm-project made the change. It also added an experimental group that is not part of `-Wlifetime-safety-all`. The commit message says the checking "can produce false positives or even non-actionable warnings".
+
+On Compiler Explorer, Clang 23.1.0 warned `local variable 'v' is later invalidated [-Wlifetime-safety-invalidation]` for `int& r = v[0]; v.push_back(4); return r;`. On trunk the old name was `unknown warning option` and the new name produced the same warning. I read the rename in the in-progress release notes and the commit. I did not find a 23.1.x release-notes page that mentions it.
 
 ### CMake recipe
 
 ```cmake
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     add_compile_options(
-        -Wlifetime                              # the lifetime profile family
-        -Wdangling-gsl
+        -Wlifetime-safety             # Clang 23.1+; older Clang warns "unknown warning option"
+        -Wlifetime-safety-suggestions
     )
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     add_compile_options(
-        -Wdangling-reference
-        -Wdangling-pointer
+        -Wdangling-reference          # GCC 13+
+        -Wdangling-pointer            # GCC 12+
     )
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    add_compile_options(/analyze:plugin EspXEngine.dll)  # lifetime profile
+    add_compile_options(/analyze /analyze:plugin EspXEngine.dll)   # C++ Core Check
 endif()
 ```
 
-Drop into your top-level CMakeLists; per-target overrides if any TU has known false positives.
+I ran each of these flags by hand on Compiler Explorer and did not run the fragment through CMake (not re-run on 2026-11-06). Add per-target overrides where a translation unit has known false positives.
 
 ## Reflection today
 
-The example below catches the structural-dangling case the per-call analyzers miss. A consteval predicate walks `T`'s nonstatic data members and refuses to compile when any **non-owning view member** (`std::string_view`, `std::span`, reference, raw pointer) lacks a P3394 `[[=borrows_from{}]]` annotation. The annotation has no runtime effect -- it exists purely so the schema documents borrow intent at the type level.
+The sample above shows the gap: no tool flagged `moved_frame`. A consteval predicate cannot find that bug, but it can force every non-owning view member to declare its borrow intent. It walks `T`'s data members and refuses to compile when a view (`std::string_view`, `std::span`, a reference or a raw pointer) lacks a P3394 `[[=borrows_from{}]]` annotation. The annotation has no runtime effect.
 
 ```cpp
-struct borrows_from {};   // P3394 tag; empty (must be structural type)
+struct borrows_from {};   // P3394 tag; empty (must be a structural type)
 
 template <typename T>
 consteval bool meets_borrow_annotated() {
@@ -159,60 +209,43 @@ Full source: <RepoFile path="posts/toolset/lifetime-safety-2026/examples/reflect
 
 <GodboltEmbed id="hbsjMz4v7" title="Reflection-driven borrow-annotation lint (clang-p2996)" />
 
-### Reproduce locally
+I re-ran the embedded source on 2026-11-06 on `clang_bb_p2996` with `-std=c++26 -freflection-latest -stdlib=libc++`. It compiled and exited 0 with:
 
-<DockerRun
-  image="ghcr.io/wrocpp/cpp-reflection:2026-05"
-  command={"bash -c 'clang++ -std=c++26 -freflection-latest -stdlib=libc++ -Wl,-rpath,/opt/p2996/clang/lib/aarch64-unknown-linux-gnu posts/toolset/lifetime-safety-2026/examples/reflect-borrow-annotations.cpp -o /tmp/h && /tmp/h'"}
-  expected={"lifetime-safety check passed for ParsedFrame.\nUncomment UnannotatedFrame to see the static_assert fire."}
-  title="Compile-time borrow-annotation lint (cpp-reflection container)"
-/>
+```
+lifetime-safety check passed for ParsedFrame.
+Uncomment UnannotatedFrame to see the static_assert fire.
+```
 
-### Why the empty tag is enough
+The page used to say this runs on GCC 16.1 as well. On GCC 16.2 (`-std=c++26 -freflection`, with `<meta>` in place of `<experimental/meta>`) the stored source fails: the check reports `ParsedFrame`'s annotated members as unannotated. Changing the comparison in `has_annotation` from `std::meta::type_of(a) == ^^Tag` to `std::meta::remove_const(std::meta::type_of(a)) == ^^Tag` makes it pass (exit 0, same output). I did not change the example repository. The container image the page used to cite was pruned, so the `docker run` line is gone.
 
-Capturing the source-field name as a payload (`borrows_from{"payload"}`) would be nicer; P3394 annotations require the value to be a "structural type" template-argument-suitable expression, and `string_view` holding a string-literal pointer is not. The empty tag still does the work that matters: **it forces the developer to write the marker, which forces them to think about the borrow.** In code review, a `string_view` member without `[[=borrows_from{}]]` becomes a visible omission instead of an invisible footgun.
+### The empty tag
 
-The same walker pattern composes with the [hardened-stdlib schema lint](/toolset/hardened-stdlib/) (no raw pointers/C-arrays) and the [qualified-compilers MISRA Rule 11.0.1 lint](/toolset/qualified-compilers/) (members must be private). Add a fourth predicate, the schema enforces it; remove a predicate, the build keeps working. The walker is the platform.
+The example source says a payload such as `borrows_from{"payload"}` is not possible, because P3394 annotation values must be structural types and `string_view` is not one. I did not test a payload variant. The empty tag still forces the author to write a marker, so a `string_view` member without `[[=borrows_from{}]]` is a visible omission in review. It checks that the intent is written down. It does not check that the intent is true.
+
+The same walker pattern composes with the [hardened-stdlib schema lint](/toolset/hardened-stdlib/), which forbids raw pointers and C arrays, and with the [qualified-compilers MISRA Rule 11.0.1 lint](/toolset/qualified-compilers/), which wants private members. Add a predicate and the schema enforces it. Remove one and the build keeps working.
+
+The <PostLink slug="reflection-dangling-signature">2 November post</PostLink> uses reflection differently, to lint function signatures that return a view of a by-value owner.
 
 ## Where this is heading
 
-C++29 candidate features tighten the loop further:
+Profiles ([P3081R2](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3081r2.pdf) by Sutter, [P3589R1](https://isocpp.org/files/papers/P3589R1.pdf) by Dos Reis, [P3984R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3984r0.pdf) by Stroustrup) would move lifetime checks from warnings to a language-level subset. They are papers. <PostLink slug="profiles-p4415-implementation-status">The 31 October post</PostLink> covers the two experimental implementations that P4415R0 reports; I did not re-run them on 2026-11-06.
 
-**Profile-enforced lifetime** (P3081 Sutter, P3589 Dos Reis, P3984 Stroustrup) moves the lifetime check from attribute-driven warnings to a compiler-enforced subset of the language:
-
-```cpp
-// C++29 candidate -- pseudo-syntax. As of 2026-05-14 not in any
-// shipping toolchain. P3081/P3589/P3984 papers in WG21.
-[[ profiles::enforce(lifetime) ]]
-namespace parser {
-    auto parse(std::span<const std::byte> input)
-        -> std::expected<ParsedFrame, parse_error>;
-    // Inside the namespace: returning a view to a local refuses to
-    // compile, storing a reference to a parameter without lifetime
-    // annotation refuses to compile, etc.
-}
-```
-
-**Token injection** (P3294, C++29 candidate) extends the reflection pattern to also inject the safe accessor signatures alongside the borrow annotations:
+Token injection (P3294) is the other idea. Compiler Explorer lists no P3294 build on 2026-11-06, and the sketch below is pseudo-code that no compiler accepts:
 
 ```cpp
-// C++29 candidate -- pseudo-syntax. P3294 in WG21.
+// pseudo-code, not C++ any compiler accepts today
 [[ inject(borrow_safe_accessors) ]]
 struct ParsedFrame {
     std::string payload;
     [[=borrows_from{}]] std::string_view header;
     [[=borrows_from{}]] std::string_view body;
 };
-// Auto-injects: `std::expected<std::string_view, dangle_error> view_header() const`
-// (returns expected because if `payload` was moved the view dangles),
-// auto-injects: move ctor that updates the views to point at the new
-// payload.
+// would inject: std::expected<std::string_view, dangle_error> view_header() const
+// would inject: a move constructor that re-points the views at the new payload
 ```
-
-The 2026 toolkit catches the easy cases (per-call analyzers) and the schema-level structural cases (reflection lint). C++29 collapses both into language-enforced rules and compiler-injected accessors.
 
 ---
 
-**Cross-links:** the [memory-safety in C++26 and beyond](/toolset/memory-safety-cpp26-and-beyond/) entry covers the umbrella memory-safety story (bounds + null + lifetime + profiles status). The [hardened-stdlib](/toolset/hardened-stdlib/) entry covers the bounds axis (one CMake line, ~1000 production bugs). The [annotations post](/posts/annotations/) covers the P3394 syntax in depth.
+Cross-links: the [memory-safety in C++26 and beyond](/toolset/memory-safety-cpp26-and-beyond/) entry covers the umbrella story, the [hardened-stdlib](/toolset/hardened-stdlib/) entry covers the bounds axis, and the [annotations post](/posts/annotations/) covers P3394 syntax.
 
-**Reviewed:** 2026-05-14. Per-call analyzer catches verified against current Clang / GCC / MSVC docs. Quarterly refresh.
+Reviewed: 2026-11-06 on Compiler Explorer (compilers and dates in `testedOn`). Not re-run: the `[[clang::lifetimebound]]` attribute itself, `gsl::not_null`, the CMake fragment, and the profile implementations.
