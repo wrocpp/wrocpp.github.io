@@ -184,6 +184,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # Meeting C++ program post of the day.
     "2026-11-24": {"slug": "generator-const-reference-lifetime", "hour": 16,
                    "why": "const& generator argument lifetime by compiler, beside the Meeting C++ program post"},
+    # Lead post from the October LinkedIn batch. It rides the live wave and lands in
+    # the first open second slot instead of evicting a queued post.
+    "2026-11-07": {"slug": "qt-clate-qml-mcp", "hour": 16,
+                   "why": "Qt Clate launch (QML + MCP), beside the Abseil iterators post"},
 }
 
 
