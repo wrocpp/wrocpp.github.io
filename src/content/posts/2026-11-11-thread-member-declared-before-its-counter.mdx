@@ -1,0 +1,145 @@
+---
+title: "A thread that starts before its counter exists"
+slug: "thread-member-declared-before-its-counter"
+pubDate: 2026-11-11
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp20, jthread, threads, sanitizers, lifetime, gcc, clang]
+summary: "A std::jthread member declared before the data it uses breaks at both ends of the object's life. ThreadSanitizer reports the construction end, exit 66, on GCC 16.2 and clang trunk. The destruction end is silent for an atomic and reported for a vector. GCC 16.2 -Wall -Wextra -Weffc++ and clang trunk -Weverything say nothing about the order."
+draft: false
+relatedPosts: [pmr-lifetime, sanitizers-on-ce]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+A class that declares its `std::jthread` before the members the thread uses has a bug at both ends of the object's life. At construction the thread runs before those members exist. At destruction they are gone before the thread has stopped. On GCC 16.2 and clang trunk, no warning mentions either.
+
+## In short
+
+- A `std::jthread` member starts running as soon as its initialiser runs, so any member declared after it is not yet initialised.
+- ThreadSanitizer reports that race on GCC 16.2 and clang trunk, with exit code 66.
+- At destruction the later members die first. For an atomic, no sanitizer reports it. For a `std::vector`, AddressSanitizer and ThreadSanitizer both do.
+- `-Wall -Wextra -Weffc++` on GCC and `-Weverything` on clang say nothing about the order, and neither does clang-tidy.
+- The fix is to declare the thread last.
+
+## Where the case comes from
+
+The case comes from [Jelle Bakker](https://www.linkedin.com/in/cppdoctor/) (C++ Doctor), who [posted it on LinkedIn](https://lnkd.in/p/d9Xiewbs). It is case 2, "Timing Is Everything", of the ebook "25 C++ Cases That Will Humble You". Jelle also has [a public Compiler Explorer session](https://godbolt.org/z/Yf1YMYz4r). The code below is my own, with different names and a different loop, and I ran every number myself.
+
+## The class
+
+```cpp
+struct Meter {
+    std::jthread worker{[this](std::stop_token st) { run(st); }};
+    std::atomic<unsigned> ticks{0};
+
+    void run(std::stop_token st) {
+        while (!st.stop_requested()) {
+            ticks.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+};
+```
+
+The program builds a `Meter`, sleeps for 10 ms and reads the counter. It prints `ticks > 0: yes` and exits with 0. A plain run gives you no hint.
+
+## The construction end
+
+Members are initialised in declaration order. The thread starts inside the initialiser of `worker`, and `ticks` is initialised one line later. Both threads touch the same memory with no ordering between them.
+
+ThreadSanitizer sees it. This is the start of the report from GCC 16.2 with `-fsanitize=thread`, with the stack frames in between left out:
+
+```text
+WARNING: ThreadSanitizer: data race (pid=2)
+  Write of size 4 at 0x7fffffffebc0 by main thread:
+    #0 Meter::Meter() /app/example.cpp:34
+  Previous atomic write of size 4 at 0x7fffffffebc0 by thread T1:
+    #0 std::__atomic_base<unsigned int>::fetch_add(unsigned int, std::memory_order)
+    #1 Meter::run(std::stop_token)
+  Location is stack of main thread.
+```
+
+The first line of the report is the same on clang trunk. The embed adds a function that sets `exitcode=0` for ThreadSanitizer, so the report appears on the page and the program still exits 0. Without that function the exit code is 66.
+
+<GodboltEmbed id="1j8e9nerW" gccOnly gccLabel="GCC 16.2" title="ThreadSanitizer reports the thread that starts too early" gcc_subtitle="x86-64 gcc 16.2 · -std=c++20 -O1 -g -pthread -fsanitize=thread · the report is shown" />
+
+## The destruction end
+
+The destructor runs the members' destructors in reverse order of declaration. In `Meter`, `ticks` goes first. Then `worker` is destroyed, and `~jthread` requests a stop and joins the thread ([cppreference](https://en.cppreference.com/w/cpp/thread/jthread/~jthread)). Between those two steps the thread is still incrementing an object whose destructor has run. The order of destruction is described on the [destructor page](https://en.cppreference.com/w/cpp/language/destructor).
+
+No tool reports that for an atomic. A `std::atomic<unsigned>` has a trivial destructor and its storage lives until the end of the destructor call, so there is nothing to flag. To see this end alone, I added a ready flag declared before the thread. The worker waits for it, and the constructor sets it last, so the construction race is gone.
+
+| Build, `-O1`, five runs each | no sanitizer | AddressSanitizer | ThreadSanitizer |
+|---|---|---|---|
+| Thread declared last | exit 0 | exit 0 | exit 0 |
+| Thread first | exit 0 | exit 0 | exit 66 |
+| Thread first, ready flag | exit 0 | exit 0 | exit 0 |
+
+Every cell was the same in all five runs, on GCC 16.2 and on clang trunk. A single run on GCC 15.2 and on clang 23.1 gave the same exit codes for the thread-first rows with ThreadSanitizer. The last row is the point: the bug is still in the program, and both tools are quiet.
+
+## A member that owns memory
+
+Replace the atomic with a `std::vector<int>` that the thread sums in a loop. The ready flag stays, so only the destruction end runs. Now `~vector` frees the buffer while the thread still reads it. On GCC 16.2 and clang trunk, five runs each:
+
+| Build, `-O1` | no sanitizer | AddressSanitizer | ThreadSanitizer |
+|---|---|---|---|
+| Thread declared last | exit 0 | exit 0 | exit 0 |
+| Thread before the vector | exit 0 | exit 1 | exit 66 |
+
+AddressSanitizer says this, from GCC 16.2 (addresses vary by run):
+
+```text
+ERROR: AddressSanitizer: heap-use-after-free on address 0x76f7331e03ac
+READ of size 4 at 0x76f7331e03ac thread T1
+...
+0x76f7331e03ac is located 684 bytes inside of 4096-byte region
+freed by thread T0 here:
+```
+
+ThreadSanitizer reports a data race between the `operator delete` call in `Sampler::~Sampler()` and the worker's read. The embed runs the second one with `exitcode=0`.
+
+<GodboltEmbed id="6hrced7ce" gccOnly gccLabel="GCC 16.2" title="The vector is freed while the thread still reads it" gcc_subtitle="x86-64 gcc 16.2 · -std=c++20 -O1 -g -pthread -fsanitize=thread · the report is shown" />
+
+## What the compiler and clang-tidy say
+
+I compiled both buggy classes at `-O2`.
+
+| Tool and options | Result |
+|---|---|
+| GCC 16.2, `-Wall -Wextra -Weffc++` | no diagnostics |
+| clang trunk, `-Weverything` (without the C++98 compatibility warnings) | one `-Wpadded` warning per class, which also fires on the correct order |
+| clang-tidy trunk, `-checks=*` | 24 diagnostics for `Meter`, 35 for the vector class, none about order, lifetime or a race |
+
+The three clang-tidy checks closest to the subject are unrelated to this bug:
+
+- `misc-non-private-member-variables-in-classes`: public data members.
+- `altera-struct-pack-align`: struct padding.
+- `performance-unnecessary-value-param`: a stop token passed by value.
+
+## The fix
+
+Declare the `std::jthread` last:
+
+```cpp
+struct Meter {
+    std::atomic<unsigned> ticks{0};
+    std::jthread worker{[this](std::stop_token st) { run(st); }};
+    // run() as before
+};
+```
+
+Now `ticks` exists before the thread starts. At destruction `worker` goes first, so the thread is joined while `ticks` is still alive. The same trap exists for a resource and the container that uses it. The [pmr lifetime post](/posts/pmr-lifetime/) shows it with a memory resource declared after its vector.
+
+<GodboltEmbed id="6qEGh1Wj9" gccOnly gccLabel="GCC 16.2" title="The thread declared last prints a positive count" gcc_subtitle="x86-64 gcc 16.2 · -std=c++20 -O1 -pthread · runs live" />
+
+The count varies from run to run, so the program prints only whether it is above zero. The rule lives in a declaration order that a later edit can undo without a compile error. It needs a comment, or a check. A follow-up post writes such a check.
+
+## What I did not run
+
+- Only Compiler Explorer on x86-64 Linux. I did not run macOS, Windows or MSVC.
+- I did not read the ebook beyond what Jelle posted publicly, and I have not compared my code with the listing in it.
+- Starting the thread from a `start()` function is another fix. I did not build it.
+
+The code is in the [examples repository](https://github.com/wrocpp/cpp26-reflection-examples/tree/0c53050f93fb6a708ff7aa9eea0cc8ceb37b00a9/posts/103-jthread-member-order).

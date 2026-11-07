@@ -1,5 +1,6 @@
 ---
 import PostLayout from '../../layouts/PostLayout.astro';
+import ScrollTable from '../../components/ScrollTable.astro';
 import { getCollection, render, type CollectionEntry } from 'astro:content';
 import { isPublished } from '../../lib/posts';
 
@@ -18,5 +19,5 @@ const { post } = Astro.props;
 const { Content } = await render(post);
 ---
 <PostLayout post={post}>
-  <Content />
+  <Content components={{ table: ScrollTable }} />
 </PostLayout>
