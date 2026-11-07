@@ -182,6 +182,18 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # Part two of the 64-byte compare: why the early exit stops the vectorizer and what to write instead.
     "2026-11-29": {"slug": "early-exit-loop-vectorization", "hour": 16,
                    "why": "chunked early-exit compare and std::simd on a 64-byte block, second part of the r/cpp compare thread"},
+    # A flagship on the three profile papers dated 22 October (P3704R1, P4222R3, P4418R0).
+    # It runs beside the reflection series post of the day and lands before the Buzios meeting.
+    "2026-11-10": {"slug": "what-the-three-profile-papers-say", "hour": 16,
+                   "why": "flagship on the three October profile papers, beside the reflection series post, before Buzios"},
+    # The initialization profile of P4222R3 run on the two Compiler Explorer builds, with a thread
+    # case from outside the papers. It runs beside the reflection series post and lands before Buzios.
+    "2026-11-13": {"slug": "init-profile-against-real-code", "hour": 16,
+                   "why": "short on the initialization profile run against real code, beside the reflection series post, before Buzios"},
+    # The invalidation profile of P4418R0 run on the experimental GCC build, with cases the paper
+    # does not show. It runs beside the reflection series post and lands before Buzios.
+    "2026-11-15": {"slug": "invalidation-profile-against-real-code", "hour": 16,
+                   "why": "short on the invalidation profile run against the paper's examples, beside the reflection series post, before Buzios"},
     # A short on a std::jthread member declared before the data it uses, after Jelle Bakker's
     # case 2 "Timing Is Everything". It takes the second slot of 11 November.
     "2026-11-11": {"slug": "thread-member-declared-before-its-counter", "hour": 16,
