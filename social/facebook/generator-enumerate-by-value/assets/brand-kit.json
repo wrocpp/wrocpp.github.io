@@ -1,0 +1,11 @@
+{
+  "template": "social/linkedin-post",
+  "bundleSource": "scudoai-social.css",
+  "brandKitVersion": "0.1.0",
+  "vendoredAt": "2026-11-06T20:19:57.516Z",
+  "files": [
+    "scudoai.css",
+    "layout.css",
+    "logo-symbol.svg"
+  ]
+}

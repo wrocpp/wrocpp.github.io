@@ -1,0 +1,169 @@
+---
+title: "Keeping the early exit and getting vector code on a 64-byte compare"
+slug: "early-exit-loop-vectorization"
+pubDate: 2026-11-29
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp, compilers, vectorization, performance, gcc, clang, simd]
+summary: "Cut a 64-byte early-exit compare into chunks that exit between chunks, and GCC and Clang compile each chunk to a vector test: 12 instructions with 32-byte chunks and AVX2 flags on GCC, 13 on Clang. Instruction counts for six forms on four compilers, one way to read them, and std::simd on GCC."
+draft: false
+relatedPosts: [five-spellings-of-a-64-byte-compare, verification-asm-llvm-mca]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+The [25 November post](/posts/five-spellings-of-a-64-byte-compare/) showed a 64-byte compare with an early exit staying scalar on Clang and MSVC, and on GCC without AVX2 flags.
+This one tries to keep the early exit and still get vector code.
+Cutting the loop into chunks of 16 or 32 bytes did that on GCC and Clang in every build I made.
+The exit sits between chunks, and none sits inside one.
+The loop comes from [the r/cpp thread](https://www.reddit.com/r/cpp/comments/1xlyti8/catastrophic_misoptimization_of_byterange/) by u/Sopel97.
+
+## In short
+
+- GCC and Clang reject the early-exit loop for different reasons. GCC needs alignment it cannot force. Clang has merged the two exits before its loop vectorizer looks. [The last post](/posts/five-spellings-of-a-64-byte-compare/) quotes the messages.
+- A loop that tests a whole chunk at once and exits only between chunks avoids both. With 32-byte chunks and `-O3 -march=x86-64-v3`, GCC 16.2 emits 12 instructions and Clang 23.1 emits 13. Each is two `ymm` tests, and the first chunk can still end the function.
+- At `-O2` the 16- and 32-byte versions take 26 to 47 instructions on GCC and 23 to 27 on Clang. That is vector code, but longer than the scalar loop.
+- `std::simd` in GCC 16.2 compiles a 64-byte compare to 19 instructions at `-O2` and 10 at v3. `__cpp_lib_simd` is not defined there.
+- Eight-byte chunks do worse: 99 instructions on GCC at v3, and a different shape on Clang.
+
+## Why a chunk helps
+
+The early-exit loop has two exits: a mismatch, and the end of the block.
+In the last post's builds neither compiler vectorized that pair for the `bool` form.
+
+A chunk has one exit.
+Inside it the bytes are exclusive-ored into a running value, which has no branch, and the value is tested once.
+The loop over chunks still returns at the first chunk that differs.
+No exit sits inside the loop that gets vectorized, so the loop vectorizer sees an ordinary counted loop with a reduction.
+For GCC, `-fopt-info-vec-optimized` agrees: it reports the inner loop as vectorized at `-O2`. That is my reading of the report, not a trace through the vectorizer.
+
+```cpp
+constexpr int block_size = 64;
+using Block = std::array<char, block_size>;
+
+template <int chunk_size>
+bool eq_chunked(const Block& lhs, const Block& rhs) {
+    static_assert(block_size % chunk_size == 0);
+    for (int base = 0; base < block_size; base += chunk_size) {
+        char diff = 0;
+        for (int i = 0; i < chunk_size; ++i)
+            diff |= static_cast<char>(lhs[base + i] ^ rhs[base + i]);
+        if (diff != 0)
+            return false;
+    }
+    return true;
+}
+```
+
+The `static_assert` keeps every chunk inside the array.
+A chunk never reads past byte 63, so the function reads no byte that the original loop could not have reached.
+It does read the rest of the chunk after a mismatch, which the original loop does not.
+For a block of 64 bytes that is a cost in loads, not a correctness question.
+
+The file also holds the early-exit loop, the accumulate loop from the last post (`res &= (lhs[i] == rhs[i])`), and a `std::simd` version.
+The program checks each function against an equal pair and then against all 64 single-byte changes.
+
+<GodboltEmbed id="bfEq3q5Pb" gccOnly gccLabel="GCC 16.2" title="Chunked early-exit compares, checked against the plain loops" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O2 -DUSE_STD_SIMD · runs on Compiler Explorer, exits 0" />
+
+Every build I ran printed this.
+That covers g162 at three optimization levels and with sanitizers, plus gsnapshot at `-O2`.
+Both Clangs printed the first five lines at `-O2`, and Clang 23.1 did so at v3 as well:
+
+```
+eq_early_exit    equal=1 mismatches found=64 of 64
+eq_accumulate    equal=1 mismatches found=64 of 64
+eq_chunked<8>    equal=1 mismatches found=64 of 64
+eq_chunked<16>   equal=1 mismatches found=64 of 64
+eq_chunked<32>   equal=1 mismatches found=64 of 64
+eq_simd          equal=1 mismatches found=64 of 64
+```
+
+## Instruction counts
+
+All builds ran on Compiler Explorer on 2 November 2026, for x86-64.
+The GCC builds are 16.2.0 and the 17.0.0 snapshot of 20261102.
+The Clang builds are trunk (24.0.0git, `dd61e451bba8`) and 23.1.0 (`ea7d852a70e8`).
+All use `-std=c++26` except Clang 23.1, which used `-std=c++23`.
+
+The plain row is `-O2`, and the v3 row is `-O3 -march=x86-64-v3`.
+Counts are the body of one function, without labels, directives or comments, as in the last post.
+The snapshot matches GCC 16.2 on every function but one, so it has no rows of its own.
+The exception is the early-exit loop at v3: 67 instructions against 79.
+
+| Build | Early exit | Accumulate | Chunks of 8 | Chunks of 16 | Chunks of 32 | `std::simd` |
+|---|---|---|---|---|---|---|
+| GCC 16.2 | 12, scalar | 25 | 24 | 26 | 47 | 19 |
+| GCC 16.2 v3 | 79, with alignment guards | 11 | 99 | 19 | 12 | 10 |
+| Clang trunk | 13, scalar | 19 | 10 | 27 | 23 | not built |
+| Clang trunk v3 | 13, scalar | 9 | 9 | 23 | 13 | not built |
+| Clang 23.1 | 11, scalar | 19 | 10 | 27 | 23 | not built |
+| Clang 23.1 v3 | 11, scalar | 9 | 9 | 23 | 13 | not built |
+
+### Four readings
+
+- **The chunks of 16 and 32 are vector code with no alignment guard.** On GCC at v3 the 16-byte version tests four chunks in turn: a load, a `vpxor` and a `vptest` each.
+A `jne` to the shared exit follows the first three. The 32-byte version is two `ymm` tests.
+- **At `-O2` they are not short.** GCC reduces each 16-byte vector by shifting and or-ing it eight, four, two and one bytes. Clang uses `pcmpeqb` and `pmovmskb`. Neither beats 12 or 13 scalar instructions on count, and I did not time them.
+- **Eight-byte chunks go wrong in two ways.** GCC at v3 does eight 8-byte steps with shifts, 99 instructions. Clang turns them into a call to `memcmp` at `-O2`.
+At v3 Clang emits two `ymm` loads, an or and one test, with no early exit left. I did not find out why.
+- **The 32-byte chunks match the accumulate loop at v3 on GCC** (12 against 11), and are four instructions longer on Clang (13 against 9).
+
+The first test of the GCC 16.2 build at v3 for chunks of 16 is this:
+
+```
+vmovdqu xmm0, XMMWORD PTR [rdi]
+vpxor   xmm0, xmm0, XMMWORD PTR [rsi]
+vptest  xmm0, xmm0
+jne     .L32
+```
+
+The assembly views show both option sets side by side, without `main`:
+[GCC 16.2](https://godbolt.org/z/KoPPKeG94), [GCC 17 snapshot](https://godbolt.org/z/nb8qE4M6E) and [Clang trunk and 23.1](https://godbolt.org/z/oM48Gh73K).
+The trunk links compile whatever trunk is current when you open them.
+
+## std::simd on GCC
+
+GCC 16.2 and the snapshot ship `<simd>`, and it compiles with `-std=c++26`.
+With `-std=c++23` the build of the same file failed.
+The compare is three lines:
+
+```cpp
+bool eq_simd(const Block& lhs, const Block& rhs) {
+    using Vec = std::simd::vec<char, block_size>;
+    return std::simd::all_of(std::simd::unchecked_load<Vec>(lhs) == std::simd::unchecked_load<Vec>(rhs));
+}
+```
+
+It is 19 instructions at `-O2` and 10 at v3, both with the `-DUSE_STD_SIMD` build above.
+On GCC at v3 that is the shortest function in the table.
+`__cpp_lib_simd` is not defined on either GCC, so I would not gate code on it yet.
+The header is libstdc++'s own implementation of `std::simd`, and I did not read its documentation.
+On Clang trunk with libstdc++ headers the include was accepted but `std::simd` was not found, so I have no Clang number.
+
+## Where the reports stand
+
+I looked again on 2 November, at 20:44 UTC.
+[GCC PR128384](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=128384), about alignment versioning for fixed-size arrays, is UNCONFIRMED. It has two entries: the report, and a Compiler Explorer link.
+[GCC PR120352](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=120352), the scalar recheck after a vector mismatch, is RESOLVED FIXED for GCC 17, last changed on 27 May 2026.
+[LLVM #182371](https://github.com/llvm/llvm-project/issues/182371) is open with two comments, last active on 19 February 2026. It reports a related loop, a zero check on `std::array<int, 64>` with `std::ranges::all_of`, not this function.
+I did not file any of them.
+
+## What I would write
+
+- For a fixed-size block, I would write `==` or `memcmp` first, as in the last post, and read the assembly for my flags.
+- If the code must stop early on a mismatch, chunks of 16 or 32 bytes gave vector code on both compilers here. The loop is ordinary C++.
+- If it only runs on GCC and the project accepts a library still without its feature macro, `std::simd` is shorter.
+- Measure before you choose. An instruction count does not say how fast the code runs on your data.
+- A block that always differs in its first byte is a different workload from one that never differs.
+
+## What I did not run
+
+- Any timing.
+- Rust, AArch64 and every other target, and AVX-512 builds.
+- MSVC, for any of the new functions.
+- `std::simd` on Clang with libc++, or on any compiler with a feature-test macro.
+- A version written with intrinsics, and the reason Clang changes shape at 8-byte chunks.
+
+The files are [in the examples repo](https://github.com/wrocpp/cpp26-reflection-examples/tree/1897682ad3e8b3b1b4e230041b1ba0b3aea11af5/posts/104-early-exit-vectorization).
