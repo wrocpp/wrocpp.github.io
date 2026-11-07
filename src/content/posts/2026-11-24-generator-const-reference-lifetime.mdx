@@ -1,0 +1,190 @@
+---
+title: "When a std::generator const& argument outlives the call, by compiler"
+slug: "generator-const-reference-lifetime"
+pubDate: 2026-11-24
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp, cpp23, cpp26, coroutines, lifetime, reflection]
+summary: "A coroutine that takes const& and is called with a temporary in a range-for is safe on GCC 15.1 and Clang 19.1 or later, and dangles on GCC 14.2 and on MSVC 19.51. Storing the generator first dangles on every compiler I ran. No compiler warned. A reflection check of under 50 lines flags the signature on GCC 16.2."
+draft: false
+relatedPosts: [generator-enumerate-by-value, reflection-dangling-signature, clang-lifetimebound-condition]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+The [previous short](/posts/generator-enumerate-by-value/) ended with a `const&` generator that is fine in one loop and broken in another.
+This one runs it on ten compiler configurations.
+On Compiler Explorer, take a temporary passed by `const&` to a `std::generator` and written in a range-for.
+It lives through the loop on GCC 15.1 and later and on Clang 19.1 and later.
+It dies before the first resume on GCC 14.2, on GCC with `-fno-range-for-ext-temps` and on MSVC 19.51.
+Storing the generator first loses the temporary everywhere, and no compiler warned about any case.
+All runs were on 2 November 2026, x86-64.
+
+## In short
+
+- Rule: the C++ Core Guidelines advise against reference parameters on coroutines ([CP.53](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#rcoro-reference-parameters)). Take the object by value.
+- `for (x : gen(Probe{}))` keeps the temporary alive through the loop on GCC 15.1 to trunk and Clang 19.1 to trunk.
+- On GCC 14.2 and MSVC 19.51 the temporary is gone before the generator body starts.
+- `auto g = gen(Probe{}); for (x : g)` loses it on all ten configurations.
+- GCC and Clang warning sets up to `-Weverything`, and MSVC `/W4 /analyze`, said nothing about either call.
+- A reflection check flags the signature on GCC 16.2 and trunk. It misses `string_view`, `span` and pointer parameters.
+
+## When the temporary dies
+
+[P2718R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2718r0.html) is the C++23 fix, and its wording adds a rule.
+A temporary other than a function parameter object, created in the range-for initializer, lives as long as the loop's range reference.
+The `Probe{}` bound to a `const&` parameter is such a temporary.
+A `std::generator` starts suspended, so its body runs only at the first loop iteration, after the call has returned.
+
+The example prints when a `Probe` is constructed and destroyed, and how many are alive when the generator body first runs:
+
+```cpp
+std::generator<int> numbers([[maybe_unused]] const Probe& probe) {
+  std::println("  body starts, probes alive = {}", Probe::alive);
+  co_yield 1;
+  std::println("  body resumes, probes alive = {}", Probe::alive);
+}
+
+for (int value : numbers(Probe{})) { /* prints the count again */ }   // temporary in the range-for
+auto stored = numbers(Probe{});                                        // generator stored first
+for (int value : stored) { /* prints the count again */ }
+```
+
+<GodboltEmbed id="Kaahhv5Gv" gccOnly gccLabel="GCC 16.2" title="When does the Probe die?" gcc_subtitle="x86-64 GCC 16.2 · -std=c++23 · prints the order of construction, destruction and first resume" />
+
+On GCC 16.2 the output is:
+
+```
+temporary written in the range-for:
+  Probe constructed
+  body starts, probes alive = 1
+  loop body, value 1, probes alive = 1
+  body resumes, probes alive = 1
+  Probe destroyed
+generator stored first:
+  Probe constructed
+  Probe destroyed
+  body starts, probes alive = 0
+  loop body, value 1, probes alive = 0
+  body resumes, probes alive = 0
+```
+
+The program only reads the counter, never a destroyed object, so it exits 0 everywhere.
+Probes alive, at the first resume and in the loop body (the two numbers were equal in every row):
+
+| compiler | `__cpp_range_based_for` | temporary in the range-for | generator stored first |
+|---|---|---|---|
+| GCC 14.2 | 201603 | 0 | 0 |
+| GCC 15.1, 16.2, trunk (17.0.0 20261102) | 202211 | 1 | 0 |
+| GCC 16.2 with `-fno-range-for-ext-temps` | 201603 | 0 | 0 |
+| Clang 19.1, 20.1, 23.1, trunk (24.0.0git) | 202211 | 1 | 0 |
+| MSVC 19.51.36246, `/std:c++latest` | 202211 | 0 | 0 |
+
+On GCC the macro tracked the behavior in all three rows: 202211 with the rule, 201603 without.
+Clang 18.1 on Compiler Explorer has no `<generator>`, so it is not in the table.
+
+## The stored generator
+
+`auto stored = numbers(Probe{});` ends its full expression before the loop exists.
+The temporary dies there, and the generator, still suspended, holds a reference to it.
+P2718R0 covers the range-for initializer only, so no compiler version changes this.
+
+## MSVC
+
+MSVC 19.51 defines `__cpp_range_based_for` as 202211 and still destroys the temporary before the loop body.
+I added a control: the same `Probe{}` passed to an ordinary function that returns a `vector`.
+
+<GodboltEmbed id="5ETxecdqb" compilerLabel="MSVC 19.51" title="Ordinary function against coroutine" subtitle="MSVC 19.51 · /std:c++latest · prints the probes alive in the loop body" gcc_subtitle="MSVC 19.51 · /std:c++latest · prints the probes alive in the loop body" />
+
+MSVC prints 0 for both calls, with `/std:c++latest` and with `/std:c++23preview`.
+GCC 16.2 and Clang trunk print 1 for both, and GCC 14.2 prints 0 for both.
+So the MSVC result is about the argument temporary and not about coroutines.
+By the wording I quoted, it should live through the loop.
+This is one MSVC build on Compiler Explorer. I do not know why, and I did not check whether it has been reported.
+
+## What it does to a program
+
+`unsafe_signature.cpp` takes a `const std::vector<int>&` and yields its elements.
+With AddressSanitizer (`-std=c++23 -fsanitize=address -g`) the first report line is the same in every failing row, `ERROR: AddressSanitizer: stack-use-after-scope`, with a read inside the generator body:
+
+| compiler and flags | temporary in the range-for | generator stored first |
+|---|---|---|
+| GCC 16.2 | exit 0, prints `10 20 30` | exit 1, stack-use-after-scope |
+| Clang trunk | exit 0, prints `10 20 30` | exit 1, stack-use-after-scope |
+| GCC 14.2 | exit 1, stack-use-after-scope | not run |
+| GCC 16.2, `-fno-range-for-ext-temps` | exit 1, stack-use-after-scope | not run |
+
+Built at -O2 with no sanitizer, every dangling row exits 0.
+The numbers it prints differ per run, such as `179973 0 1665218085` and then `36358 0 163012840` on GCC 16.2.
+
+## No warning
+
+I compiled the program with both calls present and read the output:
+
+| tool | result |
+|---|---|
+| GCC 16.2, `-Wall -Wextra`, -O0 and -O2 | no diagnostic |
+| GCC 16.2, -O2, `-Wpedantic -Wdangling-pointer=2 -Wdangling-reference` added | no diagnostic |
+| GCC 14.2 and GCC trunk, -O2, `-Wall -Wextra` | no diagnostic |
+| Clang trunk, `-Wall -Wextra`, -O0 and -O2 | no diagnostic |
+| Clang trunk, -O2, `-Wdangling -Wdangling-gsl -Wreturn-stack-address` | no diagnostic |
+| Clang 23.1, -O2, `-Wall -Wextra` | no diagnostic |
+| Clang trunk, -O2, `-Weverything` | two `-Wmissing-prototypes`, nothing about lifetime |
+| MSVC 19.51, `/W4` and `/W4 /analyze` | no diagnostic |
+
+I did not run clang-tidy, cppcheck or any other analyzer.
+
+## A check on the signature
+
+The [2 November short](/posts/reflection-dangling-signature/) showed that reflection can read a signature the compiler does not warn about.
+The same idea fits here: a function that returns `std::generator` and takes a reference parameter.
+
+```cpp
+consteval bool returns_generator(std::meta::info function) {
+  const auto result = std::meta::return_type_of(function);
+  return std::meta::has_template_arguments(result) && std::meta::template_of(result) == ^^std::generator;
+}
+
+consteval bool takes_reference(std::meta::info function) {
+  for (auto parameter : std::meta::parameters_of(function))
+    if (std::meta::is_reference_type(std::meta::type_of(parameter))) return true;
+  return false;
+}
+```
+
+`first_offender` walks the members of a namespace, and a `static_assert` prints the name.
+With `-DSHOW_ERROR` the namespace gains `by_reference(const std::vector<int>&)`.
+On GCC 16.2 and GCC trunk with `-std=c++26 -freflection` the build stops with:
+
+```
+error: static assertion failed: generator function takes a reference parameter: by_reference
+```
+
+The embed is the default build, where the namespace has only a by-value generator, and it passes.
+
+<GodboltEmbed id="PbGr9T94j" gccOnly gccLabel="GCC 16.2" title="A generator signature check" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection · the default build passes" />
+
+Its limits, each tried on GCC 16.2:
+
+| declaration in the namespace | flagged |
+|---|---|
+| `std::generator<int> f(const std::vector<int>&)` | yes |
+| `std::generator<int> f(std::vector<int>&&)` | yes |
+| a `std::string_view`, a `std::span` or a pointer parameter | no |
+| a function template, a member function or a lambda | no |
+| a function declared after the `static_assert` | no |
+
+A `string_view` over a destroyed `std::string` dangles in the same way, and this check does not see it.
+It also flags a reference to an object that outlives the generator, which is legitimate.
+It is an example in the examples repo, not a library. Clang trunk on Compiler Explorer has no `std::meta`, so I did not run it there.
+
+## What I did not run
+
+- A hand-written generator at `-std=c++20`.
+- AddressSanitizer on MSVC, and Clang 18.1 (no `<generator>`).
+- The stored-generator case and the `-O2` garbage on GCC 14.2 and on Clang releases.
+- Any other architecture, and anything outside Compiler Explorer's shared machines.
+
+The files are [in the examples repo](https://github.com/wrocpp/cpp26-reflection-examples/tree/1bea692ae0a619838cac04965b6ab033863f82a0/posts/108-generator-lifetime).
