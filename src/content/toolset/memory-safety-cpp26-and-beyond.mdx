@@ -1,99 +1,70 @@
 ---
-title: "Memory safety in C++26 and beyond -- what shipped, what's deferred to C++29, what to flip on today"
+title: "Memory safety in C++26 and beyond: what is in the draft, what moved to C++29, what to switch on today"
 slug: "memory-safety-cpp26-and-beyond"
-summary: "C++26 shipped Hardened standard library + Contracts + Reflection. The [[profiles::enforce]] attribute (P3081 / P3589 / P3984) was deferred to C++29. This page covers what you can turn on TODAY for memory safety -- across libc++, libstdc++, MSVC, clang-tidy, the lifetime attributes, and a reflection-driven user-library check -- plus the C++29 profile direction the standard is now heading toward."
+summary: "Standard library hardening (P3471), contracts (P2900) and reflection (P2996) are in the C++26 working draft, whose ISO ballot closed on 22 October 2026 and was reported disapproved. Profiles (P3589, Stroustrup's profile papers) are aimed at C++29 and now run in two experimental compiler forks. This page lists what you can switch on today for memory safety in libc++, libstdc++, the MSVC STL and the lifetime attributes, with the exit codes I measured on Compiler Explorer on 2026-11-06, plus a reflection-driven user-library check."
 kind: curated
 cluster: safety
-tags: [safety, memory-safety, hardened-stdlib, libc++, libstdc++, contracts, p3471, p2900, p3081, p3589, p3984, lifetime, reflection, cpp26, cpp29]
+tags: [safety, memory-safety, hardened-stdlib, libc++, libstdc++, contracts, p3471, p2900, p3081, p3589, p3704, p4222, p4418, lifetime, reflection, cpp26, cpp29]
 launchDate: 2026-05-14
-lastReviewed: 2026-05-04
-testedOn: "Container ghcr.io/wrocpp/cpp-reflection:2026-05; clang-p2996 trunk-20260408; tested 2026-05-04 on aarch64. Hardened-stdlib options also verified on stock clang-19 + GCC 16.1 in the cpp-safety container."
-relatedPosts: [first-reflection, template-for-expansion-statements]
-containerImage: "ghcr.io/wrocpp/cpp-reflection:2026-05"
+lastReviewed: 2026-11-06
+nextReviewBy: 2026-11-30
+testedOn: "Compiler Explorer, 2026-11-06, x86-64: g162 (GCC 16.2.0) and gsnapshot (GCC trunk) for libstdc++, -fhardened and the reflection embed (with <meta>); clang2310 (Clang 23.1.0) with libc++ 23.1.0 for the hardening modes and lifetimebound; clang_bb_p2996 for the reflection embed; vcpp_v19_latest_x64 (MSVC 19.51) for _MSVC_STL_HARDENING. Not re-run on 2026-11-06: the cppfront embed, the MSVC /analyze lifetime profile, the clang-tidy checks on a sample project and every profiles example (see the linked post, run on 2026-10-25)."
+relatedPosts: [first-reflection, template-for-expansion-statements, hardened-stdlib-turn-it-on, cpp26-contracts, c26-dis-ballot-result, contracts-dispute, profiles-p4415-implementation-status, memory-safety-what-to-point-at]
 exampleRepo: "https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/toolset/memory-safety-cpp26-and-beyond/examples"
 agentInstructions: |
   You are a coding agent helping a C++ developer adopt memory-safety
   measures in 2026.
 
-  ESTABLISHED FACTS (verify against Sutter's Croydon trip report
-  https://herbsutter.com/2026/03/29/c26-is-done... before recommending):
-  - C++26 was finalized at Croydon (March 2026), 114-12-3 vote.
-  - The [[profiles::enforce]] attribute (P3081 Sutter, P3589 Dos Reis
-    framework, P3984 Stroustrup type-safety profile) was DEFERRED to
-    C++29. NOT in C++26. SG23 continues work, targeting C++29.
-  - What DID ship in C++26 for memory safety:
-    * P3471 Hardened standard library (layered on Contracts).
-    * P2900 Contracts (preconditions, postconditions, contract_assert).
-    * P2996 Reflection (other toolset entries cover this in depth).
-  - No shipping compiler implements [[profiles::enforce]] today.
-    clang-p2996 + GCC 16.1 ship reflection (P2996) and partial
-    contracts (P2900); neither advertises the profile attribute.
+  FACTS (reviewed 2026-11-06):
+  - Hardening (P3471), contracts (P2900) and reflection (P2996) are in
+    the C++26 working draft, approved by WG21 at Croydon on 28 March 2026
+    (the vote to finalize the draft: 114 for, 12 against, 3 abstaining, per devclass.com and The Register, which tie the dissent to contracts).
+  - The ISO ballot on the C++26 draft closed on 22 October 2026 and was
+    reported disapproved (Seacord, Pusz, Fertig). No WG21 or ISO document
+    states the tally. Do not write "shipped" or "ratified". Say "in the
+    C++26 draft" and name the ballot. WG21 meets in Buzios on 16-21
+    November 2026; what it will decide is not documented.
+  - Profiles ([[profiles::enforce]], P3589R2 framework) are not in the
+    C++26 draft. They target C++29. Stroustrup's profile papers of
+    2026-10-22 are P3704R1 (what profiles are), P4222R3 (initialization)
+    and P4418R0 (invalidation). Two experimental compiler forks (Clang,
+    GCC) run on Compiler Explorer per P4415R0; no released compiler
+    has profiles.
 
-  WHAT TO RECOMMEND for memory safety TODAY:
+  WHAT TO RECOMMEND for memory safety TODAY (each row run on 2026-11-06):
+  1. Hardening, set explicitly:
+     * libstdc++: -D_GLIBCXX_ASSERTIONS or -fhardened. A vector
+       out-of-bounds read aborts with SIGABRT (exit 134) and prints the
+       assertion. Without either, g162 at -O1 printed a garbage value
+       and exited 0.
+     * libc++ (Clang 23.1.0): -D_LIBCPP_HARDENING_MODE=
+       _LIBCPP_HARDENING_MODE_FAST|EXTENSIVE|DEBUG. FAST and EXTENSIVE
+       end in SIGILL with no message; DEBUG prints the assertion and
+       aborts.
+     * MSVC STL: _MSVC_STL_HARDENING=1 ends the same vector read in a
+       fastfail (exit 0xC0000409) on 19.51.
+     * Null unique_ptr: libstdc++ with _GLIBCXX_ASSERTIONS aborts on
+       operator*. libc++ 23.1.0 did NOT catch operator* or operator->
+       at any hardening mode (SIGSEGV from the null access itself).
+  2. clang-tidy cppcoreguidelines-pro-* checks: all ten listed below
+     exist in clang-tidy 23.1.1. There are no misra-* or autosar-*
+     checks in that release or in the current documentation.
+  3. [[clang::lifetimebound]] goes on a PARAMETER or the implicit
+     object parameter, not on the function. Clang 23.1.0 rejects it on
+     the function. GCC ignores it with -Wattributes.
+  4. GCC [[gnu::access(...)]] warns about a too-small buffer at
+     -Wall -O2; it is a size hint, not a lifetime attribute.
+  5. Contracts: GCC 16.2 -std=c++26 -fcontracts works (a pre() violation
+     prints and aborts under enforce). Clang 23.1.0 and the clang-p2996
+     builds reject -fcontracts. MSVC rejects the syntax. See
+     /toolset/contracts-2026/.
+  6. Reflection-driven user-library check: runs on clang_bb_p2996 with
+     <experimental/meta> and on GCC 16.2 and trunk with <meta> and
+     -freflection.
 
-  1. Hardened standard library (the highest-leverage thing, just
-     standardized by P3471):
-     * libc++:    -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
-                  (or _EXTENSIVE / _DEBUG)
-     * libstdc++: -D_GLIBCXX_ASSERTIONS  (or umbrella -fhardened on GCC)
-     * MSVC STL:  _MSVC_STL_HARDENING=1  (VS 2022 17.14+, off by
-                  default, __fastfail on violation; per-type macros
-                  such as _MSVC_STL_HARDENING_VECTOR).
-                  _ITERATOR_DEBUG_LEVEL is a SEPARATE, ABI-breaking
-                  setting and is NOT the hardening switch.
-     Catches operator[] OOB on vector / array / string, deref of null
-     unique_ptr, string overruns. Google reports 0.3% perf cost across
-     hundreds of millions of LOC, 1000+ bugs found.
-
-  2. clang-tidy cppcoreguidelines-pro-* checks (the literal Core
-     Guidelines profile rules in clang-tidy, "Pro" prefix = "Profile"):
-     * pro-bounds-pointer-arithmetic
-     * pro-bounds-constant-array-index
-     * pro-bounds-array-to-pointer-decay
-     * pro-bounds-avoid-unchecked-container-access
-     * pro-type-* (cstyle-cast, reinterpret-cast, member-init, ...)
-     Works on stock clang-tidy. Wire into CI; tune the disable list
-     for C-API-heavy boundaries.
-
-  3. MSVC Lifetime Profile via /analyze: partial implementation of
-     Sutter's original Lifetime Profile design (Neil MacIntosh + Kyle
-     Reed, 2018-onward). Catches a meaningful subset of dangling-
-     pointer + use-after-scope cases for Windows-side codebases.
-
-  4. [[clang::lifetimebound]] / [[gnu::access]]: narrow but deployable
-     attribute-based lifetime hints. Useful at API boundaries.
-
-  5. Contracts (P2900) in C++26: pre/post on functions, contract_assert
-     in bodies. Compiler implementations partial; clang-p2996 supports
-     the syntax with -fcontracts=enforce; GCC warns; MSVC roadmap
-     planned. Use for invariants the developer knows; pair with the
-     hardened stdlib above for the standard-library invariants.
-
-  6. Reflection-driven user-library profile (this page's example):
-     consteval predicate that walks T's members, static_asserts no raw
-     pointer / no C-style array members. One-line metafunction call
-     gates a class. Add a new rule, the harness grows. Survives the
-     C++29 attribute landing -- compose with [[profiles::enforce]]
-     when it becomes available.
-
-  WHERE THIS IS HEADING (C++29):
-  - P3589 (Dos Reis): the general profiles framework.
-  - P3984 (Stroustrup): type-safety profile built on Dos Reis framework.
-  - P4158 (Hunt, Apple/WebKit): experience report hardening 4M LOC at
-    WebKit; validates the subsetting approach.
-  - P3294 (Revzin/Alexandrescu/Vandevoorde): token injection -- profile
-    annotation can also INJECT the safe accessors, not just enforce.
-  - cppfront (https://github.com/hsutter/cppfront): Sutter's
-    experimental Cpp2-syntax compiler that demonstrates the design --
-    type/bounds/init/lifetime safety BY DEFAULT. Not standard C++; not
-    a profile attribute implementation; useful as a working preview of
-    Sutter's intent.
-
-  When recommending, ALWAYS quote freshness (Reviewed 2026-05-04) and
-  the Sutter Croydon trip report URL. The C++26 vs C++29 timeline is
-  the single most-confused fact in this area; correct any reader who
-  thinks profiles shipped in C++26.
-bodyHash: b0ea6b698aac98482682fb2e6d5017e69d621c76182aae2ecabc788540d68142
+  When recommending, quote the review date and say that the C++26
+  draft failed its ballot as reported. Do not take a side on contracts.
+bodyHash: 040bccc03c74d7f45589f0794ed5956fb58320a209376c4bc3a705716945d65d
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -101,87 +72,106 @@ import DockerRun from '../../components/DockerRun.astro';
 import PostLink from '../../components/PostLink.astro';
 import RepoFile from '../../components/RepoFile.astro';
 
-C++26 was finalized at the Croydon meeting in March 2026 ([Sutter's trip report](https://herbsutter.com/2026/03/29/c26-is-done-trip-report-march-2026-iso-c-standards-meeting-london-croydon-uk/)). For memory safety the headline result is good news mixed with one significant deferral: **the standard-library hardening + contracts + reflection trio shipped, but the `[[profiles::enforce]]` attribute did not** -- it moves to C++29 via SG23's continued work on Stroustrup's P3984 type-safety profile, built on Dos Reis's P3589 general framework. That deferral is widely misreported. This page is the honest-and-actionable version: what you can turn on **today** for memory safety in C++26, what's deferred to C++29, and the reflection-driven user-library bridge that works on stock clang and GCC right now.
+Hardening, contracts and reflection are in the C++26 working draft that WG21 approved at Croydon in March 2026 ([Sutter's trip report](https://herbsutter.com/2026/03/29/c26-is-done-trip-report-march-2026-iso-c-standards-meeting-london-croydon-uk/)). The `[[profiles::enforce]]` attribute is not in that draft. It targets C++29. This page separates what the draft contains, what moved to C++29, and what you can switch on today with the exit codes I measured.
+
+## In short
+
+- As of 2026-11-06 the C++26 draft is not a published standard. Its ISO ballot closed on 22 October and was reported disapproved by Seacord, Pusz and Fertig. No WG21 or ISO document states the tally. See <PostLink slug="c26-dis-ballot-result">the ballot post</PostLink> and <PostLink slug="contracts-dispute">the contracts dispute</PostLink>.
+- The hardening switches below all stop a `vector` out-of-bounds read on GCC 16.2, Clang 23.1.0 and MSVC 19.51. The exit codes differ, and only libstdc++ and libc++ `DEBUG` print a message.
+- libc++ 23.1.0 did not stop a null `unique_ptr` dereference at any hardening mode I tried. libstdc++ with `_GLIBCXX_ASSERTIONS` did for `operator*`.
+- Two snippets on the earlier version of this page were wrong. `[[clang::lifetimebound]]` goes on a parameter, and GCC 16.2 does implement contracts behind `-fcontracts`.
+- Profiles now have two experimental compiler forks on Compiler Explorer. No released compiler has them.
+
+As of 2026-11-06. The ballot, the Búzios meeting (16 to 21 November) and the profile papers of 22 October change the C++29 section most. The recommendations in "What you can switch on today" did not change, apart from the corrections listed above.
 
 ## Today
 
-### What's in C++26 (finalized 2026-03-28)
+### In the C++26 draft
 
 | Paper | Author(s) | What it gives you |
 |---|---|---|
-| [P2900](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p2900r14.pdf) Contracts | Berne, Doumler, Krzemieński, et al. | `pre` / `post` clauses on functions; `contract_assert` in bodies. Multiple evaluation semantics (ignore / observe / enforce). Adopted Hagenberg Feb 2025; Croydon vote 114-12-3 (the contested feature). |
-| [P3471](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3471r4.html) Hardened standard library | Varlamov, Dionne | First standard user of contracts: turns common UB in the stdlib (out-of-range `vector::operator[]`, deref of null `unique_ptr`, string overruns) into contract violations when the implementation runs in hardened mode. |
-| [P2996](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p2996r12.pdf) Reflection | Childers, Sutton, Revzin, Yang, et al. | Compile-time introspection of types, members, annotations. Powers the user-library profile demo below. Covered in depth in <PostLink slug="first-reflection">first-reflection</PostLink> and the rest of the reflection series. |
+| [P2900R14](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p2900r14.pdf) Contracts | Berne, Doumler, Krzemieński, et al. | `pre` and `post` clauses on functions, `contract_assert` in bodies, four evaluation semantics. The Croydon vote to finalize the draft was 114 for, 12 against and 3 abstaining, per [devclass.com](https://www.devclass.com/development/2026/04/01/contracts-are-in-c26-despite-disquiet-over-their-value/5213555), which ties the dissent to contracts. The most disputed feature of the draft. |
+| [P3471R4](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3471r4.html) Standard library hardening | Varlamov, Dionne | Specifies library preconditions as contract assertions that an implementation may check in a hardened mode. Out-of-range `vector::operator[]` and string overruns are the typical cases. |
+| [P2996](https://wg21.link/p2996r13) Reflection | Childers, Sutton, Revzin, Yang, et al. | Compile-time introspection of types, members and annotations. Powers the user-library check below. See <PostLink slug="first-reflection">first-reflection</PostLink>. |
 
-### What's NOT in C++26 (deferred to C++29)
+The ballot is about the whole draft, and the comments that Fertig describes point at contracts. P4433R0 (Doumler, Berne and 14 co-authors, 23 October) asks Búzios to poll balloting again with contracts unchanged. I found no document that says what the committee will decide in November.
+
+### Not in the C++26 draft (aimed at C++29)
 
 | Paper | Author(s) | Status |
 |---|---|---|
-| [P3081](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3081r2.pdf) Core safety profiles | Herb Sutter | R2 dated Feb 2025; not adopted in C++26. The proposal that defined `[[profiles::enforce(bounds, type, lifetime)]]` and the per-rule mechanics. |
-| [P3589](https://isocpp.org/files/papers/P3589R1.pdf) Profiles: the framework | Gabriel Dos Reis | R2 May 2025. The general framework (separate from any specific profile). SG23 working draft for C++29. |
-| [P3543](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3543r0.pdf) Response to P3081 | Gill, Jabot, Lakos, Berne, Doumler | R0 2024. Bloomberg-led counter-paper that contributed to the deferral. Argues granularity / error-reporting / migration path all need rework. |
-| [P3984](https://www.stroustrup.com/type-safety-profile.pdf) A type-safety profile | Bjarne Stroustrup | D-R-A-F-T R0 dated Jan 28 2026. The type-safety profile re-cast on top of the Dos Reis framework. SG23 focus at Croydon. |
-| [P4158](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4158r0.pdf) Subsetting and restricting C++ for memory safety | Oliver Hunt (Apple, WebKit) | Practical experience report on hardening 4M LOC at WebKit; validates the subsetting approach. |
+| [P3081R2](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3081r2.pdf) Core safety profiles | Herb Sutter | R2 of 4 February 2025. Not adopted for C++26. |
+| [P3589R2](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3589r2.pdf) C++ Profiles: the framework | Gabriel Dos Reis | R2 of 19 May 2025, approved by SG23. Defines `[[profiles::enforce]]`, `require`, `suppress` and `exempt`. |
+| [P3984R0](https://www.stroustrup.com/type-safety-profile.pdf) A type-safety profile | Bjarne Stroustrup | Draft of 28 January 2026. |
+| [P3704R1](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3704r1.pdf) What are profiles? | Bjarne Stroustrup | 22 October 2026. A profile is a set of guarantees enforced at compile time or run time; the note lists what profiles are not. |
+| [P4222R3](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4222r3.pdf) Initialization profile | Bjarne Stroustrup | 22 October 2026. Every object is initialized before use; compile-time enforced. |
+| [P4418R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4418r0.pdf) Invalidation profile | Bjarne Stroustrup | 22 October 2026. A pointer is dereferenced only while its object exists. The paper says experimental GCC and Clang branches exist. |
+| [P4415R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4415r0.pdf) Profiles: implementation status | Wong, Stasiowski, Voutilainen | 22 October 2026, information only. Two implementations: a Clang fork (framework, most of `std::init`) and a GCC fork (framework, `std::init`, `std::invalidation`). |
+| [P4158R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4158r0.pdf) Subsetting and restricting C++ for memory safety | Oliver Hunt | Slides. Reports about 4 million lines of WebKit code adopted under a subset. |
+| [P3970R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3970r0.pdf) Profiles DG statement | Vandevoorde, Garland, McKenney, Orr, Stroustrup, Wong | 16 January 2026. Asks for the framework to be available on implementations so that specific profiles can be tried. |
+| [P5000R1](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p5000r1.pdf) Direction for ISO C++29 | Directions Group | 6 May 2026. Priorities for the C++29 cycle. |
 
-**No shipping compiler implements `[[profiles::enforce]]` today.** clang-p2996 and GCC 16.1 ship reflection (P2996) and partial contracts (P2900) support; neither advertises the profile attribute. The mechanisms in the next subsection are what gets you profile-equivalent coverage on real toolchains right now.
+No released compiler implements `[[profiles::enforce]]`. The two forks run on Compiler Explorer, and <PostLink slug="profiles-p4415-implementation-status">my post on P4415R0</PostLink> records what I ran on both on 2026-10-25. I did not re-run those examples on 2026-11-06. The Bloomberg-led counter-paper [P3543R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3543r0.pdf) argued that granularity, error reporting and migration need rework.
 
-#### Pre-Brno update (May 2026 mailing)
+### What you can switch on today
 
-The [May 2026 WG21 mailing](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/) (the pre-Brno mailing, 116 papers, dropped early May) sharpens the C++29 direction with three load-bearing papers:
-
-| Paper | Author(s) | What it does |
-|---|---|---|
-| [P2000R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/) Direction for ISO C++29 | Vandevoorde, Garland, McKenney, Orr, Stroustrup, Wong (Feb 2026) | The formal direction-setting paper for C++29, naming safety as the headline axis. |
-| [D3704R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/) A type-safety profile | Stroustrup (Jan 2026) | Revision of P3984; explicit alignment to Dos Reis's P3589 framework. SG23 focus at Brno. |
-| [P3970R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/) Profiles and Safety: a call to action | Vandevoorde, Garland, McKenney, Orr, Stroustrup, Wong (Jan 2026) | Co-signed by all the C++29-direction authors; argues for concrete profile timelines and reaffirms safety as a non-negotiable C++29 deliverable. |
-
-Brno (8–13 June 2026) is the next milestone; SG23 is expected to refine the type-safety profile against P3589's framework. **What this changes for the page above:** nothing in *today*'s recommendations -- you still flip the hardened-stdlib macro, you still run clang-tidy with the safety check sets, you still use the reflection-driven user-library profile below. The May mailing is signal that the C++29 timeline is being defended, not slipping further. Re-checked 2026-05-17.
-
-### What you CAN flip on today
-
-For the bug classes that the deferred profile attribute would have caught, real workable mechanisms exist on shipping toolchains. The following table is the "**what to actually turn on**" view -- the rest of this section walks each row in detail.
+This table is the practical view. Each row is walked through below with what I ran.
 
 <div class="table-fit table-fit-3col">
 
 | Mechanism | How to enable | Catches |
 |---|---|---|
-| **Hardened stdlib** | **clang:** `-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST`<br/>**GCC:** `-D_GLIBCXX_ASSERTIONS` (or `-fhardened`)<br/>**MSVC STL:** `_MSVC_STL_HARDENING=1` (VS 2022 17.14+) | `vector::operator[]` OOB, deref of null `unique_ptr`, string overruns |
-| **clang-tidy `pro-*` checks** | clang-tidy 21+ (cross-tool: works with clang, GCC, MSVC builds) | Pointer arithmetic, array decay, unchecked container access, unsafe casts (the literal Core Guidelines profile rules) |
-| **MSVC Lifetime Profile** | **MSVC:** `/analyze` with EspXEngine.<br/>(no clang/GCC equivalent in mainline) | Dangling pointers, use-after-scope (Sutter's original Lifetime Profile design, 2018-onward) |
-| **`[[clang::lifetimebound]]`** | **clang:** `[[clang::lifetimebound]]`<br/>**GCC:** `[[gnu::access]]` cousin<br/>**MSVC:** partial | API-boundary lifetime hints |
-| **C++26 Contracts (P2900)** | **clang-p2996:** `-fcontracts=enforce`<br/>**GCC 16.1:** warnings only<br/>**MSVC:** roadmap | User-written precondition / postcondition violations |
+| Hardened stdlib | libc++: `-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST`<br/>libstdc++: `-D_GLIBCXX_ASSERTIONS` or `-fhardened`<br/>MSVC STL: `_MSVC_STL_HARDENING=1` | `vector::operator[]` out of bounds on all three. A null `unique_ptr` dereference on libstdc++ only, in my runs. |
+| **clang-tidy `pro-*` checks** | clang-tidy 23.1.1 lists all ten checks named below | Pointer arithmetic, array decay, unchecked container access, unsafe casts |
+| MSVC Lifetime Profile | `/analyze` with EspXEngine; no clang or GCC equivalent in a release (not re-run on 2026-11-06) | Dangling pointers, use-after-scope |
+| `[[clang::lifetimebound]]` | Clang, on a parameter | Returning a reference to a temporary argument |
+| C++26 contracts (P2900) | GCC 16.2: `-std=c++26 -fcontracts`<br/>Clang 23.1.0: rejects `-fcontracts`<br/>MSVC 19.51: rejects the syntax | User-written precondition and postcondition violations |
 
 </div>
 
 #### Hardened standard library (P3471)
 
-This is the highest-leverage thing you can do today for memory safety in C++26. It's standardised, deployed at scale, and free of code change at call sites. Google's deployment across hundreds of millions of LOC reports **0.3% performance impact** and **1000+ bugs found, including security-critical ones** (cited in [P3471R4](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3471r4.html)).
+This is the highest-leverage switch and needs no change at call sites. P3471R4 cites Google's deployment of hardened libc++ with a cost as low as 0.3% and over 1000 bugs found. Treat that as Google's report, not as a number you will see.
 
-Three implementations, three knobs:
+Three implementations, three settings:
 
 ```bash
-# libc++ (clang) -- four modes; FAST is the production default
--D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST       # security-critical only
--D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE  # + cheap logic-error checks
--D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG      # + expensive checks
+# libc++ (Clang)
+-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST       # security-critical checks only
+-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE  # adds cheap logic-error checks
+-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG      # adds expensive checks
 
 # libstdc++ (GCC)
 -D_GLIBCXX_ASSERTIONS         # lightweight precondition checks
--fhardened                    # umbrella: ASSERTIONS + FORTIFY_SOURCE=3 + stack
-                              # protector + PIE + RELRO (GCC-only)
--D_GLIBCXX_DEBUG              # heavy: catches iterator invalidation; ABI-breaking
+-fhardened                    # umbrella: includes the assertions; GNU/Linux only
+-D_GLIBCXX_DEBUG              # heavy, ABI-breaking, catches iterator invalidation
 
 # MSVC STL
-_MSVC_STL_HARDENING=1         # VS 2022 17.14+, off by default; __fastfail
-                              # on violation. Per-type opt-in also exists,
-                              # e.g. _MSVC_STL_HARDENING_VECTOR
-_ITERATOR_DEBUG_LEVEL=1       # SEPARATE and ABI-breaking; iterator checks,
-                              # not the hardening switch
+_MSVC_STL_HARDENING=1         # off by default; fastfail on violation
+_ITERATOR_DEBUG_LEVEL=1       # separate and ABI-breaking; not the hardening switch
 ```
 
-The libc++ modes are non-ABI-breaking by default; iterator-bounds checks require an ABI opt-in build (`_LIBCPP_ABI_BOUNDED_ITERATORS_IN_VECTOR`). The libstdc++ light path is also non-ABI; `_GLIBCXX_DEBUG` is ABI-breaking and catches more (including iterator invalidation that libc++'s hardened mode misses -- see [LLVM #128627](https://github.com/llvm/llvm-project/issues/128627)).
+What I ran on 2026-11-06, one `vector<int>` of three elements read at index `argc + 5`, at `-O1`:
 
-CMake snippet for the production-default fast mode:
+| Toolchain and setting | Exit | Output |
+|---|---|---|
+| g162, no setting | 0 | a garbage value |
+| g162 `-D_GLIBCXX_ASSERTIONS` | 134 (SIGABRT) | the assertion, with file and line of `stl_vector.h` |
+| g162 `-fhardened` | 134 (SIGABRT) | the same assertion |
+| clang2310 libc++ `FAST` | 132 (SIGILL) | nothing |
+| clang2310 libc++ `EXTENSIVE` | 132 (SIGILL) | nothing |
+| clang2310 libc++ `DEBUG` | 134 (SIGABRT) | `vector[] index out of bounds` |
+| vcpp_v19_latest_x64 `/D_MSVC_STL_HARDENING=1` | 3221226505 (0xC0000409) | nothing |
+
+With `-fhardened -D_GLIBCXX_ASSERTIONS` together GCC warns that `-fhardened` does not enable the assertions because you defined them yourself. The vector read still aborted. The [hardened-stdlib](/toolset/hardened-stdlib/) page records that libstdc++ assertions print and abort without going through the contracts handler, tested there with `ignore` and `observe`. I did not repeat that test here.
+
+##### Null unique_ptr
+
+A null `unique_ptr` is where the libraries differ. With `_GLIBCXX_ASSERTIONS`, `*p` aborted with SIGABRT at `-O0`. On Clang 23.1.0 with libc++, a null dereference ended in SIGSEGV at `-O0`. That held with no setting, with `FAST` and with `EXTENSIVE`, for both `*p` and `p->x`. It also held with `DEBUG`, tested for `*p` only. So I would not tell anyone that libc++ hardening catches a null `unique_ptr` dereference. I did not test `operator[]` of `unique_ptr<T[]>` or `shared_ptr`.
+
+##### Setting it in CMake
+
+CMake snippet that sets the setting explicitly:
 
 ```cmake
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR
@@ -190,17 +180,19 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR
         _LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
     )
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    add_compile_options(-fhardened)   # GCC 14+ umbrella
+    add_compile_options(-fhardened)   # also pass it when linking
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    add_compile_definitions(_MSVC_STL_HARDENING=1)   # VS 2022 17.14+
+    add_compile_definitions(_MSVC_STL_HARDENING=1)
 endif()
 ```
 
-For more, see [libc++'s Hardening modes documentation](https://libcxx.llvm.org/Hardening.html) and the [OpenSSF Compiler Options Hardening Guide](https://best.openssf.org/Compiler-Hardening-Guides/Compiler-Options-Hardening-Guide-for-C-and-C++.html).
+libstdc++ also fixed two library bugs in October: CVE-2026-114691 (`vector<bool>` constructors) and CVE-2026-114690 (parallel `std::search`). The fixes are on the gcc-14, gcc-15 and gcc-16 branches and in no point release as of 2026-11-06. The [hardened-stdlib](/toolset/hardened-stdlib/) page has the details. For more, see [libc++'s hardening documentation](https://libcxx.llvm.org/Hardening.html), its [known gap for vector iterators (LLVM #128627)](https://github.com/llvm/llvm-project/issues/128627), and the [OpenSSF Compiler Options Hardening Guide](https://best.openssf.org/Compiler-Hardening-Guides/Compiler-Options-Hardening-Guide-for-C-and-C++.html).
+
+A hardened library is only as strong as its terminating behaviour. P3878R1, applied to the draft at Kona in November 2025, says an implementation should not count as hardened if it evaluates hardened preconditions with the `observe` semantic (P4433R0, note 6). I did not test what that means for libstdc++ 16.2, which aborts through its own assertion on this build.
 
 #### clang-tidy `cppcoreguidelines-pro-*` checks
 
-The "Pro" prefix in these clang-tidy checks stands for **Profile** -- they're the Core Guidelines bounds + type profiles, implemented in a static analyzer. Available for years; works on stock clang-tidy across clang, GCC, and MSVC builds (clang-tidy is a cross-tool).
+The "Pro" prefix in these clang-tidy checks stands for profile: they implement the Core Guidelines bounds and type profiles in a static analyzer. All ten names below are listed by `clang-tidy --checks='*' --list-checks` in clang-tidy 23.1.1 (run on 2026-11-06). I did not run them on a sample project. clang-tidy analyses the source, so it works whichever compiler builds the code.
 
 ```yaml
 # .clang-tidy fragment for a sample bounds + type profile gate
@@ -218,51 +210,60 @@ Checks: >
 WarningsAsErrors: '*'
 ```
 
-Tune the disable list for C-API boundaries -- pointer arithmetic on a `char*` from a C library is unavoidable in some adapters, and turning the check on without exemptions produces noise. The official check list lives at [clang.llvm.org/extra/clang-tidy/checks/list.html](https://clang.llvm.org/extra/clang-tidy/checks/list.html).
+Tune the disable list for C-API boundaries. Pointer arithmetic on a `char*` from a C library is unavoidable in some adapters, and turning the check on without exemptions produces noise. The official check list lives at [clang.llvm.org/extra/clang-tidy/checks/list.html](https://clang.llvm.org/extra/clang-tidy/checks/list.html).
 
 #### MSVC Lifetime Profile via `/analyze`
 
-Sutter's original Lifetime Profile (the source of the Core Guidelines lifetime story) has had a partial MSVC implementation since 2018, by Neil MacIntosh and Kyle Reed. It runs in MSVC's static analyzer, surfaces in Visual Studio as live IDE diagnostics, and catches a meaningful subset of dangling-pointer + use-after-scope cases. Enable via `/analyze` (or `/analyze:plugin EspXEngine.dll` for the Code Analysis variant). Not standard, not portable, but the most mature lifetime-profile implementation that exists today on any compiler.
+Sutter's original Lifetime Profile has had a partial MSVC implementation since 2018, by Neil MacIntosh and Kyle Reed. It runs in MSVC's static analyzer and catches a subset of dangling-pointer and use-after-scope cases. Enable it with `/analyze`, or `/analyze:plugin EspXEngine.dll` for the Code Analysis variant. It is not standard and not portable. Not re-run on 2026-11-06, so this paragraph is the page's earlier text.
 
-The clang side has an experimental `-Wlifetime` fork by Matthias Gehre and Gábor Horváth ([mgehre/llvm-project](https://github.com/mgehre/llvm-project)) -- partial, not in mainline, last actively-maintained around 2020-2021.
+The Clang side had an experimental `-Wlifetime` fork by Matthias Gehre and Gábor Horváth ([mgehre/llvm-project](https://github.com/mgehre/llvm-project)). The repository is archived and its last push was on 2021-07-14.
 
 #### `[[clang::lifetimebound]]` and `[[gnu::access]]` attributes
 
-Narrow but deployable. `[[clang::lifetimebound]]` on a parameter says "the return value's lifetime is bound to this parameter"; the compiler then warns when the bound lifetime would outlive the parameter. `[[gnu::access]]` (GCC) gives buffer-size hints the compiler uses for bounds analysis. Pair these on API boundaries where you control both sides.
+Both are narrow and deployable. `[[clang::lifetimebound]]` goes on a parameter, or on the implicit object parameter of a member function. It says the returned reference or view is bound to that argument, and Clang then warns when the argument is a temporary.
 
 ```cpp
-// clang: warns when the returned reference outlives `s`.
-[[clang::lifetimebound]] auto first(std::span<int> s) -> int&;
-
-// GCC: tells the compiler buf has at least `n` writeable elements,
-// enabling bounds warnings at call sites.
-void fill(int* buf, size_t n) [[gnu::access(write_only, 1, 2)]];
+// Clang 23.1.0 -Wall: warning: temporary bound to local reference 'r'
+// will be destroyed at the end of the full-expression [-Wdangling]
+const std::string& pick(const std::string& s [[clang::lifetimebound]]) { return s; }
+const std::string& r = pick(std::string("temporary"));
 ```
+
+The earlier version of this page put the attribute in front of the function. Clang 23.1.0 rejects that with "'clang::lifetimebound' attribute only applies to parameters and implicit object parameters". GCC 16.2 accepts the source and ignores the attribute with a `-Wattributes` warning.
+
+`[[gnu::access]]` is a different tool: a size hint for GCC's buffer analysis, not a lifetime attribute. Both spellings below warned on g162 at `-Wall -O2` when I called `fill` with a two-element array and a count of five (`writing 20 bytes into a region of size 8`):
+
+```cpp
+void fill(int* buf, size_t n) [[gnu::access(write_only, 1, 2)]];
+__attribute__((access(write_only, 1, 2))) void fill(int* buf, size_t n);
+```
+
+Clang 23.1 also has a `-Wlifetime-safety` warning family. The [lifetime-safety-2026](/toolset/lifetime-safety-2026/) page covers it.
 
 #### Contracts (P2900)
 
-Now in C++26. `pre` / `post` clauses on function declarations + `contract_assert` in bodies, with multiple evaluation semantics (ignore / observe / enforce / quick-enforce). Compiler implementations are partial:
+Contracts are `pre` and `post` clauses on declarations plus `contract_assert` in bodies. They have four evaluation semantics: `ignore`, `observe`, `enforce` and `quick_enforce`. They are in the C++26 draft, and the ballot dispute above is about them. What compilers do, as run on 2026-11-06:
 
-- **clang-p2996**: parses the syntax; enforcement opt-in via `-fcontracts=enforce`.
-- **GCC 16.1**: emits warnings only.
-- **MSVC**: roadmap, not yet shipped.
+- GCC 16.2: `-std=c++26 -fcontracts` works. A violated `pre(x > 0)` printed the violation with `semantic: enforce` and ended in SIGABRT (exit 134). The earlier claim that GCC "emits warnings only" was wrong.
+- Clang 23.1.0, `clang_bb_p2996`: both reject `-fcontracts` and `-fcontracts=enforce` as unknown arguments. The earlier claim about `-fcontracts=enforce` on clang-p2996 was wrong.
+- MSVC 19.51: rejects the syntax, per the [contracts-2026](/toolset/contracts-2026/) page.
 
-The hardened stdlib (P3471) is the *first user* of contracts -- it formalises bound-checks-as-contract-violations. For application-side preconditions, contracts let you state the invariant once on the function and have the toolchain enforce it. Full coverage of contracts in production is a planned `cpp-contracts-2026` toolset entry.
+The hardened standard library (P3471) is specified in terms of contract assertions, which is the link to the dispute. On libstdc++ 16.2 the hardening checks abort through the library's own assertion. For application-side preconditions, state the invariant once on the function and pick a semantic per translation unit.
 
 ### What regulated industries do today
 
-For the safety-critical end of the spectrum -- automotive, aerospace, medical -- the C++ standard alone has never been enough. The active baseline is:
+For automotive, aerospace and medical software the language standard alone has never been enough. The [cpp-coding-standards](/toolset/cpp-coding-standards/) page has the detail and the corrections to the rule labels; the short form:
 
-- **MISRA C++:2023** -- the current unified C++ coding standard. Targets C++17, defines 179 rules + directives. Result of the [MISRA + AUTOSAR consortia merger announced in January 2019](https://www.autosar.org/news-events/detail/misra-consortium-announce-integration-of-autosar-c-coding-guidelines-into-updated-industry-standard); MISRA C++:2023 (October 2023) supersedes both MISRA C++ 2008 and AUTOSAR C++14 with a single source of truth. Clang-tidy carries a partial implementation; commercial tools (Helix QAC, PRQA, Coverity, Parasoft, LDRA, Axivion) carry certified rule sets.
-- **AUTOSAR C++14** -- the last standalone AUTOSAR C++ coding guideline (2017-2018). After the 2019 merger no separate AUTOSAR C++17 / C++20 release exists; new Adaptive AUTOSAR projects target MISRA C++:2023 instead. Legacy ASIL-rated codebases that pre-date the merger may still be on AUTOSAR C++14 + a transition plan.
-- **SEI CERT C++** -- secure-coding standard organised by category (STR, INT, MEM, ...). Open, freely available; clang-tidy's `cert-*` checks implement a portion.
-- **C++ Core Guidelines** -- the lingua franca; clang-tidy's `cppcoreguidelines-*` checks enforce a portion. Cited by everything else.
+- MISRA C++:2023 targets C++17 and was published in October 2023, per [misra.org.uk](https://misra.org.uk/misra-cpp2023-released-including-hardcopy/). It integrates the AUTOSAR C++14 guidelines, following the [2019 announcement by MISRA and AUTOSAR](https://www.autosar.org/news-events/detail/misra-consortium-announce-integration-of-autosar-c-coding-guidelines-into-updated-industry-standard). I found no primary source for a guideline count, so this page gives none.
+- SEI CERT C++ is a free, web-published secure-coding standard. clang-tidy's `cert-*` checks cover part of it.
+- C++ Core Guidelines are cited by most of the others. clang-tidy's `cppcoreguidelines-*` checks cover part of them.
 
-When `[[profiles::enforce]]` lands in C++29, these cluster into a smaller set of language-level guarantees. Until then, the cluster section `cpp-coding-standards` (incoming MR11) covers the rule-set choice in depth.
+When profiles arrive in a future standard, some of these rules may become language-level guarantees. Nothing in the C++26 draft does that.
 
-## Reflection today (C++26, clang-p2996 + GCC 16.1)
 
-For per-class structural rules ("no raw pointer members", "no C-style arrays", "all members trivially copyable"), C++26 reflection lets a user library enforce profile-equivalent constraints **today**, on stock clang or GCC, without waiting for the C++29 attribute. The pattern: a `consteval` predicate that walks the class's data members and `static_assert`s on each one. Add a forbidden member type, the build refuses; remove it, the build proceeds.
+## Reflection today (C++26, GCC 16.2 and the Bloomberg Clang fork)
+
+For per-class structural rules ("no raw pointer members", "no C-style arrays", "all members trivially copyable"), C++26 reflection lets a user library enforce profile-like constraints today without waiting for the C++29 attribute. On 2026-11-06 the source below ran on `clang_bb_p2996` and, with `<meta>` in place of `<experimental/meta>` and `-std=c++26 -freflection`, on GCC 16.2 and trunk. The pattern: a `consteval` predicate that walks the class's data members and `static_assert`s on each one. Add a forbidden member type, the build refuses; remove it, the build proceeds.
 
 ```cpp
 template <typename T>
@@ -290,88 +291,78 @@ struct GoodSession {
 static_assert(meets_basic_safety_profile<GoodSession>());
 ```
 
-Add `int* raw_count;` as a member of `GoodSession` and the build fails with `static_assert failed: "safety profile violation: raw pointer member"`. The error message is the same shape a future P3984-enforced profile would emit, just sourced from a user library instead of the language.
+Uncomment `BadSessionRawPtr` and both compilers fail the build. GCC 16.2 prints `static assertion failed: safety profile violation: raw pointer member`. The `BadSessionCArr` case fails the same way with `C-style array member`. The message comes from a user library, not from the language.
+
+### Which rules it maps to
 
 What this aligns with:
 
-- **C++ Core Guidelines** [I.11](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Ri-raw) (never transfer ownership by raw pointer), [F.7](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rf-smart) / [F.20](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rf-out) / [F.43](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rf-dangle) (ownership rules), [ES.42](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Res-ptr) (keep use of pointers simple).
-- **MISRA C++:2023** (the unified MISRA + AUTOSAR successor) prohibitions on raw pointer arithmetic and unbounded C arrays at the API level. The reflection-driven check enforces the equivalent rule one class at a time, by construction.
-- **SEI CERT C++** STR (string-handling) and MEM (memory-management) categories converge on the same property: typed access at the boundary, no raw-pointer gymnastics.
+- C++ Core Guidelines [I.11](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Ri-raw) (never transfer ownership by raw pointer), [F.7](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rf-smart) / [F.20](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rf-out) / [F.43](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rf-dangle) (ownership rules), [ES.42](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Res-ptr) (keep use of pointers simple).
+- MISRA C++:2023 (the unified MISRA + AUTOSAR successor) prohibitions on raw pointer arithmetic and unbounded C arrays at the API level. The reflection-driven check enforces the equivalent rule one class at a time, by construction.
+- SEI CERT C++ STR (string-handling) and MEM (memory-management) categories converge on the same property: typed access at the boundary, no raw-pointer gymnastics.
 
-The full demo (<RepoFile path="posts/toolset/memory-safety-cpp26-and-beyond/examples/reflect-profile.cpp" branch="main" />) ships with two commented-out `BadSession*` structs the reader can uncomment to see the static_assert fire with the matching profile-violation message:
+The full demo (<RepoFile path="posts/toolset/memory-safety-cpp26-and-beyond/examples/reflect-profile.cpp" branch="main" />) ships with two commented-out `BadSession*` structs:
 
 <GodboltEmbed id="11Earja19" title="Reflection-driven basic safety profile (clang-p2996)" />
 
-<DockerRun
-  image="ghcr.io/wrocpp/cpp-reflection:2026-05"
-  command="bash -c 'clang++ -std=c++26 -freflection-latest -stdlib=libc++ posts/toolset/memory-safety-cpp26-and-beyond/examples/reflect-profile.cpp -o /tmp/profile && LD_LIBRARY_PATH=/opt/p2996/clang/lib/aarch64-unknown-linux-gnu /tmp/profile'"
-  expected={"GoodSession passes the basic safety profile check.\nTry uncommenting BadSession* in the source to see the\nstatic_assert fire with the profile-violation reason."}
-  title="Same example, locally on cpp-reflection"
-/>
+The embed above is the exact source that ran. The container image this page used to cite was pruned, so there is no `docker run` line.
 
 What this user-library check does NOT solve:
 
-- **Function-body checks** (e.g. "no raw pointer arithmetic *inside* a function"): need the C++29 profile attribute to enforce at statement-level.
-- **Cross-translation-unit checks** (e.g. "no callsite passes a non-`std::span` to a `[[profile-enforced]]` function"): need the language attribute and link-time tooling.
-- **Migration tooling**: a profile attribute can carry a phased "warn-only" mode; user-library `static_assert` is binary "compiles or doesn't".
+- Function-body checks such as "no raw pointer arithmetic *inside* a function": these need a statement-level mechanism such as a profile.
+- Cross-translation-unit checks (e.g. "no callsite passes a non-`std::span` to a `[[profile-enforced]]` function"): need the language attribute and link-time tooling.
+- Migration tooling: a profile attribute can carry a phased "warn-only" mode; user-library `static_assert` is binary "compiles or doesn't".
 
-For *new* code at the type-shape level, the reflection-driven harness already gives you "this class meets the profile, by construction" -- and the same harness composes with `[[profiles::enforce]]` the day it becomes available, rather than competing with it.
+For new code at the type-shape level, the check tells you that a class has no raw pointer or C array members. Whether it would compose with `[[profiles::enforce]]` is untested, because no released compiler has the attribute.
 
 ## Where this is heading (C++29)
 
-The committee did not abandon profiles -- they restructured. Per the [Croydon trip report](https://herbsutter.com/2026/03/29/c26-is-done-trip-report-march-2026-iso-c-standards-meeting-london-croydon-uk/), SG23 (Safety and Security) continues work on profiles targeting C++29, now built around three load-bearing papers:
+Per the [Croydon trip report](https://herbsutter.com/2026/03/29/c26-is-done-trip-report-march-2026-iso-c-standards-meeting-london-croydon-uk/), SG23 (Safety and Security) continues work on profiles for C++29. As of 2026-11-06 the papers are the ones in the table above. The three that define the shape are:
 
-- **[P3589](https://isocpp.org/files/papers/P3589R1.pdf) (Dos Reis) -- the general framework.** Specifies what a profile is, the `[[profiles::enforce]]` and `[[profiles::suppress]]` attribute syntax, granularity rules (per-statement, per-block, per-TU), and the rule that opting out of one profile does not accidentally opt out of others. Separates the framework from any specific profile.
-- **[P3984](https://www.stroustrup.com/type-safety-profile.pdf) (Stroustrup) -- a type-safety profile.** Re-casts the type-safety + resource-safety story on top of the P3589 framework. SG23's primary work item at Croydon. Targets C++29.
-- **[P4158](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4158r0.pdf) (Hunt, Apple/WebKit) -- experience report.** WebKit hardened over 4 million lines of C++ using a subsetting approach -- the practical evidence that a profile-shaped restriction works at production scale.
+- [P3589R2](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3589r2.pdf) (Dos Reis), the framework. It defines the `[[profiles::enforce]]`, `[[profiles::require]]` and `[[profiles::suppress]]` attributes, and P4415R0 adds `[[profiles::exempt]]` to the list of features it measures. Opting out of one profile does not opt out of others.
+- The profiles themselves. Stroustrup's [P4222R3](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4222r3.pdf) (initialization) and [P4418R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4418r0.pdf) (invalidation) are the two with implementations. P4415R0 names them `std::init` and `std::invalidation`.
+- Evidence. [P4158R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4158r0.pdf) (Hunt) reports about 4 million lines of WebKit code under a subset, and P4415R0 reports the two forks. Neither says the approach is ready for the C++29 schedule.
 
-The illustrative shape (subject to revision before C++29 freezes):
+The illustrative shape below uses the attribute syntax from P3589R2 and the profile names from P4415R0. It is a sketch, not code that a released compiler accepts, and the syntax may change before C++29:
 
 ```cpp
-// Pseudo-syntax (P3589 + P3984, C++29 target).
-[[ profiles::enforce(type, lifetime) ]]
+// Sketch only (P3589R2 attribute, P4415R0 profile names).
+[[ profiles::enforce(std::init, std::invalidation) ]]
 namespace safe_io {
     auto read(std::span<const std::byte> in) -> ParsedDoc;
     auto write(std::span<std::byte> out, const ParsedDoc&)
         -> std::expected<void, error>;
 }
-// Inside this namespace: raw pointer arithmetic refuses to compile,
-// uninitialised reads refuse to compile, lifetimebound violations fire
-// hard diagnostics. Per-block opt-out via [[profiles::suppress(...)]].
+// Per-block opt-out would use [[profiles::suppress(...)]].
 ```
 
-Layered on top of profiles, **C++29 token injection** ([P3294](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3294r2.pdf) Revzin / Alexandrescu / Vandevoorde) lets the same annotation INJECT the safe accessors -- not just enforce them. Today the developer writes the safe API by hand and the profile only enforces what the developer chose to write. With injection, the schema becomes the source of truth and the compiler writes the safe implementations:
+Token injection ([P3294](https://wg21.link/p3294), Revzin, Alexandrescu and Vandevoorde, latest revision R2 from 2024) is a separate C++29 candidate. It would let an annotation inject members as well as enforce rules:
 
 ```cpp
-// Pseudo-syntax (P3294, C++29 target).
-[[ profiles::enforce(bounds, type, lifetime), inject(safe_api) ]]
+// Sketch only: P3294 describes code injection with token sequences; this
+// attribute-driven form is an illustration, not syntax from the paper.
+[[ inject(safe_api) ]]
 struct SensorReading {
     std::uint16_t sensor_id;
     std::int32_t  raw_value;
     std::uint8_t  status_flags;
 };
-// Injected by the compiler:
-//   static auto parse(std::span<const std::byte>) ->
-//       std::expected<SensorReading, parse_error>;
-//   auto serialize() const -> std::array<std::byte, wire_size_v<SensorReading>>;
-//   bool operator==(SensorReading const&) const = default;
-// Each injected function is itself profile-conformant by construction.
 ```
 
-### Sidebar: cppfront -- Sutter's profile design as a working compiler
+### Sidebar: cppfront, Sutter's design as a working compiler
 
-For readers who want to see Sutter's original profile design *operating today*, [cppfront](https://github.com/hsutter/cppfront) is his experimental Cpp2-syntax-to-Cpp1 compiler. Cpp2 has type / bounds / initialization / lifetime safety **by default**: use of an uninitialized variable is statically diagnosed, container access is bounds-checked, mixed-sign comparisons and integer divide-by-zero are checked at runtime. The opposite of standard C++'s "you have to opt IN to safety" -- you opt OUT (per scope, with explicit `unchecked` or per-flag `-no-subscript-checks` etc.) when a hot path needs it.
+For readers who want to see Sutter's original profile design *operating today*, [cppfront](https://github.com/hsutter/cppfront) is his experimental Cpp2-syntax-to-Cpp1 compiler. Cpp2 has type / bounds / initialization / lifetime safety by default: use of an uninitialized variable is statically diagnosed, container access is bounds-checked, mixed-sign comparisons and integer divide-by-zero are checked at runtime. The opposite of standard C++'s "you have to opt IN to safety" -- you opt OUT (per scope, with explicit `unchecked` or per-flag `-no-subscript-checks` etc.) when a hot path needs it.
 
-It's not standard C++; not a `[[profiles::enforce]]` implementation. It's a syntax-2 testbed Sutter uses to prototype the design intent that later feeds into the standard.
+It is not standard C++ and not a `[[profiles::enforce]]` implementation. It is Sutter's testbed for the design intent.
 
-A 25-line Cpp2 demo runs end-to-end on Compiler Explorer in tree mode -- a single `test.cpp2` paired with a GCC 16.1 executor; godbolt auto-invokes cppfront for the `.cpp2` extension before handing off to the C++ compiler. The bounds violation on `items[5]` fires at runtime, exactly as cppfront's safety-by-default model promises:
+A 25-line Cpp2 demo runs on Compiler Explorer in tree mode: a single `test.cpp2` paired with a GCC 16.1 executor, with Compiler Explorer invoking cppfront for the `.cpp2` extension. I did not re-run this embed on 2026-11-06. The bounds violation on `items[5]` fires at runtime, exactly as cppfront's safety-by-default model promises:
 
 <GodboltEmbed id="8v76EaM7a" title="cppfront -- safety by default (godbolt CMake tree, executes)" />
 
-Source: <RepoFile path="posts/toolset/memory-safety-cpp26-and-beyond/examples/cppfront-safety.cpp2" branch="main" />. cppfront's [command-line options](https://hsutter.github.io/cppfront/cppfront/options/) and [contracts documentation](https://hsutter.github.io/cppfront/cpp2/contracts/) cover the per-check opt-out flags and the `pre<bounds_safety>` / `post<>` syntax for explicit contracts grouped by safety category. If the Croydon trip report's "C++26 is the first step into a fundamentally new era" framing intrigues you, cppfront is where the next step is being prototyped.
+Source: <RepoFile path="posts/toolset/memory-safety-cpp26-and-beyond/examples/cppfront-safety.cpp2" branch="main" />. cppfront's [command-line options](https://hsutter.github.io/cppfront/cppfront/options/) and [contracts documentation](https://hsutter.github.io/cppfront/cpp2/contracts/) cover the per-check opt-out flags and the `pre<bounds_safety>` / `post<>` syntax for explicit contracts grouped by safety category. 
 
-### The state of the codebase one decade out
+### How the pieces fit
 
-Profiles enforce the safe subset at the language level (C++29). Token injection generates the safe implementations from a schema (C++29). Hardened stdlib catches the runtime corners that compile-time analysis misses (already shipped). Sanitizers stay in CI for legacy paths and for catching the corners reflection hasn't yet reached (already shipped). The CVE class -- "developer wrote a parser by hand and missed a bounds check" -- becomes "the developer didn't put the annotation on the struct", which is a lint warning, not an exploit.
+Hardening catches runtime corners that compile-time analysis misses, and it is available now. Sanitizers stay in CI for legacy paths. Profiles, if they land in C++29, would enforce a subset at compile time. Which of these you rely on depends on the toolchain you ship with, and the ballot result does not change the first two.
 
-Cross-references: <PostLink slug="sanitizers-2026">sanitizers-2026</PostLink> covers the runtime safety net that profiles aim to complement (not replace); <PostLink slug="testing-for-safety-2026">testing-for-safety-2026</PostLink> covers how to exercise the harden-stdlib + contracts stack via property-based + fuzz tests. The cluster section `cpp-coding-standards` (incoming MR11) covers MISRA C++:2023 + CERT C++ + Core Guidelines tooling for the regulated end of the spectrum.
+Cross-references: <PostLink slug="sanitizers-2026">sanitizers-2026</PostLink> covers the runtime safety net. <PostLink slug="testing-for-safety-2026">testing-for-safety-2026</PostLink> covers exercising the hardening and contracts stack with property-based and fuzz tests. The [cpp-coding-standards](/toolset/cpp-coding-standards/) page covers MISRA C++:2023, CERT C++ and the Core Guidelines tooling for regulated projects.

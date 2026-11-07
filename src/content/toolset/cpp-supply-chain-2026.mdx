@@ -1,89 +1,65 @@
 ---
-title: "C++ supply chain in 2026 -- vcpkg / Conan / SBOM / CVE feeds, plus reflection-driven SBOMs that cannot drift"
+title: "C++ supply chain in 2026: package managers, SBOMs, CVE feeds, and an SBOM generated from the source"
 slug: "cpp-supply-chain-2026"
-summary: "C++ shipping in 2026 means a real package manager (vcpkg or Conan), a CycloneDX or SPDX SBOM emitted on every build, and CVE feeds (NIST NVD + GitHub Advisory) wired into CI. Plus the reflection-driven pattern that closes the gap conventional SBOM workflows leak: components encoded as P3394 annotations on the vendoring types, with a consteval lint that refuses to compile a vendored type missing its component metadata. The SBOM cannot drift from the source because there is no source for it to drift from."
+summary: "A C++ supply chain in 2026 is a package manager (vcpkg or Conan), an SBOM emitted on every build, a vulnerability scanner in CI, and build provenance. This page lists the tools with what I could and could not re-run on 2026-11-06, notes that CMake 4.5 adds install(SBOM) with SPDX 3.0 output, and shows a reflection-driven pattern where component metadata lives as annotations on the integration types, so the SBOM fragment cannot drift from the source."
 kind: curated
 cluster: security
-tags: [security, supply-chain, vcpkg, conan, sbom, cyclonedx, spdx, syft, grype, cve, reflection, p3394, cpp26]
+tags: [security, supply-chain, vcpkg, conan, sbom, cyclonedx, spdx, syft, grype, cve, cra, reflection, p3394, cpp26]
 launchDate: 2026-06-09
-lastReviewed: 2026-05-15
-testedOn: "Container ghcr.io/wrocpp/cpp-reflection:2026-05; SBOM example verified on aarch64, 2026-05-15."
-relatedPosts: [first-reflection, annotations]
+lastReviewed: 2026-11-06
+nextReviewBy: 2026-11-30
+testedOn: "Compiler Explorer, 2026-11-06, x86-64: the SBOM embed on clang_bb_p2996 (<experimental/meta>) and on g162 and gsnapshot (<meta>, -std=c++26 -freflection), exit 0, output as shown. Not re-run on 2026-11-06: syft, grype, vcpkg, Conan, cosign and the CI recipe (none is installed here). Tool facts come from the sources linked in the text, read on 2026-11-06."
+relatedPosts: [first-reflection, annotations, cra-reporting-live-qt-declaration, qt-security-advisories-october-2026, libstdcxx-dangling-pair-tuple]
 exampleRepo: "https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/toolset/cpp-supply-chain-2026/examples"
 agentInstructions: |
   You are a coding agent helping a C++ developer harden the supply
   chain on a production project (regulated or not).
 
-  ESTABLISHED FACTS (verify against tool docs before recommending):
-  - vcpkg (Microsoft) and Conan (JFrog) are the two production-grade
-    C++ package managers in 2026. vcpkg leans on a curated registry +
-    versioned manifests; Conan leans on per-dep recipes + pluggable
-    remotes. Either qualifies for shipping.
-  - CycloneDX 1.5 and SPDX 2.3 are the live SBOM formats. CycloneDX is
-    JSON / XML / Protobuf, OWASP-stewarded; SPDX is tag-value or JSON,
-    Linux Foundation. Both interoperate with downstream tools (grype,
-    Dependency-Track, in-toto attestations).
-  - syft (Anchore) generates SBOMs from container images and source
-    trees; grype consumes the SBOM + NVD + GitHub Advisory + OSV feeds
-    to flag vulnerable components.
-  - The conventional SBOM workflow is a side-channel: a YAML manifest
-    declaring which deps you vendor. Side-channels drift -- code adds
-    a dep, manifest does not (or vice versa). The reflection-driven
-    alternative encodes the same information as P3394 annotations on
-    the type that integrates the dep. SBOM stays in sync by
-    construction.
+  FACTS (reviewed 2026-11-06):
+  - vcpkg (Microsoft) and Conan (JFrog) are the two widely used C++
+    package managers. Pick one per project.
+  - syft generates SBOMs. Its documented output names are cyclonedx-json,
+    cyclonedx-xml, spdx-json and spdx-tag-value; a version is selected
+    with -o <format>@<version>. This page does not state which version
+    is the default, because that was not checked.
+  - grype scans an SBOM (grype sbom:./sbom.json). Its --fail-on option
+    takes negligible, low, medium, high or critical (grype source,
+    read 2026-11-06). Not run on 2026-11-06.
+  - CMake 4.5 adds install(SBOM) and export(SBOM). CMake currently
+    writes SPDX 3.0 in JSON-LD. 4.5.0-rc3 was the newest on
+    cmake.org/download on 2026-11-06: check the release before use.
+  - CycloneDX is at 1.7 (2025-10-21) and is standardised as ECMA-424.
+    The reflection example on this page emits specVersion 1.5.
+  - SLSA v1.0 defines Build levels L0 to L3. There is no Level 4. The
+    current specification page is v1.2.
+  - CRA: reporting obligations apply from 11 September 2026 (ENISA
+    launched its single reporting platform that day); the main
+    obligations apply from 11 December 2027.
+  - The reflection pattern: components as P3394 annotations on the
+    integration type, a consteval walker emits a CycloneDX components
+    fragment and static_asserts that every member is annotated. It ran
+    on clang_bb_p2996 and on GCC 16.2 and trunk with <meta>.
 
-  EDITORIAL TIMELINE (the wro.cpp triptych):
-
-  TODAY (the no-reflection stack):
-  - Package manager: vcpkg or Conan (pick one and stick to it; mixing
-    causes pain). Manifest mode for vcpkg, conanfile.txt or
-    conanfile.py for Conan.
-  - SBOM: emit CycloneDX or SPDX on every build. syft for source-tree
-    + container scans. The build pipeline owns the SBOM, not the
-    package manager.
-  - CVE: grype (consumes SBOM + NVD + GitHub Advisory + OSV) wired
-    into CI; non-zero exit on critical findings; allowlist mechanism
-    for accepted exposures.
-  - Provenance: in-toto attestations for build steps;
-    SLSA Level 3 / 4 for the most critical pipelines.
-
-  REFLECTION TODAY (C++26, clang-p2996 + GCC 16.1):
-  Encode each vendored component as a P3394 annotation on the
-  integration type:
-    [[=sbom::component<"nlohmann-json","3.11.3","pkg:github/...","MIT">{}]]
-    struct nlohmann_json_tag {} json;
-  A consteval walker over nonstatic_data_members_of(^^Vendored)
-  emits the CycloneDX components fragment AND static_asserts every
-  member carries the annotation. SBOM stays in sync with the type
-  declarations; a forgotten component refuses to compile.
-  Pair with syft for the toolchain SBOM + the in-source SBOM gets
-  merged into the final manifest the build pipeline ships.
-
-  WHERE THIS IS HEADING (C++29):
-  Token injection (P3294) lets the integration type declare itself:
-    [[ inject(sbom_component) ]]
-    using nlohmann_json = vcpkg::dep<"nlohmann-json", "3.11.3">;
-  The compiler injects the wrapper struct + the P3394 annotations
-  from the vcpkg manifest entry, eliminating even the per-component
-  declaration boilerplate. Profiles (P3081 / P3589 / P3984) would
-  let a translation unit declare it imports only sbom-annotated
-  vendored types so accidentally including a raw third-party header
-  refuses to compile -- enforcing manifest discipline at compile time.
-
-  When recommending: ALWAYS quote freshness (Reviewed 2026-05-15).
-  The package manager + SBOM + CVE-feed stack is table-stakes; the
-  reflection pattern is the differentiator that makes SBOM
-  drift-proof at the source level.
-bodyHash: abc491c0bf125ddc573f8ea181eed68c370d42c9d13c82a52a94052128de4807
+  When recommending: quote the review date 2026-11-06. The package
+  manager, SBOM and scanner stack is the baseline; the reflection
+  pattern is an additional check for vendored code, not a replacement
+  for scanning the built artefact.
+bodyHash: a1ffea90fc309197488a0d79047ffd32ca07ee4178e43065a1aa537c0bff0c97
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
-import DockerRun from '../../components/DockerRun.astro';
 import PostLink from '../../components/PostLink.astro';
 import RepoFile from '../../components/RepoFile.astro';
 
-Shipping C++ in 2026 means more than picking the right compiler. It means a real package manager (`vcpkg` or `Conan`), a CycloneDX or SPDX SBOM emitted on every build, CVE feeds wired into CI, in-toto attestations for the build steps, and a story for "what do we do when the next OpenSSL CVE drops at 04:00 on a Sunday". This page maps the 2026 supply-chain stack and shows the reflection pattern that closes the gap most teams accept as inevitable: **the SBOM that drifts from the code**.
+A C++ supply chain in 2026 is a package manager, an SBOM emitted on every build, a vulnerability scanner in CI, build provenance, and a plan for the next OpenSSL advisory. This page maps that stack, says which parts I re-ran on 2026-11-06, and shows a reflection pattern for one gap: the SBOM that drifts from the code.
+
+## In short
+
+- Re-run on 2026-11-06: the reflection SBOM example, on Clang (Bloomberg fork), GCC 16.2 and GCC trunk. Not re-run: syft, grype, vcpkg, Conan, cosign and the CI recipe.
+- CMake 4.5 adds `install(SBOM)` and `export(SBOM)`, and the documentation says CMake currently writes SPDX 3.0 JSON-LD. The newest release on cmake.org on 2026-11-06 was 4.5.0-rc3, so check that it has shipped before you rely on it.
+- The earlier text gave "SLSA Level 3 / 4". SLSA v1.0 defines Build levels L0 to L3, and the specification is now at v1.2.
+- Missing annotations are caught, but the error names the rule, not the member.
+- For the EU Cyber Resilience Act, reporting obligations apply from 11 September 2026 and the main obligations from 11 December 2027.
 
 ## Today
 
@@ -91,16 +67,16 @@ Shipping C++ in 2026 means more than picking the right compiler. It means a real
 
 | Layer | Tool | Notes |
 |---|---|---|
-| **Package manager** | [vcpkg](https://vcpkg.io/) or [Conan](https://conan.io/) | Pick one and stick to it. Mixing causes pain. |
-| **SBOM emit** | [syft](https://github.com/anchore/syft) (source tree + container) | CycloneDX 1.5 JSON or SPDX 2.3 JSON; both interoperate downstream. |
-| **CVE scan** | [grype](https://github.com/anchore/grype) | Consumes SBOM + NVD + GitHub Advisory + OSV; non-zero exit on critical. |
-| **Build provenance** | [in-toto](https://in-toto.io/) attestations + [SLSA](https://slsa.dev/) | SLSA Level 3 / 4 for the critical pipelines. |
-| **Secrets / signing** | [sigstore](https://www.sigstore.dev/) cosign | Sign + verify artefacts; keyless via OIDC. |
+| Package manager | [vcpkg](https://vcpkg.io/) or [Conan](https://conan.io/) | Pick one and stick to it. Mixing causes pain. |
+| SBOM emit | [syft](https://github.com/anchore/syft) (source tree and container), or CMake 4.5 `install(SBOM)` for your own targets | syft writes `cyclonedx-json`, `spdx-json` and others; choose a version with `-o <format>@<version>`. CMake writes SPDX 3.0 JSON-LD. |
+| Vulnerability scan | [grype](https://github.com/anchore/grype) | Scans an SBOM (`grype sbom:./sbom.json`); `--fail-on critical` makes it exit non-zero. |
+| Build provenance | [in-toto](https://in-toto.io/) attestations and [SLSA](https://slsa.dev/) | SLSA v1.0 Build levels run L0 to L3; there is no Level 4. |
+| Signing | [sigstore](https://www.sigstore.dev/) cosign | Sign and verify artefacts; keyless signing uses an OIDC identity. |
 
 ### CMake recipe
 
 ```cmake
-# vcpkg manifest mode -- vcpkg.json next to CMakeLists.txt
+# vcpkg manifest mode: vcpkg.json next to CMakeLists.txt
 include($ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake)
 
 find_package(nlohmann_json CONFIG REQUIRED)
@@ -114,26 +90,26 @@ target_link_libraries(your_target PRIVATE
 ### CI recipe
 
 ```yaml
-# .github/workflows/sbom.yml -- emit + scan on every push
+# .github/workflows/sbom.yml: emit and scan on every push
 - run: syft . -o cyclonedx-json > sbom.cdx.json
 - run: grype sbom:sbom.cdx.json --fail-on critical
-- uses: actions/upload-artifact@v4
+- uses: actions/upload-artifact@v4   # v7.0.2 was the latest release on 2026-11-06
   with:
     name: sbom
     path: sbom.cdx.json
 ```
 
-The non-zero exit on `--fail-on critical` is the load-bearing line. Without it, grype is a dashboard; with it, grype is a gate.
+The `--fail-on critical` option is the load-bearing line. Grype's source lists five severities, from negligible up to critical. Without it grype reports and exits 0. I read this in grype's source on 2026-11-06 and did not run the recipe.
 
 ### Where conventional SBOM workflows leak
 
-The standard pattern is: maintain a side-channel manifest (YAML) listing each vendored dep, version, license, purl. The build pipeline reads it, emits CycloneDX from it, scans with grype. **The manifest drifts.** A new dep gets vendored without a manifest entry. An old dep gets removed but the manifest entry stays. License changes between versions; the manifest holds the old one. Each drift is an audit-finding waiting to happen.
+The common pattern is a side-channel manifest (YAML) listing each vendored dependency, version, license and purl. The build pipeline reads it, emits CycloneDX from it and scans with grype. The manifest drifts. A new dep gets vendored without a manifest entry. An old dep gets removed but the manifest entry stays. License changes between versions; the manifest holds the old one. Each drift is a finding waiting for an audit.
 
 The next section closes the gap by encoding component metadata as P3394 annotations on the integration type. If the dep is not in the source, it cannot be in the SBOM. If you remove the integration type, the SBOM entry vanishes on the next build.
 
 ## Reflection today
 
-Encode each vendored component as a templated P3394 annotation on the integration type. A consteval walker emits the CycloneDX components fragment AND `static_assert`s every member carries the annotation. The SBOM cannot drift from the source because **the source is the only declaration of it**.
+Encode each vendored component as a templated P3394 annotation on the integration type. A consteval walker emits the CycloneDX components fragment AND `static_assert`s every member carries the annotation. The source is the only declaration of the component list, so that list cannot drift from the source. The scanner still needs the built artefact: this check covers declared vendored code only.
 
 ```cpp
 namespace sbom {
@@ -164,7 +140,7 @@ struct VendoredComponents {
     struct openssl_tag {} openssl;
 };
 
-emit_components<VendoredComponents>();   // emits CycloneDX 1.5 JSON
+emit_components<VendoredComponents>();   // emits CycloneDX 1.5 JSON (the current CycloneDX release is 1.7)
 ```
 
 Walker output:
@@ -187,57 +163,51 @@ Walker output:
 }
 ```
 
-Add a member without the annotation, the build refuses with the field name in the diagnostic. The pattern composes with the toolchain SBOM (syft scans the binary + system deps) -- merge the in-source CycloneDX fragment with the toolchain output and you have a complete BOM that grype can consume.
+Add a member without the annotation and the build refuses. On 2026-11-06 I added `struct zlib_tag {} zlib;` with no annotation. Both GCC 16.2 and the Bloomberg Clang fork reported `static assertion failed: supply-chain: every member of the vendored bundle must carry an [[=sbom::component<...>{}]] annotation`, pointing at the walker's `static_assert`, and then a second error from the splice. The message does not name `zlib`. The fragment can be merged with the output of a tool such as syft; I did not run that merge.
 
 Full source: <RepoFile path="posts/toolset/cpp-supply-chain-2026/examples/reflect-sbom.cpp" branch="main" />.
 
-<GodboltEmbed id="Yqo74WWdM" title="Reflection-driven CycloneDX 1.5 SBOM emit (clang-p2996)" />
+<GodboltEmbed id="Yqo74WWdM" title="Reflection-driven CycloneDX 1.5 SBOM emit (clang_bb_p2996)" />
 
-### Reproduce locally
+### Where it ran
 
-<DockerRun
-  image="ghcr.io/wrocpp/cpp-reflection:2026-05"
-  command={"bash -c 'clang++ -std=c++26 -freflection-latest -stdlib=libc++ -Wl,-rpath,/opt/p2996/clang/lib/aarch64-unknown-linux-gnu posts/toolset/cpp-supply-chain-2026/examples/reflect-sbom.cpp -o /tmp/h && /tmp/h'"}
-  expected={"{\n  \"bomFormat\": \"CycloneDX\",\n  \"specVersion\": \"1.5\",\n  \"components\": [\n    {\n      \"type\": \"library\",\n      \"bom-ref\": \"nlohmann-json\","}
-  title="Reflection-driven CycloneDX SBOM emit (cpp-reflection container)"
-/>
+The embed above is the source that ran on `clang_bb_p2996` with `-std=c++26 -freflection-latest -stdlib=libc++` (exit 0, the JSON shown). Change the include to `<meta>` and it also ran on GCC 16.2 and trunk (`g162`, `gsnapshot`) with `-std=c++26 -freflection`. Exit 0, same output. The container image this page used to cite was pruned, so there is no `docker run` line.
 
 ### Composable with the safety walkers
 
 The same `nonstatic_data_members_of` walker that drives the SBOM emit also drives the [hardened-stdlib schema lint](/toolset/hardened-stdlib/), the [qualified-compilers MISRA Rule 11.0.1 lint](/toolset/qualified-compilers/), the [lifetime-safety borrow lint](/toolset/lifetime-safety-2026/), and the [SoA layout transform](/toolset/simd-in-cpp-2026/). One walker, five orthogonal rules. The SBOM-component-required rule is just another predicate; add a sixth, the schema enforces it.
 
+## What changed in the news
+
+As of 2026-11-06:
+
+- The EU Cyber Resilience Act's reporting obligations for actively exploited vulnerabilities and severe incidents apply from 11 September 2026. ENISA launched its [single reporting platform](https://www.enisa.europa.eu/news/the-cra-single-reporting-platform-is-launched) that day. The main obligations apply from 11 December 2027, per the [Commission's CRA page](https://digital-strategy.ec.europa.eu/en/policies/cyber-resilience-act). Germany's implementing law passed the Bundestag on 15 October per my research notes; I did not find a primary source to cite, so treat that as unverified. See <PostLink slug="cra-reporting-live-qt-declaration">the CRA post</PostLink> for the Qt side.
+- libstdc++ fixed two library bugs in October, CVE-2026-114691 (`vector<bool>` constructors) and CVE-2026-114690 (parallel `std::search`). The fixes are on the gcc-14, gcc-15 and gcc-16 branches and in no point release as of 2026-11-06. A vendored or system copy of libstdc++ is a dependency too: check which headers your build actually uses. The [hardened-stdlib](/toolset/hardened-stdlib/) page has the detail.
+- CMake 4.5.0-rc3 is the newest release on cmake.org (4 November). `install(SBOM)` and `export(SBOM)` describe your own installed targets from the build system. They are not a scanner and do not replace syft for the dependencies you consume.
+
 ## Where this is heading
 
-C++29 candidate features collapse the loop further:
-
-**Token injection** (P3294) lets the integration type declare itself from the package manifest:
+These are sketches, not code that any compiler accepts. Token injection ([P3294](https://wg21.link/p3294), latest revision R2 from 2024) is a C++29 candidate that could let a declaration generate wrapper code:
 
 ```cpp
-// C++29 candidate -- pseudo-syntax. As of 2026-05-15 not in any
-// shipping toolchain. P3294 in WG21.
+// Sketch only. P3294 describes code injection with token sequences;
+// this attribute form and vcpkg::dep are illustrations, not paper syntax.
 [[ inject(sbom_component) ]]
 using nlohmann_json = vcpkg::dep<"nlohmann-json", "3.11.3">;
-// Compiler reads vcpkg.json + injects the wrapper struct + P3394
-// annotations. The integration type IS the manifest entry; the
-// per-component declaration boilerplate disappears.
 ```
 
-**Profile enforcement** (P3081 Sutter / P3589 Dos Reis / P3984 Stroustrup) lets a translation unit declare it imports only sbom-annotated vendored types:
+Profiles (P3589R2 framework, not in the C++26 draft) have no `sbom_required` profile in any paper I read. The idea of a translation unit that may include only annotated vendored types is mine:
 
 ```cpp
-// C++29 candidate.
+// Sketch only: sbom_required is invented for this page.
 [[ profiles::enforce(sbom_required) ]]
-namespace prod_app {
-    // Inside this namespace: including a raw third-party header
-    // refuses to compile. Every external symbol must come through
-    // a sbom::component-annotated wrapper.
-}
+namespace prod_app { /* every external symbol through an annotated wrapper */ }
 ```
 
-The 2026 story is **toolchain SBOM + in-source SBOM merged at build time**. C++29 collapses both into language-level enforcement.
+The state of play on 2026-11-06 is a toolchain SBOM from a scanner, plus an in-source fragment from the walker, merged at build time. Whether C++29 changes that is open, and the C++26 ballot result does not affect any tool on this page.
 
 ---
 
-**Cross-links:** the [hardened-stdlib](/toolset/hardened-stdlib/) entry covers the runtime side (one CMake line, ~1000 production bugs caught). The [qualified-compilers](/toolset/qualified-compilers/) entry covers the regulated-industry context (TCL kits, MISRA C++:2023). The reflection [annotations post](/posts/annotations/) covers P3394 in depth.
+Cross-links: the [hardened-stdlib](/toolset/hardened-stdlib/) page covers the runtime side. The [qualified-compilers](/toolset/qualified-compilers/) page covers the regulated-industry context. The [annotations post](/posts/annotations/) covers P3394.
 
-**Reviewed:** 2026-05-15. SBOM example verified inside cpp-reflection container; CycloneDX 1.5 JSON validates against the OWASP schema. Quarterly refresh.
+Reviewed 2026-11-06. The reflection example was re-run on the compilers listed in the front matter. Earlier text claimed the CycloneDX output validates against the OWASP schema; I did not re-run a schema validation, so that claim is removed.
