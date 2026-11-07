@@ -175,6 +175,13 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
                    "why": "the spec addendum on nested changes, queued in both bindings, beside the contract_assert post"},
     "2026-11-05": {"slug": "moc-parity-bindable-constructors-namespaces", "hour": 16,
                    "why": "the three moc matrix rows that closed after the flagship, beside the Boost modules news"},
+    # A 64-byte compare written five ways and built on five compilers, from an r/cpp thread of
+    # 2 November. It runs beside the co_yield in template for post of the day.
+    "2026-11-25": {"slug": "five-spellings-of-a-64-byte-compare", "hour": 16,
+                   "why": "64-byte compare codegen on GCC, Clang and MSVC, from the r/cpp thread, beside the co_yield in template for post"},
+    # Part two of the 64-byte compare: why the early exit stops the vectorizer and what to write instead.
+    "2026-11-29": {"slug": "early-exit-loop-vectorization", "hour": 16,
+                   "why": "chunked early-exit compare and std::simd on a 64-byte block, second part of the r/cpp compare thread"},
     # A flagship on the three profile papers dated 22 October (P3704R1, P4222R3, P4418R0).
     # It runs beside the reflection series post of the day and lands before the Buzios meeting.
     "2026-11-10": {"slug": "what-the-three-profile-papers-say", "hour": 16,
