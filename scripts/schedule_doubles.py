@@ -180,6 +180,47 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # the evergreen struct-layout post.
     "2026-11-14": {"slug": "contracts-check-that-acts", "hour": 16,
                    "why": "response to a reader's contracts post before the Buzios meeting, alongside the evergreen post"},
+    # Two libstdc++ security fixes reached master and the 14, 15 and 16 branches on 29 October,
+    # and no point release has them. A vector<bool> built from a size within 62 of SIZE_MAX is
+    # accepted by GCC 16.2 and rejected by trunk. It runs beside the Boost decimal post of the day.
+    "2026-11-09": {"slug": "vector-bool-size-wraps-to-zero", "hour": 16,
+                   "why": "libstdc++ CVE-2026-114691 news short, GCC 16.2 against trunk, beside the Boost decimal post"},
+    # A 64-byte compare written five ways and built on five compilers, from an r/cpp thread of
+    # 2 November. It runs beside the co_yield in template for post of the day.
+    "2026-11-25": {"slug": "five-spellings-of-a-64-byte-compare", "hour": 16,
+                   "why": "64-byte compare codegen on GCC, Clang and MSVC, from the r/cpp thread, beside the co_yield in template for post"},
+    # Part two of the 64-byte compare: why the early exit stops the vectorizer and what to write instead.
+    "2026-11-29": {"slug": "early-exit-loop-vectorization", "hour": 16,
+                   "why": "chunked early-exit compare and std::simd on a 64-byte block, second part of the r/cpp compare thread"},
+    # A flagship on the three profile papers dated 22 October (P3704R1, P4222R3, P4418R0).
+    # It runs beside the reflection series post of the day and lands before the Buzios meeting.
+    "2026-11-10": {"slug": "what-the-three-profile-papers-say", "hour": 16,
+                   "why": "flagship on the three October profile papers, beside the reflection series post, before Buzios"},
+    # The initialization profile of P4222R3 run on the two Compiler Explorer builds, with a thread
+    # case from outside the papers. It runs beside the reflection series post and lands before Buzios.
+    "2026-11-13": {"slug": "init-profile-against-real-code", "hour": 16,
+                   "why": "short on the initialization profile run against real code, beside the reflection series post, before Buzios"},
+    # The invalidation profile of P4418R0 run on the experimental GCC build, with cases the paper
+    # does not show. It runs beside the reflection series post and lands before Buzios.
+    "2026-11-15": {"slug": "invalidation-profile-against-real-code", "hour": 16,
+                   "why": "short on the invalidation profile run against the paper's examples, beside the reflection series post, before Buzios"},
+    # A short on a std::jthread member declared before the data it uses, after Jelle Bakker's
+    # case 2 "Timing Is Everything". It takes the second slot of 11 November.
+    "2026-11-11": {"slug": "thread-member-declared-before-its-counter", "hour": 16,
+                   "why": "the jthread member order short, from Jelle Bakker's ebook case, beside the DI graph post"},
+    # What the by-value std::generator enumerate in Alex Dathskovsky's LinkedIn post allocates on GCC
+    # and Clang, with the libstdc++, libc++ and MSVC STL support table. It runs beside the post of
+    # the day on matching UB cases to checking tools.
+    "2026-11-08": {"slug": "generator-enumerate-by-value", "hour": 16,
+                   "why": "allocation cost of a by-value std::generator enumerate, beside the UB checking-tool post"},
+    # G2 of the generator arc: where a const& coroutine argument dies, by compiler. It runs beside the
+    # Meeting C++ program post of the day.
+    "2026-11-24": {"slug": "generator-const-reference-lifetime", "hour": 16,
+                   "why": "const& generator argument lifetime by compiler, beside the Meeting C++ program post"},
+    # Lead post from the October LinkedIn batch. It rides the live wave and lands in
+    # the first open second slot instead of evicting a queued post.
+    "2026-11-07": {"slug": "qt-clate-qml-mcp", "hour": 16,
+                   "why": "Qt Clate launch (QML + MCP), beside the Abseil iterators post"},
 }
 
 

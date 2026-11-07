@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "astro dev",
     "start": "astro dev",
-    "prebuild": "python3 scripts/check-llms-sync.py && python3 scripts/check-pubdates.py && python3 scripts/prose-lint.py --all --strict && npm run check:future",
+    "prebuild": "python3 scripts/check-llms-sync.py && python3 scripts/check-pubdates.py && python3 scripts/prose-lint.py --all --strict && npm run check:future && npm run check:tables",
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
@@ -21,6 +21,7 @@
     "check:pubdates": "python3 scripts/check-pubdates.py",
     "check:cards": "python3 scripts/check-social-render.py --all",
     "check:future": "WROCPP_RENDER_ALL=1 astro build --outDir dist-preflight",
+    "check:tables": "python3 scripts/check-table-wrap.py dist-preflight",
     "check:volatile": "python3 scripts/check-volatile-claims.py --days 14"
   },
   "dependencies": {
