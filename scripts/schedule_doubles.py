@@ -175,6 +175,15 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
                    "why": "the spec addendum on nested changes, queued in both bindings, beside the contract_assert post"},
     "2026-11-05": {"slug": "moc-parity-bindable-constructors-namespaces", "hour": 16,
                    "why": "the three moc matrix rows that closed after the flagship, beside the Boost modules news"},
+    # What the by-value std::generator enumerate in Alex Dathskovsky's LinkedIn post allocates on GCC
+    # and Clang, with the libstdc++, libc++ and MSVC STL support table. It runs beside the post of
+    # the day on matching UB cases to checking tools.
+    "2026-11-08": {"slug": "generator-enumerate-by-value", "hour": 16,
+                   "why": "allocation cost of a by-value std::generator enumerate, beside the UB checking-tool post"},
+    # G2 of the generator arc: where a const& coroutine argument dies, by compiler. It runs beside the
+    # Meeting C++ program post of the day.
+    "2026-11-24": {"slug": "generator-const-reference-lifetime", "hour": 16,
+                   "why": "const& generator argument lifetime by compiler, beside the Meeting C++ program post"},
     # Lead post from the October LinkedIn batch. It rides the live wave and lands in
     # the first open second slot instead of evicting a queued post.
     "2026-11-07": {"slug": "qt-clate-qml-mcp", "hour": 16,
