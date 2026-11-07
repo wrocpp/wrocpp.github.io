@@ -1,0 +1,221 @@
+---
+title: "What a by-value std::generator enumerate allocates on GCC and Clang"
+slug: "generator-enumerate-by-value"
+pubDate: 2026-11-08
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp, cpp23, coroutines, ranges, stdlib]
+summary: "Alex Dathskovsky's std::generator enumerate takes its container by value, the safe choice for a coroutine parameter. On Compiler Explorer GCC 16.2 allocates the coroutine frame at every optimization level, 144 bytes for his four-element array, and Clang 23.1 does not from -O1. A vector of 1000 ints adds a 4000-byte copy on both. views::enumerate allocates nothing, and libc++ has no generator header."
+draft: false
+relatedPosts: [coroutine-return-void-and-value, views-concat]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+Taking the container by value is the safe default for a coroutine parameter, and the `std::generator` enumerate in [Alex Dathskovsky's LinkedIn post](https://lnkd.in/p/d423e3Yz) does that.
+This post prices the choice.
+On Compiler Explorer, GCC 16.2 allocates the coroutine frame at every optimization level, and Clang does not from -O1.
+A vector of 1000 ints adds a 4000-byte copy on both.
+Every run below was on Compiler Explorer, x86-64, on 2 November 2026; the compiler ids and options are in the examples README.
+
+## In short
+
+- The C++ Core Guidelines (CP.53) say a coroutine's parameters should not be references, because they dangle after the first suspension. A by-value copy was alive on every compiler I ran.
+- In my version of Alex's example, the four-element array costs one 144-byte allocation on GCC 16.2 and none on Clang from -O1.
+- A vector of 1000 ints adds a 4000-byte copy on both compilers.
+- Per element, `std::views::enumerate` ran 6.6 to 10.9 times faster than the by-value generator on GCC 16.2, copy included. On Clang trunk it ran 9.3 to 18.5 times faster, over eight runs each.
+- libstdc++ and MSVC STL have `<generator>`. libc++ 23.1 and trunk do not.
+
+## The shape being measured
+
+Alex's post replaces a hand-written enumerate with `std::generator`.
+He notes that his example yields integer pairs, so it is not a fully generic enumerate.
+Below is my version of the same shape: a by-value container and a tuple of two ints.
+
+```cpp
+std::generator<const std::tuple<int, int>> enumerate(auto container) {
+  for (int index = 0; auto&& value : container) {
+    co_yield std::tuple{index, value};
+    ++index;
+  }
+}
+```
+
+Called with `std::array{4, 3, 2, 1}`, it prints four lines on GCC 16.2, GCC trunk, Clang 23.1, Clang trunk and MSVC 19.51:
+
+```
+the value in idx 0 is 4
+the value in idx 1 is 3
+the value in idx 2 is 2
+the value in idx 3 is 1
+```
+
+<GodboltEmbed id="WznrdPWaT" gccOnly gccLabel="GCC 16.2" title="A by-value std::generator enumerate" gcc_subtitle="x86-64 GCC 16.2 · -std=c++23 · prints the four lines" />
+
+## Why the container comes in by value
+
+A coroutine's frame outlives the call that created it.
+A reference parameter then points at an object the caller may already have destroyed.
+The [Core Guidelines, CP.53](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#rcoro-reference-parameters) advise against it. They add that "the copied parameter will live in the coroutine frame that is safe to access throughout the coroutine".
+Alex's example follows that advice.
+
+## What the frame and the copy allocate
+
+I replaced the global `operator new` and counted calls and bytes around each loop.
+Each cell is allocations / bytes.
+The counts did not change between -O0 and -O3 on GCC, nor between -O1 and -O3 on Clang.
+
+| variant | GCC 16.2, every level | Clang 23.1 and trunk, -O0 | Clang, -O1 to -O3 |
+|---|---|---|---|
+| Alex's shape, `std::array<int, 4>` | 1 / 144 | 1 / 128 | 0 / 0 |
+| Alex's shape, vector of 1000 | 2 / 4152 | 2 / 4136 | 1 / 4000 |
+| generic version, vector copied in | 2 / 4168 | 2 / 4152 | 1 / 4000 |
+| generic version over `views::all` (borrows) | 1 / 152 | 1 / 136 | 0 / 0 |
+| `const&` parameter, vector of 1000 (can dangle, see below) | 1 / 136 | 1 / 120 | 0 / 0 |
+| `views::enumerate`, array or vector; an index loop | 0 / 0 | 0 / 0 | 0 / 0 |
+
+GCC 16.2 and GCC trunk gave identical counts, as did Clang 23.1 and Clang trunk.
+For the array, the copy seems to sit inside the frame: 144 bytes fit a 128-byte frame plus the 16-byte array.
+For the vector, the 4000 bytes are a second heap block and the 152 bytes are the frame.
+
+On Clang the frame stops showing up in the count from -O1, which fits an optimizer that removes the allocation.
+I read no assembly on either compiler, so I know the call count and not the reason.
+The vector's 4000-byte copy stays on both.
+
+<GodboltEmbed id="YfaPrsY4K" gccOnly gccLabel="GCC 16.2" title="Allocation counts for six ways to number a range" gcc_subtitle="x86-64 GCC 16.2 · -std=c++23 -O2 · counts calls to a replaced operator new" />
+
+My first counter was wrong on GCC.
+At -O1 and -O2 it reported an extra 64-byte allocation.
+[GCC 15 and later](https://gcc.gnu.org/gcc-15/changes.html) may assume a replaced `operator new` changes no program variables, and here it moved the counter read.
+The example now reads its counters through a function that is never inlined, and the numbers above match the run with `-fno-assume-sane-operators-new-delete`.
+
+## A generic version
+
+As Alex notes, the example yields only integer pairs.
+A generic version yields the index and the range's own reference type:
+
+```cpp
+template <std::ranges::input_range Range>
+using Numbered = std::pair<std::size_t, std::ranges::range_reference_t<Range>>;
+
+template <std::ranges::input_range Range>
+std::generator<Numbered<Range>> enumerate_generic(Range range) {
+  for (std::size_t index = 0; auto&& element : range) {
+    co_yield Numbered<Range>{index, std::forward<decltype(element)>(element)};
+    ++index;
+  }
+}
+```
+
+The range is still a by-value parameter, so a vector is copied (row three of the table).
+Passing `std::views::all(vector)` copies only the view and avoids the 4000 bytes.
+That borrows the vector, so it must outlive the loop, the same rule as a `const&` parameter.
+
+## What `std::views::enumerate` allocates and how fast it runs
+
+C++23 also has `std::views::enumerate`, which yields the index and a reference to the element with no coroutine involved.
+It allocated nothing in every count above.
+Alex's post says another C++23 approach is coming, and I do not know whether it is this one.
+
+I timed one million ints at -O2 on Compiler Explorer, eight separate runs per compiler, each the best of five passes in nanoseconds per element.
+The generator by value includes copying the 4 MB vector on every pass.
+The generic row borrows through `views::all`, so the copy is not in it.
+
+| ns per element, eight runs | GCC 16.2 | Clang trunk |
+|---|---|---|
+| generator by value | 3.14 to 6.46 | 2.87 to 6.49 |
+| generic generator over `views::all` | 2.73 to 5.90 | 2.63 to 5.33 |
+| `views::enumerate` | 0.453 to 0.595 | 0.307 to 0.456 |
+| index loop | 0.476 to 0.710 | 0.302 to 0.373 |
+| by value, as a multiple of `views::enumerate` | 6.6 to 10.9, median 7.2 | 9.3 to 18.5, median 10.6 |
+| generic, as a multiple of `views::enumerate` | 5.6 to 9.9, median 5.9 | 8.3 to 15.2, median 8.7 |
+
+Seven of eight by-value multiples stayed between 6.6 and 7.9 on GCC and between 9.3 and 13.5 on Clang.
+The absolute numbers move by about a factor of two between runs on this shared machine.
+`views::enumerate` and the index loop were within 0.03 ns of each other in six of eight runs on each compiler.
+I did not read the assembly, so I cannot say why the generator is slower.
+
+## Which standard libraries have the header
+
+Alex hopes that "your compiler's standard library will let you enjoy C++23 soon".
+I compiled and ran one small file on each combination:
+
+| compiler | standard library | `__cpp_lib_generator` | `__cpp_lib_ranges_enumerate` | `<generator>` |
+|---|---|---|---|---|
+| GCC 16.2.0 | libstdc++ 16 | 202207L | 202302L | found |
+| GCC trunk 17.0.0 20261102 | libstdc++ 17 | 202207L | 202302L | found |
+| Clang trunk 24.0.0git | libstdc++ 17 | 202207L | 202302L | found |
+| Clang trunk, `-stdlib=libc++` | libc++ 240000 | undefined | 202302L | not found |
+| Clang 23.1.0 | libstdc++ 15 | 202207L | 202302L | found |
+| Clang 23.1.0, `-stdlib=libc++` | libc++ 230100 | undefined | 202302L | not found |
+| MSVC 19.51.36246, `/std:c++latest` | MSVC STL 145 | 202207L | 202302L | found |
+
+The [libc++ status page for C++23](https://libcxx.llvm.org/Status/Cxx23.html) lists P2502R2, the `std::generator` paper, with no version, and lists `views::enumerate` as complete in libc++ 23.
+So with libc++ the enumerate view is there and the generator is not.
+With libstdc++ and MSVC STL, both are there on the versions above.
+
+## Why not take the container by const reference
+
+A `const&` parameter saves the copy, as the table shows.
+The reference points at the caller's object, and the frame outlives the call.
+This version, from the examples repo, reads a destroyed vector when the generator is stored before the loop:
+
+```cpp
+std::generator<int> by_const_ref(const std::vector<int>& values) {
+  for (int value : values) co_yield value;
+}
+
+auto stored_ref = by_const_ref(make_values());
+for (int value : stored_ref) std::print(" {}", value);
+```
+
+On GCC 16.2 with `-std=c++23 -fsanitize=address -g` and `-DSHOW_REF_STORED`, AddressSanitizer stops the program with exit code 1. These are the first line and the two frames in our code, with `...` where I cut the rest:
+
+```
+==2==ERROR: AddressSanitizer: stack-use-after-scope on address 0x70c7abef0280 at pc 0x000000411ab0 bp 0x7ffe9800c130 sp 0x7ffe9800c128
+...
+    #2 0x000000406d32 in by_const_ref /app/example.cpp:16
+...
+    #7 0x000000407e12 in main /app/example.cpp:40
+...
+```
+
+Clang trunk reports the same error for the same program.
+The shape that looks safe is a temporary written directly in the range-for:
+
+```cpp
+for (int value : by_const_ref(make_values())) std::print(" {}", value);
+```
+
+That one is fine with default flags on every GCC from 15.1 and every Clang from 19.1 that I ran.
+[P2718R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2718r0.html) keeps the temporary alive until the end of the loop.
+Clang's [status page](https://clang.llvm.org/cxx_status.html) lists that paper under Clang 20, while Clang 19.1 kept the temporary alive in my run.
+GCC 14.2, and GCC 16.2 with `-fno-range-for-ext-temps`, give the same AddressSanitizer error as the stored case.
+
+I also counted live objects at the first resume of the generator, to see the lifetime without a sanitizer:
+
+| compiler | `const&`, temporary in the range-for | `const&`, generator stored first | by value, either call |
+|---|---|---|---|
+| GCC 14.2 | 0 | 0 | at least 1 |
+| GCC 15.1, 16.2, trunk | 1 | 0 | at least 1 |
+| Clang 19.1, 20.1, 23.1, trunk | 1 | 0 | at least 1 |
+| MSVC 19.51.36246 | 0 | 0 | at least 1 |
+
+A zero means the temporary was gone before the generator body started.
+MSVC reports `__cpp_range_based_for` as 202211 and still printed 0 for the range-for case.
+This is one build on Compiler Explorer, and I did not find out why.
+The by-value copy was alive in every row.
+GCC 16.2, GCC trunk, Clang 23.1 and Clang trunk gave no warning about either `const&` call at `-Wall -Wextra`.
+I did not check the other rows.
+
+## What I did not run
+
+- No assembly on any compiler, so every statement about the frame rests on allocation counts.
+- Clang 18.1 on Compiler Explorer has no `<generator>`, so I could not run it.
+- MSVC allocation counts and MSVC under AddressSanitizer.
+- Anything on ARM or other than x86-64, and anything outside Compiler Explorer's shared machines.
+- GCC 16.2 at -O2 with `-Wall` prints `-Wmismatched-new-delete` for each generator function, pointing into the library header. I did not investigate it.
+
+The files are [in the examples repo](https://github.com/wrocpp/cpp26-reflection-examples/tree/f994052019ccbeb45e6f8a8a082868515a09bfba/posts/101-generator-enumerate).

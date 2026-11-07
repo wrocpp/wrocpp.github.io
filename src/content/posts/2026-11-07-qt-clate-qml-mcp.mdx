@@ -1,0 +1,55 @@
+---
+title: "Qt's Clate turns a no-code UX design into QML, and ships an MCP server"
+slug: "qt-clate-qml-mcp"
+pubDate: 2026-11-07
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, qt, qml, mcp, tooling]
+summary: "The Qt Company released Clate, a beta UX design tool for embedded and HMI applications. It generates QML in the background, so a designer hands a developer code rather than a mock-up, and it ships an MCP server that an agent can drive. At launch the AI assistant runs on Claude. Output is QML only, and most of the roadmap is dated 2026 and 2027."
+draft: false
+relatedPosts: [qt-class-template-typed-signals-without-moc, qt-security-advisories-october-2026, cra-reporting-live-qt-declaration]
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+The Qt Company released Clate, a design tool that generates QML in the background.
+A UX designer hands a developer that code, not a mock-up.
+It ships a built-in MCP server that an agent can connect to and drive.
+
+Clate is a desktop app for Windows, macOS and Linux, described on [its page](https://www.qt.io/clate) as an AI-native UX design tool for embedded and HMI applications.
+It is in beta, free during the beta, at version 0.6.0.
+Przemyslaw Nogaj flagged the release on LinkedIn, and the facts below are from the product page, not the post.
+
+## What a Qt developer gets
+
+The output is the interesting part.
+A designer works no-code on a canvas, and Clate writes QML as they go.
+The handoff to a developer is that QML, not a static mock-up or a PDF.
+The application is still built and deployed with Qt in the usual way.
+
+The second part is the MCP server.
+An agent from any MCP-compatible application can connect to Clate and act in it.
+The AI assistant that creates elements and screens runs on a model the user chooses.
+At launch that is Claude, with more models named as coming.
+This is the same integration point our <PostLink slug="qt-class-template-typed-signals-without-moc">Qt reflection work</PostLink> uses from the other side: an agent that reads and writes a Qt project.
+
+## What it does not do yet
+
+Output is QML only. The page answers whether other formats are coming with "At the moment, yes" to QML alone.
+The roadmap puts most of the tool in the future:
+
+| when | what the page lists |
+|---|---|
+| now | the AI assistant, the toolbar and panels, QML export |
+| 2026 | component and asset libraries, multiple project files, variables and data bindings |
+| Spring 2027 | design-system tokens, a motion node graph with keyframe recording, real-time collaboration |
+
+The page describes Clate for embedded and HMI work in medical, industrial and consumer products.
+It does not list microcontrollers as a target.
+So a demo that brings a Qt for MCUs screen into Clate uses the MCP server; it is not a Clate feature.
+
+A no-code tool that emits the real language, rather than an export nobody compiles, is the part worth watching.
+Whether it holds up depends on the 2026 and 2027 items.
+Today the libraries, data bindings and motion a real HMI needs are still on the roadmap.

@@ -1,0 +1,256 @@
+---
+title: "Five ways to compare 64 bytes, and what GCC, Clang and MSVC make of them"
+slug: "five-spellings-of-a-64-byte-compare"
+pubDate: 2026-11-25
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp, compilers, vectorization, performance, gcc, clang, msvc]
+summary: "In every build I made, array equality, memcmp and std::equal compile to the same instructions as each other for a 64-byte block. Written as a loop with an early exit, the compare stays scalar on Clang and MSVC, and GCC vectorizes it only with AVX2 flags and behind alignment checks. Ten builds on x86-64, the compiler messages that explain them, three public bug reports, and a control that vectorizes."
+draft: false
+relatedPosts: [final-devirtualization, verification-asm-llvm-mca]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+In every build I made, the library spellings of a 64-byte block compare produce the same instructions as each other.
+Written as a loop with an early exit, the compare stays scalar on MSVC and Clang.
+GCC vectorizes that loop only with AVX2 flags, and then behind alignment checks.
+The loop comes from [u/Sopel97](https://www.reddit.com/user/Sopel97/), who posted it to r/cpp on 2 November. I rebuilt it as five spellings on x86-64.
+
+## In short
+
+- The loop from [the thread](https://www.reddit.com/r/cpp/comments/1xlyti8/catastrophic_misoptimization_of_byterange/) returns at the first differing byte. Clang and MSVC compile it to a scalar loop in every build I made. GCC vectorizes it only with AVX2 flags.
+- The library spellings (array equality, `memcmp`, `std::equal`) produce the same instructions as each other in all ten builds. Without AVX2 flags that is a call to `bcmp` (Clang), a call to `memcmp` (MSVC) or inline 8-byte compares (GCC).
+- The same loop returning `int` instead of `bool` vectorizes in Clang. The loads and the early exit are not what stops it.
+- GCC's early-break vectorizer raises the alignment it needs, which fails at the baseline. GCC 17 already drops the scalar recheck ([PR120352](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=120352)); the alignment checks are [PR128384](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=128384), unconfirmed.
+- For a fixed-size block, write `==` or `memcmp` and read the assembly for your flags.
+
+## Five spellings of one compare
+
+The first function is the loop from the thread, which calls it `eq2`.
+The second is a commenter's variant (`eq3` there) that accumulates with `&=` and has no early exit.
+The other three hand the job to the library:
+
+```cpp
+constexpr int block_size = 64;
+using Block = std::array<char, block_size>;
+
+bool eq_early_exit(const Block& lhs, const Block& rhs) {
+    for (int i = 0; i < block_size; ++i)
+        if (lhs[i] != rhs[i])
+            return false;
+    return true;
+}
+
+bool eq_accumulate(const Block& lhs, const Block& rhs) {
+    bool res = true;
+    for (int i = 0; i < block_size; ++i)
+        res &= (lhs[i] == rhs[i]);
+    return res;
+}
+
+bool eq_operator(const Block& lhs, const Block& rhs) { return lhs == rhs; }
+
+bool eq_memcmp(const Block& lhs, const Block& rhs) {
+    return std::memcmp(lhs.data(), rhs.data(), lhs.size()) == 0;
+}
+
+bool eq_std_equal(const Block& lhs, const Block& rhs) {
+    return std::equal(lhs.begin(), lhs.end(), rhs.begin());
+}
+```
+
+The file also holds a sixth function, `std::ranges::equal`.
+It matched `std::equal` instruction for instruction in every build, so I count the two as one spelling.
+The program checks that two equal blocks compare equal, then flips each of the 64 bytes in turn and checks that all six functions notice.
+
+<GodboltEmbed id="rvTj4q5nz" gccOnly gccLabel="GCC 16.2" title="Six spellings of a 64-byte compare, checked against each other" gcc_subtitle="x86-64 GCC 16.2 · -std=c++23 -O2 · runs on Compiler Explorer, exits 0" />
+
+Every build I ran printed this: GCC 16.2 at three option sets, and the snapshot and both Clangs at `-O2`:
+
+```
+eq_early_exit    equal=1 mismatches found=64 of 64
+eq_accumulate    equal=1 mismatches found=64 of 64
+eq_operator      equal=1 mismatches found=64 of 64
+eq_memcmp        equal=1 mismatches found=64 of 64
+eq_std_equal     equal=1 mismatches found=64 of 64
+eq_ranges_equal  equal=1 mismatches found=64 of 64
+```
+
+## What each compiler emits
+
+All builds ran on Compiler Explorer on 2 November 2026, for x86-64:
+
+- GCC 16.2.0, and the GCC 17.0.0 snapshot of 20261102.
+- Clang trunk (24.0.0git, `dd61e451bba8`) and Clang 23.1.0 (`ea7d852a70e8`), the newest numbered Clang there. Both use libstdc++; Clang with `-stdlib=libc++` gave the same counts.
+- MSVC 19.51.36246, compiled with `/std:c++latest`. The others use `-std=c++23`.
+
+Every compiler ran with two sets of options.
+The plain row is `-O2` (`/O2` for MSVC).
+The row marked v3 is `-O3 -march=x86-64-v3` (`/O2 /arch:AVX2` for MSVC), the flags the thread used.
+Each cell gives the instruction count of the function body, leaving out labels, directives and MSVC's `npad` padding.
+In the table, ymm means 256-bit vector registers and xmm means 128-bit ones.
+
+| Build | Early exit | Accumulate with `&=` | `==`, `memcmp`, `std::equal` |
+|---|---|---|---|
+| GCC 16.2 | 12, scalar | 25, xmm | 30, scalar 8-byte words |
+| GCC 16.2 v3 | 79, ymm and scalar paths | 11, ymm | 18, ymm |
+| GCC 17 snapshot | 12, scalar | 25, xmm | 30, scalar 8-byte words |
+| GCC 17 snapshot v3 | 67, ymm and scalar paths | 11, ymm | 18, ymm |
+| Clang trunk | 13, scalar | 19, xmm | 7, calls `bcmp` |
+| Clang trunk v3 | 13, scalar | 9, ymm | 9, ymm |
+| Clang 23.1 | 11, scalar | 19, xmm | 7, calls `bcmp` |
+| Clang 23.1 v3 | 11, scalar | 9, ymm | 9, ymm |
+| MSVC | 11, scalar | 110, scalar | 7, calls `memcmp` |
+| MSVC AVX2 | 11, scalar | 110, scalar | 7, calls `memcmp` |
+
+Three readings follow from the table.
+
+- **Early exit.** Clang and MSVC stay scalar in both rows of a pair. GCC vectorizes at v3, but the vector loop sits behind a pointer-alignment test. Around it are a scalar prologue, a scalar tail and a fully scalar loop for pointers that are not equally aligned.
+- **Accumulate.** GCC and Clang vectorize it in both rows. MSVC emits 110 scalar instructions in both.
+- **Library spellings.** The thread found that `operator==` does better, and that holds for GCC and Clang with the thread's flags. Without AVX2 flags no compiler used 256-bit registers for it.
+
+The assembly views put the `-O2` and v3 builds side by side, without `main`, so the pane shows only the six functions.
+The GCC 16.2 view is below. The other three use the same source:
+[GCC 17 snapshot](https://godbolt.org/z/1P5ajfYzh), [Clang trunk and 23.1](https://godbolt.org/z/Eve6x9fe1) and [MSVC](https://godbolt.org/z/s5rYjaWj1).
+The trunk links compile whatever trunk is current when you open them.
+
+<GodboltEmbed id="cTs74GT73" gccOnly gccLabel="GCC 16.2" title="The six functions as assembly, -O2 beside v3" gcc_subtitle="x86-64 GCC 16.2 · -std=c++23 -DCOMPARE_NO_MAIN · assembly view, not run" />
+
+## Why the early-exit loop misses
+
+The compiler messages differ, and so do the causes.
+
+### GCC asks for aligned loads
+
+At `-O2`, `-fdump-tree-vect-details=stderr` on GCC 16.2 and on the snapshot says this about the loop, which is at line 10:
+
+```
+<source>:10:23: note:   alignment increased due to early break to 16 bytes.
+<source>:10:23: note:   can't force alignment of ref: MEM <const struct array> [(const value_type &)lhs_7(D)]._M_elems[_1]
+<source>:10:23: missed:   unsupported unaligned access
+<source>:10:23: missed: couldn't vectorize loop
+```
+
+In GCC's source, the early-break case raises the alignment each load needs to the vector size times the vectorization factor.
+That is the function `vect_compute_data_ref_alignment`, lines 1387 to 1414 of `gcc/tree-vect-data-refs.cc` at commit 7eb405c3d119.
+The dump records the parameters as 1-byte aligned and says GCC cannot force more.
+It then reports the access as unsupported, and the 8- and 4-byte vector sizes fail the same way.
+`-fopt-info-vec-all` adds only "couldn't vectorize loop" and "unsupported SLP instances".
+
+At v3 the same dump ends with "loop vectorized using 32 byte vectors" and "loop versioned for vectorization to enhance alignment".
+That is the pointer test in the assembly: it sends equally aligned pointers to the vector loop and everything else to the scalar loop.
+The snapshot's dump at v3 also contains "can't vectorize early exit because the target doesn't support flag setting vector comparisons".
+It appears only for the 8- and 4-byte vector sizes that lose to the 32-byte one, so it is not the reason at `-O2`.
+
+The two GCCs differ after a vector mismatch.
+GCC 16.2 jumps to a loop that rechecks the bytes one at a time, and the snapshot returns `false` at once.
+That is the change in PR120352, below.
+
+### Clang folds both exits into one
+
+Clang trunk says:
+
+```
+<source>:10:5: remark: loop not vectorized: Latch block does not have a countable exit condition
+<source>:10:5: remark: loop not vectorized: Cannot vectorize uncountable loop
+```
+
+Clang 23.1 prints only the second line.
+Before the loop vectorizer runs, LLVM has merged the mismatch exit and the end-of-block exit into a single branch.
+This is the IR on trunk, with debug metadata removed (`-mllvm -print-before=loop-vectorize`):
+
+```
+%9  = icmp eq i8 %6, %8
+%10 = add nuw nsw i64 %4, 1
+%11 = icmp ne i64 %10, 64
+%12 = select i1 %9, i1 %11, i1 false
+br i1 %12, label %3, label %13
+```
+
+The `-print-changed` output shows SimplifyCFG creating the combined condition.
+Both parameters carry `dereferenceable(64)` in that IR, so Clang does tell the optimizer that 64 bytes are dereferenceable.
+
+### A control that vectorizes
+
+The control is the same loop with an `int` result.
+With `0` on a mismatch and `1` at the end, the IR keeps two separate exits, and Clang vectorizes the loop.
+The width is 16, or 32 at v3.
+Other result pairs behave the same way:
+
+| Result type | Mismatch / end | Clang trunk and 23.1, `-O2` |
+|---|---|---|
+| `bool` | `false` / `true` | not vectorized |
+| `int` | `0` / `1` | vectorized |
+| `int` | the index / 64 | vectorized |
+| `int` | the index / -1, the index / 0, 7 / 9 (scratch file) | vectorized |
+
+The assembly confirms the remarks: both controls use vector compares and a mask test, in xmm registers at `-O2` and ymm registers at v3.
+Only the `bool` form fails.
+I do not know why the `int` form keeps its two exits.
+My guess is that the `bool` result equals the byte compare, which lets SimplifyCFG fold the exits, but I did not confirm it.
+
+### What the option and the source say
+
+The option `-mllvm -enable-early-exit-vectorization=false` stops both controls from vectorizing, with "Auto-vectorization of loops with uncountable early exit is not enabled".
+It leaves the remarks for the `bool` loop unchanged, so that loop is rejected before the option matters.
+The default is therefore on, which I know from this behaviour and not from the source: I did not find the option's definition.
+
+The source at `dd61e451bba8` fits that.
+The function `isVectorizableEarlyExitLoop` in `LoopVectorizationLegality.cpp` raises the "Latch block" remark at line 1776.
+It does so when the latch is not a separate counted exit and its condition is not the combination the code recognizes.
+Lines 1862 to 1864 hold a TODO: read-only loops with combined exit conditions are not supported yet.
+At `ea7d852a70e8` (23.1), line 1917 rejects any uncountable loop with one exiting block before the early-exit code is tried.
+That is why the 23.1 remark is shorter.
+
+## Known reports
+
+Status as of 2 November 2026.
+
+| Report | What it covers | Status |
+|---|---|---|
+| [GCC PR128384](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=128384) | "Unnecessary alignment versioning for early-exit comparison of fixed-size arrays", filed 2 November against GCC 17. It shows this loop at `-O3 -march=x86-64-v3`, notes that `__builtin_memcmp` avoids the guards, and asks whether the array extent can prove the loads safe. It points at two places in GCC's source: the alignment code above, and a check in `gcc/tree-if-conv.cc` (lines 794 to 796 at that commit) that refuses array references that might have a flexible size. | UNCONFIRMED. The only comments are the reporter's own |
+| [GCC PR120352](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=120352) | "scalar epiloque not needed for early break when exit block is invariant", filed May 2025. | RESOLVED FIXED for GCC 17, in commits of 27 May 2026. The snapshot returns `false` after a vector mismatch; GCC 16.2 rechecks bytewise |
+| [LLVM #182371](https://github.com/llvm/llvm-project/issues/182371) | A related report, not this function: a zero check on `std::array<int, 64>` with `std::ranges::all_of`. A maintainer describes a loop whose continue condition is a load test combined with a trip count, and says the loop vectorizer would have to handle this pattern. | Open, two comments, last activity 19 February 2026 |
+
+The thread also links [LLVM #238003](https://github.com/llvm/llvm-project/issues/238003), filed on 2 November, about how a Rust vector exit test lowers to `cttz.elts`.
+It describes a different problem from the one measured here.
+
+I read the three entries and the GCC lines that PR128384 cites.
+I did not step through GCC or LLVM.
+
+## Language issue or compiler issue?
+
+The thread asks that question.
+What I ran supports a narrower answer: for these two reference parameters, the limits sit in each optimizer, and the loop itself can be vectorized.
+
+- Clang vectorizes the `int` version, which has the same loads and the same early exit.
+- GCC vectorizes the `bool` version when it has AVX2 flags.
+- Clang's IR marks both parameters `dereferenceable(64)`.
+
+One comment in the thread argues that a compiler may not read ahead of a mismatch, because bytes after it might be unreadable.
+That comment is about the pointer form of the loop. Here both parameters are references to a 64-byte array.
+I did not try to settle what the standard allows a compiler to read beyond the first mismatch.
+
+The evidence is for x86-64 only.
+The thread reports that Rust vectorizes the same loop. I did not run Rust.
+I read the visible comments on 2 November and did not open the collapsed replies.
+
+## What I would write
+
+- For a fixed-size block, write array equality or `memcmp`. They gave identical code everywhere I looked.
+- Expect a library call on Clang and MSVC and inline 8-byte compares on GCC, unless you pass AVX2 flags such as `-march=x86-64-v3`.
+- Look at the assembly for your own flags. The links above make that a two-minute check.
+- I counted instructions and did not time anything. One comment in the thread argues that vector code can lose when the first bytes usually differ; I did not test that.
+
+## What I did not run
+
+- Rust, AArch64 and every other target.
+- AVX-512 builds, on any compiler.
+- Any timing.
+- The demo on MSVC (the assembly views compile, nothing executes).
+- The definition of the Clang option in LLVM's source.
+
+The files are [in the examples repo](https://github.com/wrocpp/cpp26-reflection-examples/tree/fe07f27be911bf790daea9e1983e145e0aadb6ea/posts/102-byte-compare).
