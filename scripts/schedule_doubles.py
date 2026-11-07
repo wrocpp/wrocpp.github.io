@@ -187,6 +187,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # does not show. It runs beside the reflection series post and lands before Buzios.
     "2026-11-15": {"slug": "invalidation-profile-against-real-code", "hour": 16,
                    "why": "short on the invalidation profile run against the paper's examples, beside the reflection series post, before Buzios"},
+    # A short on a std::jthread member declared before the data it uses, after Jelle Bakker's
+    # case 2 "Timing Is Everything". It takes the second slot of 11 November.
+    "2026-11-11": {"slug": "thread-member-declared-before-its-counter", "hour": 16,
+                   "why": "the jthread member order short, from Jelle Bakker's ebook case, beside the DI graph post"},
     # What the by-value std::generator enumerate in Alex Dathskovsky's LinkedIn post allocates on GCC
     # and Clang, with the libstdc++, libc++ and MSVC STL support table. It runs beside the post of
     # the day on matching UB cases to checking tools.
