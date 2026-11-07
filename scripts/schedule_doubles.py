@@ -221,6 +221,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # the first open second slot instead of evicting a queued post.
     "2026-11-07": {"slug": "qt-clate-qml-mcp", "hour": 16,
                    "why": "Qt Clate launch (QML + MCP), beside the Abseil iterators post"},
+    # A short on accidental copies in a structured-binding range-for and what a copy does and does not
+    # protect, after Adam Bienkunski's LinkedIn post of 7 November. It takes the second slot of 10 December.
+    "2026-12-10": {"slug": "structured-binding-copies-in-range-for", "hour": 16,
+                   "why": "structured-binding copies and reentrancy, from Adam Bienkunski's post, beside the first debugger post"},
 }
 
 

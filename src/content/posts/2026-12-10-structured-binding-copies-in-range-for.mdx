@@ -8,7 +8,7 @@ kind: short
 audience: working-cpp
 tags: [structured-bindings, range-for, iterator-invalidation, sanitizers, cpp23, gcc]
 summary: "A range-for with auto [id, payload] copies every map element, and const auto& removes the copy. The copy can look like protection when the loop body changes the container. Run on GCC 16.2 and libc++ with three containers, it keeps the payload alive and leaves the iterator invalid. Eight strategies for a loop that changes its container are compared by what they visit, what they allocate and what the tools say."
-draft: true
+draft: false
 relatedPosts: [spec-addendum-nested-changes, hardened-stdlib-turn-it-on, match-each-ub-case-to-a-checking-tool, memory-safety-what-to-point-at]
 ---
 
