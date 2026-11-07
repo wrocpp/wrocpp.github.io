@@ -1,0 +1,130 @@
+---
+title: "A stdexec task next to a generator (a reference implementation, not std::execution::task)"
+slug: "task-next-to-a-generator"
+pubDate: 2026-11-30
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp, cpp26, coroutines, execution, stdexec, lifetime]
+summary: "exec::task from NVIDIA's stdexec library, not the standard's std::execution::task, builds and runs on GCC 16.2 and Clang trunk. One task costs 1 allocation of 168 to 176 bytes, a task awaiting two tasks 3. A const& parameter dangles in a task as in a generator."
+draft: false
+relatedPosts: [generator-const-reference-lifetime, annotate-a-class-get-a-generator, generator-enumerate-by-value]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+This post is about `exec::task` from NVIDIA's [stdexec](https://github.com/NVIDIA/stdexec) library, a reference implementation of the senders and receivers proposals.
+It is not `std::execution::task` from the standard.
+The feature-test macros for senders and for the task are both undefined on GCC 16.2 and GCC trunk (17.0.0 20261102) with `-std=c++26`.
+The standard's task cannot be tried there yet.
+All runs were on Compiler Explorer on 2 November 2026, x86-64, with the library `stdexec` at version `trunk`.
+
+## In short
+
+- `exec::task` builds and runs on GCC 16.2 and Clang trunk (24.0.0git) with `-std=c++26`. GCC trunk stops with an internal compiler error.
+- One task is 1 allocation of 168 to 176 bytes. A task that awaits two tasks is 3 allocations, 688 to 968 bytes.
+- A generator for 3 values is 1 allocation of 96 or 104 bytes, and 0 on Clang at `-O2`.
+- A generator is pulled by a loop. A task is awaited, and a `co_yield` in a task does not compile.
+- A `const&` parameter dangles in a task as it does in a generator: AddressSanitizer reports `stack-use-after-scope` on both compilers.
+
+## What was tested
+
+The library on Compiler Explorer has one version, `trunk`, and it moves.
+Its headers define no version macro (`STDEXEC_VERSION` and `STDEXEC_MAJOR` were undefined when I printed them), so I cannot name the commit.
+The date above is the pin.
+In this build the task type lives in a namespace named `experimental::execution`.
+
+I also tried `beman::task` trunk, an implementation of the proposed standard task.
+It does not build on GCC 16.2 or Clang trunk, and stops with a `static assertion failed` at `beman/task/detail/task_scheduler.hpp:198`.
+I did not look for the cause.
+
+## A generator and a task side by side
+
+A generator is pulled.
+The caller asks for the next value, the body runs up to the next `co_yield`, and control returns.
+A task is awaited.
+The body may suspend on an asynchronous operation, here `stdexec::just`, and the result arrives once through `sync_wait`.
+
+```cpp
+std::generator<int> count_up(int last) {
+  for (int value = 1; value <= last; ++value) co_yield value;
+}
+
+exec::task<int> fetch_answer() { co_return co_await stdexec::just(answer); }
+
+exec::task<int> fetch_twice() {
+  const int first = co_await fetch_answer();
+  const int second = co_await fetch_answer();
+  co_return first + second;
+}
+```
+
+The example replaces `operator new` with a counter.
+GCC 15 and later assume a replaced allocation function has no side effects (the option is `-fassume-sane-operators-new-delete`).
+So the counters are read through a function marked `noinline`. I did not measure what happens without it.
+
+<GodboltEmbed id="d6WWjhWeq" gccOnly gccLabel="GCC 16.2" title="A generator and a stdexec task" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O2 · library stdexec trunk · prints allocations and bytes" />
+
+On GCC 16.2 the output is:
+
+```
+generator, 3 values        result   6, 1 allocation(s), 104 bytes
+task, one                  result  42, 1 allocation(s), 176 bytes
+task awaiting two tasks    result  84, 3 allocation(s), 968 bytes
+```
+
+Allocations and bytes are exact and were identical on two runs of each row:
+
+| coroutine | GCC 16.2, -O0 and -O2 | Clang trunk -O0 | Clang trunk -O2 |
+|---|---|---|---|
+| generator, 3 values | 1, 104 bytes | 1, 96 bytes | 0 |
+| one task | 1, 176 bytes | 1, 176 bytes | 1, 168 bytes |
+| task awaiting two tasks | 3, 968 bytes | 3, 936 bytes | 3, 688 bytes |
+
+Three allocations for the last row fit one frame per task, the outer one and the two awaited. I did not inspect the frames.
+Clang trunk at `-O2` removed the generator's allocation and kept the tasks'.
+Clang ran with the default standard library on Compiler Explorer, not libc++.
+
+The two types do not swap.
+A `co_yield` in the task is rejected on GCC 16.2: the promise has no member named `yield_value`.
+I did not try a `co_await` inside a generator.
+
+## The same lifetime rule
+
+The [previous generator post](/posts/generator-const-reference-lifetime/) covered a `const&` parameter on a generator.
+The C++ Core Guidelines advise against reference parameters on coroutines ([CP.53](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#rcoro-reference-parameters)), and a task is a coroutine.
+The test passes a temporary string to a task that suspends once before reading it:
+
+```cpp
+auto task = length_of(std::string(text_length, 'x'));  // the temporary dies at the end of this statement
+auto [length] = stdexec::sync_wait(std::move(task)).value();
+```
+
+With `-DBY_REFERENCE` the parameter is `const std::string&`.
+Built with `-std=c++26 -fsanitize=address -g`, GCC 16.2 and Clang trunk both stop with exit 1. An excerpt of the report:
+
+```
+ERROR: AddressSanitizer: stack-use-after-scope
+READ of size 8 at thread T0
+    #0 in std::string::size() const
+    #1 in length_of
+```
+
+The embed is the default build, which takes the string by value, prints `length 100` and exits 0.
+With a by-value parameter both compilers were clean.
+
+<GodboltEmbed id="91c9s48Pj" gccOnly gccLabel="GCC 16.2" title="A task and a temporary string" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O2 -fsanitize=address -g · library stdexec trunk · the by-value build" />
+
+The temporary dies at the end of the statement that creates the task, before `sync_wait` starts it.
+That is the stored-generator case from the previous post.
+
+## What I did not run
+
+- `std::execution::task`: there is no standard library that ships it in my set.
+- GCC trunk with the task header: an internal compiler error in `any_sender_of.hpp` at line 93, at both optimization levels I tried. A file that includes only the execution header builds.
+- libc++, MSVC, and other architectures.
+- The by-reference build without a sanitizer, and `-Wall -Wextra` diagnostics on it.
+- Timing. The post counts allocations only.
+
+The files are [in the examples repo](https://github.com/wrocpp/cpp26-reflection-examples/tree/b3c606d87ade296c32addcff79089a644d489887/posts/111-task-and-generator).

@@ -1,0 +1,155 @@
+---
+title: "co_yield inside template for does not compile on GCC 16.2 or trunk"
+slug: "co-yield-inside-template-for"
+pubDate: 2026-11-25
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp, cpp26, reflection, coroutines, ranges]
+summary: "A std::generator over a struct's members written as co_yield inside template for stops the build on GCC 16.2 and on trunk. Reflecting the members into a constexpr array outside the coroutine and folding over an index_sequence builds and runs on both, with one 448-byte allocation for a three-member struct. At -O2 with -Werror both reject that fold."
+draft: false
+relatedPosts: [template-for-expansion-statements, generator-enumerate-by-value, generator-const-reference-lifetime]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+The obvious generator over a struct's members puts `co_yield` inside `template for` over the reflected members.
+On Compiler Explorer, GCC 16.2 and GCC trunk (17.0.0 20261102) both refuse to build it with `-std=c++26 -freflection`.
+Reflecting the members into a `constexpr` array outside the coroutine, and folding over an `index_sequence` inside it, builds and runs on both.
+Clang trunk on Compiler Explorer has no `std::meta`, so everything here is GCC only.
+All runs were on 2 November 2026, x86-64.
+
+## In short
+
+- `template for (constexpr auto member : members)` with `co_yield` in the body fails on GCC 16.2 and trunk. The same loop over a `constexpr std::array<int, 3>` builds.
+- Indexing the array from `template for` over a `size_t` fails too.
+- A `constexpr std::define_static_array(...)` of the members and a fold over `std::index_sequence` builds and prints the right output on both.
+- Nested structs work with one helper coroutine per member and `std::ranges::elements_of`: 11 allocations, 3104 bytes for six fields.
+- At -O2 with warnings as errors, both compilers stop on a mismatched-new-delete warning inside `<generator>`. I do not know why.
+
+## The version that does not build
+
+```cpp
+template <class T>
+std::generator<Field> fields(const T& object) {
+  template for (constexpr auto member : members<T>)
+    co_yield {std::meta::identifier_of(member), std::format("{}", object.[:member:])};
+}
+```
+
+With `-std=c++26 -freflection`, the first error line is:
+
+```
+GCC 16.2:   error: consteval-only expressions are only allowed in a constant-evaluated context
+GCC trunk:  error: call to consteval function 'std::meta::identifier_of(((std::meta::info)member))' is not a constant expression
+```
+
+Both compilers then add `'frame_ptr' is not a constant expression`.
+That hints at the cause. A reflection value exists only at compile time, and a variable that lives across a suspension lives in the coroutine frame at run time.
+That is my reading of the messages, not something I checked in the compiler.
+
+Looping over an index and writing `members<T>[index]` in the body fails the same way, with an `identifier_of` error on both.
+The same loop over a constant array of three ints builds and runs on both, so `template for` and `co_yield` can share a body.
+With only a splice in the body, GCC 16.2 fails and trunk builds. I did not look further into that difference.
+
+## The version that builds
+
+Keep every reflection value out of the coroutine's locals.
+The members go into a `constexpr` array, and a fold expression yields one element per index:
+
+```cpp
+template <class T>
+constexpr auto members = std::define_static_array(
+    std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()));
+
+template <class T, std::size_t... Indices>
+std::generator<Field> fields_impl(const T& object, std::index_sequence<Indices...>) {
+  ((co_yield {std::meta::identifier_of(members<T>[Indices]), std::format("{}", object.[:members<T>[Indices]:])}), ...);
+}
+```
+
+`fields` is a one-line wrapper that passes `std::make_index_sequence<members<T>.size()>{}`.
+The demo struct has an int, a double and a string.
+The last line counts heap allocations from a replaced `operator new`.
+GCC 16.2 and trunk print the same, at `-O0` and `-O2`:
+
+```
+x = 1
+y = 2.5
+name = p
+3 fields, 1 allocations, 448 bytes
+```
+
+<GodboltEmbed id="3xMfz3vbY" gccOnly gccLabel="GCC 16.2" title="Fields of a struct as a std::generator" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection · prints three fields and the allocation count" />
+
+The counter is read through a `[[gnu::noinline]]` function.
+From GCC 15, a plain read of a global can move across a replaced `operator new`, which makes the count wrong.
+The files for `-DSHOW_TEMPLATE_FOR` and `-DSHOW_TEMPLATE_FOR_INDEX` are in the examples directory.
+
+## Nested structs
+
+A member that is itself an aggregate needs a recursive walk.
+`walk` is the same index fold as above.
+`member_fields` is one coroutine per member that either yields a pair or yields the inner generator through `std::ranges::elements_of`.
+
+```cpp
+if constexpr (Aggregate<Member>)
+  co_yield std::ranges::elements_of(walk(value, path + "."));
+else
+  co_yield {path, std::format("{}", value)};
+```
+
+The example struct holds two nested `Inner` values, a `double` and a string.
+Both compilers print six lines of paths and values, then `6 fields, 11 allocations, 3104 bytes`.
+The count is the same at `-O0` and `-O2`.
+It is one allocation per coroutine call: one for `walk`, one for each member, and the same again inside each `Inner`.
+
+<GodboltEmbed id="18W1xshaM" gccOnly gccLabel="GCC 16.2" title="Nested struct fields with elements_of" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection · prints six paths and the allocation count" />
+
+Inside a generator of ints, `elements_of` over an lvalue vector does not build on either compiler:
+
+```
+error: no matching function for call to 'std::generator<int>::promise_type::yield_value(std::ranges::elements_of<std::vector<int>&, std::allocator<std::byte> >)'
+```
+
+Piping the vector through `std::views::as_rvalue` first builds and yields 1, 2, 3 for two vectors holding {1, 2} and {3}.
+The nested example needs none of this, since it yields generators.
+I list it because the first thing I tried for a flattening helper was the bare form.
+
+## Numbering the fields
+
+`std::views::enumerate(fields(point))` builds on both and prints the three fields numbered from 0.
+The enumerate from the [by-value generator short](/posts/generator-enumerate-by-value/) yields a tuple of two ints.
+It fits integer elements and not the string pair that `fields` yields.
+[Alex Dathskovsky's post](https://lnkd.in/p/d423e3Yz) says the same of his own example. For other element types, use `views::enumerate`.
+
+## The -Werror result
+
+With `-O2 -Wall -Wextra`, GCC 16.2 and trunk both print this for the flat and the nested example:
+
+```
+warning: 'static void std::__gen::_Promise_alloc<void>::operator delete(void*, std::size_t)'
+called on pointer returned from a mismatched allocation function [-Wmismatched-new-delete]
+```
+
+With `-Werror` the build stops. At `-O0` there is no warning.
+A fold with no reflection and no replaced `operator new` does the same at `-std=c++26 -O2`:
+
+```cpp
+template <std::size_t... Is>
+std::generator<int> seq(std::index_sequence<Is...>) { ((co_yield int(Is)), ...); }
+```
+
+Three separate `co_yield` statements and a `for` loop do not trigger it.
+I made no further reduction. I do not know whether the warning is right, and I did not report it.
+
+## What I did not run
+
+- Clang with reflection: `std::meta` is missing on Compiler Explorer's Clang trunk, so there is no result either way.
+- MSVC, and any GCC older than 16.2.
+- Timing. The allocation counts are exact; I measured no speed.
+- A fix or a bug report for the `template for` case. I read the first error lines and nothing in the compiler.
+- On trunk at `-O2`, eight builds I submitted at once were killed with no compiler output (exit 143). Run singly they finished in about 15 seconds, and I did not repeat the original timeout.
+
+The files are [in the examples repo](https://github.com/wrocpp/cpp26-reflection-examples/tree/67446a75f7e984f84c1f88d8b2528862c6ed6684/posts/109-co-yield-template-for).
