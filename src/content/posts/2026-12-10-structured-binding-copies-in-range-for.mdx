@@ -78,9 +78,9 @@ The harness keeps the callback deterministic. On key 2 it erases the current ele
 | unordered_map, erase current | SIGSEGV | SIGSEGV | ASan UAF | debug: iterator check abort | SIGSEGV | ASan UAF | SIGSEGV |
 | unordered_map, erase next | ran, 3 visited | ran, 3 visited | ran, 3 visited | ran, 3 visited | ran, 3 visited | ran, 3 visited | ran, 3 visited |
 | unordered_map, insert 64 | ran, 33 visited | ran, 33 visited | ran, 33 visited | debug: iterator check abort | ran, 11 visited | ran, 11 visited | ran, 11 visited |
-| vector<pair>, erase current | assert: front() empty | SIGSEGV | UBSan null ref | debug: iterator check abort | SIGSEGV | ASan container-overflow | hardening: front() empty |
-| vector<pair>, erase next | assert: front() empty | SIGSEGV | UBSan null ref | debug: iterator check abort | SIGSEGV | ASan container-overflow | hardening: front() empty |
-| vector<pair>, insert 64 | assert: front() empty | ran, 3 visited | ASan UAF | debug: iterator check abort | SIGSEGV | ASan UAF | hardening: front() empty |
+| `vector<pair>`, erase current | assert: front() empty | SIGSEGV | UBSan null ref | debug: iterator check abort | SIGSEGV | ASan container-overflow | hardening: front() empty |
+| `vector<pair>`, erase next | assert: front() empty | SIGSEGV | UBSan null ref | debug: iterator check abort | SIGSEGV | ASan container-overflow | hardening: front() empty |
+| `vector<pair>`, insert 64 | assert: front() empty | ran, 3 visited | ASan UAF | debug: iterator check abort | SIGSEGV | ASan UAF | hardening: front() empty |
 
 Three things stand out in the table:
 
