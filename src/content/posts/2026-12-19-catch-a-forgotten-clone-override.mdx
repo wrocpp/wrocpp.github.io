@@ -1,0 +1,153 @@
+---
+title: "Three ways to catch a forgotten clone() override, and where each one stops"
+slug: "catch-a-forgotten-clone-override"
+pubDate: 2026-12-19
+author: filip-sajdak
+language: en
+kind: short
+series: clone-smart-pointers
+series_order: 3
+audience: working-cpp
+tags: [cpp, cpp26, contracts, reflection, constexpr, undefined-behavior, mixin, gcc]
+summary: "A contract_assert in a clone mixin, a constant-evaluated round trip and a reflection lint each catch a class that forgets its hook overrides. The contract fires at run time and vanishes under the ignore semantic. The other two report at build time. The examples use no macros: each net is checked against a forgetful class with inverted assertions."
+draft: false
+relatedPosts: [clone-helper-ub-forgotten-override, deducing-this-clone-without-covariance, ndebug-does-not-disable-contracts, reflection-dangling-signature, cpp26-contracts]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+Three checks catch a class that forgets its clone hooks on GCC 16.2. A `contract_assert` fires at run time, a constant-evaluated test reports it at build time, and a reflection lint names the class. Each one stops where a different assumption fails.
+
+## In short
+
+- A `contract_assert` placed before the cast reports through a counting handler under `observe`. It aborts under `enforce` and does nothing under `ignore`, where the cast is undefined again.
+- The check cannot sit on the hooks. GCC 16.2 rejects a contract on a virtual function. A postcondition on `clone()` would run after the cast.
+- A constant-evaluated round trip reports the forgetful class at build time, on GCC 16.2 and on Clang 22.1.
+- A reflection lint lists every concrete class in a namespace that lacks the overrides, and generated tests clone each one. GCC 16.2 and clang-p2996 print the same output.
+- The examples contain no macros. Each net is tested against a class that forgets, with an inverted assertion.
+
+## The classes, and how the examples avoid macros
+
+<PostLink slug="deducing-this-clone-without-covariance">Episode 2</PostLink> ends with a mixin whose `clone()` casts the result of a private virtual hook. `Tile` derives from `Square` and overrides both hooks. `ForgetfulTile` derives from `Square` and overrides neither:
+
+```cpp
+struct Tile : Square {
+  int grout = kGrout;
+ private:
+  constexpr std::unique_ptr<Cloneable> copy_() const override { return std::make_unique<Tile>(*this); }
+  constexpr std::unique_ptr<Cloneable> move_() override { return std::make_unique<Tile>(std::move(*this)); }
+};
+
+struct ForgetfulTile : Square {
+  int grout = kGrout;
+};
+```
+
+Both classes live in the same file, so the example needs no `-D` flag to switch the bug on. That is deliberate, and avoiding macros is a practice worth following.
+
+Where the language has an answer, skip the preprocessor conditionals and `#define`. The [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#es30-dont-use-macros-for-program-text-manipulation) already advise against macros for program text (ES.30, ES.31). A macro-selected variant is checked in one configuration at a time, and the inactive branch is never compiled. A second class, a trait, a concept or a separate file is compiled in every build. Each net is checked against `ForgetfulTile`, and the file builds and exits 0 only when the net catches it and accepts the correct classes. These are the techniques the examples use instead of macros:
+
+| need | technique |
+|---|---|
+| a case that must not compile | a `static_assert` on a type trait, or on a concept that wraps a requires-expression |
+| a class that breaks the rule | a second class and an inverted assertion |
+| a run-time violation that must not abort | a replacement handler that counts, with the semantic chosen by a compiler flag |
+| a check that only some hierarchies want | a second mixin, selected by inheritance |
+| a feature that differs by compiler | its own file, which a compiler without the feature rejects with a plain error |
+| a crash on demand | a command-line argument |
+
+## Net 1: a contract_assert in the mixin
+
+The mixin that carries the check differs from the plain one by a block in `clone()`. The predicate compares the dynamic type of the new object with the dynamic type of the source, before the downcast:
+
+```cpp
+const Cloneable& made_ref = *made;
+contract_assert(typeid(made_ref) == typeid(self));
+```
+
+Because the source's own dynamic type is used, a clone made through a `Figure&` is checked too. There are two reasons the check lives in `clone()`.
+
+- It cannot be on the virtual hooks. GCC 16.2 stops with `contracts cannot be added to virtual functions`, and [cppreference lists](https://en.cppreference.com/w/cpp/language/function) virtual functions among those that cannot have contract specifiers in C++26.
+- A postcondition on `clone()` would run after the `static_cast`, when the damage is done. A `contract_assert` placed before the cast runs first.
+
+A replacement `handle_contract_violation` counts the violations and prints each one. The program clones one square and one tile. It clones the forgetful tile twice, once through its own type and once through a `Figure&`. The result for each evaluation semantic:
+
+| `-fcontract-evaluation-semantic=` | exit | what is printed |
+|---|---|---|
+| `observe` | 0 | two violations, then `violations recorded: 2` |
+| `ignore` | 0 | `violations recorded: 0` |
+| `enforce` | 134, SIGABRT | the handler runs, then the process terminates |
+| `quick_enforce` | 134, SIGABRT | no handler call and no message |
+
+<GodboltEmbed id="jfPbsaP5r" gccOnly gccLabel="GCC 16.2" title="A contract_assert in a clone mixin, with a handler that counts violations" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -fcontracts -fcontract-evaluation-semantic=observe -O1 · runs live" />
+
+Under `observe` the program goes on after the report, and the cast that follows is still undefined. Under `ignore` the predicate is not evaluated. With the UBSan flag added, GCC 16.2 reports the downcast. The object is of type `Square`, not `ForgetfulTile`. Which semantic a release build uses is a separate decision, and <PostLink slug="ndebug-does-not-disable-contracts">defining NDEBUG does not change it</PostLink>.
+
+The file is for GCC. A probe printed `__cpp_contracts is not defined` on Clang 22.1 and on clang trunk. GCC 16.2 defines the macro even without `-fcontracts`. Without the flag and without a replacement handler, the link fails with an undefined reference to `handle_contract_violation`.
+
+## Net 2: a constant-evaluated round trip
+
+The test default-constructs a class, clones it through a `const Figure&`, and compares the dynamic types. A class that forgot its overrides gets a `Square` back, so the comparison is false:
+
+```cpp
+template <class T>
+consteval bool clone_keeps_type() {
+  T original{};
+  const Figure& base = original;
+  auto copy = base.clone();
+  const Figure& copied = *copy;
+  return typeid(copied) == typeid(original);
+}
+
+static_assert(clone_keeps_type<Square>());
+static_assert(clone_keeps_type<Tile>());
+static_assert(!clone_keeps_type<ForgetfulTile>());   // the net catches the forgetful class
+```
+
+The build passes only if the net reports `ForgetfulTile`. A second check asks whether cloning through the derived type is a constant expression. A concept puts the result in a template argument:
+
+```cpp
+template <class T>
+concept clones_in_constant_evaluation =
+    requires { typename std::integral_constant<double, T{}.clone()->area()>; };
+```
+
+It is true for the correct tile and false for the forgetful one, and the file asserts both. The compiler rejects the undefined downcast during constant evaluation. Constant evaluation has no undefined behaviour to hide in. The file builds and runs on GCC 16.2 and on Clang 22.1.
+
+<GodboltEmbed id="ef3d1YxK7" gccOnly gccLabel="GCC 16.2" title="A constant-evaluated clone round trip that must catch the forgetful class" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O1 · runs live" />
+
+The limit is in the first assertions. A class that nobody lists is not tested.
+
+## Net 3: reflection lists the classes
+
+Reflection can remove the list. A sweep over the members of a namespace keeps the concrete classes derived from `Figure`. The lint keeps those that do not declare an override of both hooks. Generated tests clone each one with `template for`, so a new class is tested without being added anywhere. Two `static_assert`s check that the lint finds exactly `ForgetfulTile`:
+
+```text
+lint: 1 of 3 concrete figures lack an override
+  ForgetfulTile does not override copy_ and move_
+test: Square clone keeps its type: true
+test: Tile clone keeps its type: true
+test: ForgetfulTile clone keeps its type: false
+```
+
+The program returns the number of results that differ from what the lint predicts, so it exits 0. GCC 16.2 and clang-p2996 print these lines.
+
+<GodboltEmbed id="sGnT3E6os" gccOnly gccLabel="GCC 16.2" title="A reflection lint and generated clone tests for every concrete Figure" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -O1 · runs live" />
+
+The sweep is the same idea as <PostLink slug="reflection-dangling-signature">the reflection lint for dangling signatures</PostLink>: look at declarations, report the ones that break a rule. Its limits are real. It sees one namespace in one translation unit. A class in another namespace, or in a file that does not include this one, is not listed. A generated test needs a default constructor, and it compares dynamic types only.
+
+## Which net where
+
+| net | when it fires | sees a clone made through a base reference | where it stops |
+|---|---|---|---|
+| `contract_assert` | run time, at each `clone()` | yes, both calls were counted under `observe` | code paths that run, and the `ignore` semantic removes it |
+| constant-evaluated round trip | build time | yes, it clones through `const Figure&` | a class that is not listed by hand |
+| reflection lint | build time | not applicable, it reads declarations | one namespace of one translation unit |
+| generated tests | at run time, in a test run | yes | needs a default constructor |
+
+Where reflection is available I would put the lint in a `static_assert`, as the example does. The generated tests can run with the unit tests. Where it is not, the constant-evaluated list is the cheapest net, and a new class costs one line. A `contract_assert` is the one net that runs in the real program. It needs a release build that keeps the `enforce` or `observe` semantic.
+
+Episode 4 removes the need for any of them. `std::polymorphic` copies the dynamic type itself, and a mixin that finds the copy by reflection leaves no hook to forget.
+
+The sources and all outputs are in [`posts/117-forgotten-override-nets`](https://github.com/wrocpp/cpp26-reflection-examples/tree/c762ce2f1af9c489a863f362c9b576dc3fce921c/posts/117-forgotten-override-nets). Everything here ran on Compiler Explorer on 2026-11-09.

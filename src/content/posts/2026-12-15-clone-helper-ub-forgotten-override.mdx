@@ -1,0 +1,109 @@
+---
+title: "The 2014 clone() helper is undefined behaviour when a class forgets one override"
+slug: "clone-helper-ub-forgotten-override"
+pubDate: 2026-12-15
+author: filip-sajdak
+language: en
+kind: short
+series: clone-smart-pointers
+series_order: 1
+audience: working-cpp
+tags: [cpp, cpp11, smart-pointers, polymorphism, undefined-behavior, ubsan, gcc, clang]
+summary: "The clone helper from a 2014 article returns unique_ptr<Derived> by casting the result of a virtual call. When a derived class forgets its override, the cast is undefined behaviour. GCC 16.2 and Clang 22.1 print no warning, a plain build prints the right area, and only UBSan reports it."
+draft: false
+relatedPosts: [match-each-ub-case-to-a-checking-tool, sanitizers-on-ce, hardened-stdlib-turn-it-on, std-indirect-pimpl]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+The 2014 CppCodeReviewers article by Filip Sajdak, [Covariant Return Types and Smart Pointers](https://github.com/CppCodeReviewers/Covariant-Return-Types-and-Smart-Pointers), ends with a clone helper for polymorphic classes. The helper returns a smart pointer of the object's own static type. It is undefined behaviour whenever a derived class forgets to override `clone()`. GCC 16.2 and Clang 22.1 compile it, as C++11 and as C++26, and print no diagnostic.
+
+## In short
+
+- The helper calls a protected virtual `clone()` and casts the result to `T*`. A derived class that forgets the override hands back a base-class object, so the cast is undefined.
+- GCC 16.2 and Clang 22.1 say nothing with `-Wall -Wextra -Wpedantic`, in C++11 mode or in C++26 mode.
+- A plain `-O2` build prints the right area and exits 0. AddressSanitizer reports nothing. UBSan reports the downcast.
+- Checks like the article's, on the static type and the area, would pass for the `Tile` copy.
+- A call to a virtual function that only `Tile` has ends in SIGSEGV.
+
+## What the 2014 article built
+
+With a covariant return type, an override can return a pointer to the derived class where the base declares a pointer to the base. Smart pointers are not covariant: a `std::unique_ptr<Square>` is unrelated to a `std::unique_ptr<Figure>` for overriding, so the trick fails for them.
+
+The article keeps a raw-pointer virtual function in the base class and makes it protected. A free function template wraps the result. [Version 5 of its test file](https://github.com/CppCodeReviewers/Covariant-Return-Types-and-Smart-Pointers/blob/4729ab8/FigureTests-v5.cpp) holds the final form:
+
+```cpp
+template <typename T>
+std::unique_ptr<T> clone(const T& object) {
+  using base_type = typename T::base_type;
+  static_assert(std::is_base_of<base_type, T>::value, "T object has to derived from T::base_type");
+  auto ptr = static_cast<const base_type&>(object).clone();   // virtual call, returns base_type*
+  return std::unique_ptr<T>(static_cast<T*>(ptr));            // cast back to the caller's type
+}
+
+struct Figure : object::cloneable<Figure> { virtual double area() const = 0; };
+
+struct Square : Figure {
+  double a = 0;
+  Square() = default;
+  Square(double a) : a{a} {}
+  double area() const override { return a * a; }
+ protected:
+  Square* clone() const override { return new Square(*this); }
+};
+```
+
+The call goes through the base type, so it always reaches the most derived override. The cast that follows assumes that override returns a `T`.
+
+## A class that forgets the override
+
+```cpp
+struct Tile : Square {
+  using Square::Square;
+  int grout = 7;
+  virtual int joints() const { return grout; }
+};
+
+Tile tile{2};
+auto copy = object::clone(tile);   // std::unique_ptr<Tile>
+```
+
+`Square::clone()` is not pure, so `Tile` is a complete class without an override of its own. The helper is instantiated with `T = Tile`, and the virtual call reaches `Square::clone()`. That function returns a new `Square` copied from the tile. The cast then points a `Tile` pointer at a `Square`.
+
+The standard makes a base-to-derived `static_cast` undefined when the object is not of the derived type. [Cppreference](https://en.cppreference.com/w/cpp/language/static_cast) states the rule under the pointer conversion: no runtime check is made.
+
+## What each tool says
+
+The program clones the tile, prints the area of the copy and exits. It reads nothing that only `Tile` has.
+
+<GodboltEmbed id="j93fxGhb5" gccOnly gccLabel="GCC 16.2" title="The 2014 helper cloning a Tile that forgot its override, under UBSan" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O0 -fsanitize=undefined · runs live" />
+
+| build | compiler diagnostics | run |
+|---|---|---|
+| GCC 16.2 and Clang 22.1, `-std=c++11 -O0 -Wall -Wextra -Wpedantic` | none | exit 0, prints `area=4` |
+| the same two, `-std=c++26 -O2` | none | exit 0, prints `area=4` |
+| GCC 16.2, `-O2 -Wall -Wextra -Wpedantic -fsanitize=address` | none | exit 0, no report |
+| GCC 16.2, `-O0 -fsanitize=undefined`, with warnings on | none | exit 0, two reports |
+| Clang 22.1, `-O0 -fsanitize=undefined,vptr`, with warnings on | none | exit 0, two reports |
+| GCC 16.2, `-O2`, plus a call to a virtual function only `Tile` has | none | SIGSEGV, exit 139 |
+
+UBSan prints two reports. The first names the cast. It says the address does not point to an object of type `Tile`, and that the object is of type `Square`. The second is a member call on the same address, raised when the pointer is dereferenced.
+
+The area is 4, which is correct. A `Square` of side 2 has the same area as the `Tile` it was copied from. The article's tests compare the static type of the result and the area. A test of that kind for `Tile` would pass: the static type is `std::unique_ptr<Tile>`, and the area matches.
+
+## Why nothing warns
+
+The compiler cannot see the dynamic type behind a pointer when it checks the cast. The hierarchy is valid, and the pure virtual function was already satisfied one level up. Nothing in the helper requires `Tile` to override anything.
+
+The checks that exist run at run time. UBSan compares the dynamic type at the cast. AddressSanitizer sees a valid allocation, because the `Square` is one, and stays silent.
+
+Started with an argument, the program also calls a virtual function that only `Tile` declares. That call crashes on GCC 16.2 with or without the sanitizer. In a program that never calls such a function, the mistake can go unnoticed.
+
+## What the 2014 design leaves open
+
+The rule that every concrete class must override the hook is a convention. The 2014 design has nothing that checks it, and the cast trusts it.
+
+Episode 2 replaces the helper with one member function that uses deducing this. That removes the covariant return, the friend template and the CRTP base, and it answers the article's closing question about moving from an rvalue. The cast is still there, so a forgotten override is still undefined. Episode 3 adds three ways to catch it, and episode 4 shows `std::polymorphic`, where there is no override to forget.
+
+The example is in [`posts/115-clone-2014-forgotten-override`](https://github.com/wrocpp/cpp26-reflection-examples/tree/c762ce2f1af9c489a863f362c9b576dc3fce921c/posts/115-clone-2014-forgotten-override), and the helper is the article's code with only the formatting changed. Everything here ran on Compiler Explorer on 2026-11-09, with GCC 16.2 and Clang 22.1.0.
