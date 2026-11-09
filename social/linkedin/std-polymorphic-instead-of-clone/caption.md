@@ -5,7 +5,7 @@ Episode 4 of a series on clone() and smart pointers.
 
 std::polymorphic<Figure> copies the object it holds with that object's dynamic type, so a class with no clone hooks copies correctly. In the example, a vector of three polymorphic figures copies to three distinct objects with the same three dynamic types, and a static_assert checks a copy in constant evaluation on GCC 16.2.
 
-The allocation count matches the older design. Copying a row of three takes 4 allocations with polymorphic and 4 with a unique_ptr and clone(). A mixin that finds the copy by reflection, with no hooks in the classes, also takes 4. A variant of the same three classes, built by reflection, takes 1, and it is a closed set.
+The allocation count matches the older design. Copying a row of three takes 4 allocations with polymorphic and 4 with a unique_ptr and clone(). A mixin that finds the copy by reflection, with no hooks in the classes, also takes 4, and throws if it meets a class it does not search. A variant of the same three classes, built by reflection, takes 1, and it is a closed set.
 
 The limits: polymorphic<Square> does not convert to polymorphic<Figure>, a moved-from object is valueless, and libc++ trunk on Compiler Explorer did not define __cpp_lib_polymorphic on 2026-11-09.
 
