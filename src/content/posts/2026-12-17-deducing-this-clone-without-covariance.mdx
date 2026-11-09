@@ -1,0 +1,141 @@
+---
+title: "Deducing this gives clone() the derived type without covariance, friend or CRTP"
+slug: "deducing-this-clone-without-covariance"
+pubDate: 2026-12-17
+author: filip-sajdak
+language: en
+kind: flagship
+series: clone-smart-pointers
+series_order: 2
+audience: working-cpp
+tags: [cpp, cpp23, cpp26, deducing-this, mixin, smart-pointers, polymorphism, gcc, clang]
+summary: "A mixin with no template parameters gives clone() the caller's type through deducing this: unique_ptr<Derived>, a move from an rvalue, no friend, no CRTP, no covariance. It runs on GCC 16.2 and Clang 22.1. A forgotten override is still undefined. Covariant hooks crash every GCC from 13.1 to 16.2 in constant evaluation."
+draft: false
+relatedPosts: [clone-helper-ub-forgotten-override, std-indirect-pimpl, match-each-ub-case-to-a-checking-tool, gcc-16-2-toolchain-status]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+One mixin with a single member function now does what the 2014 helper, its friend template and its CRTP base did. A square clones into a `std::unique_ptr<Square>`. A `Figure&` bound to a square clones into a `std::unique_ptr<Figure>`. A clone of an rvalue moves, which answers the question that closed the 2014 article.
+
+## In short
+
+- The mixin `Cloneable` has no template parameters. Its member function template `clone(this Self&& self)` returns `std::unique_ptr<std::remove_cvref_t<Self>>`. GCC 16.2 and Clang 22.1 give the same output.
+- Each class still overrides two private virtual hooks, one that copies and one that moves. An explicit object member function cannot be virtual.
+- A clone of an rvalue calls the move hook, so the donor's vector is empty afterwards on libstdc++. A const rvalue copies.
+- The cast inside `clone()` is the 2014 cast. A forgotten override is still undefined, and episode 3 catches it.
+- A deleted base assignment, even with a reason, also deletes the assignment of every derived class. Protected and defaulted works.
+- Covariant hooks crash every GCC from 13.1 to 16.2 that I ran, in constant evaluation. Hooks that return a smart pointer avoid it.
+
+## The whole design
+
+```cpp
+struct Cloneable {
+  constexpr virtual ~Cloneable() = default;
+
+  template <class Self>
+  constexpr auto clone(this Self&& self) -> std::unique_ptr<std::remove_cvref_t<Self>> {
+    using T = std::remove_cvref_t<Self>;
+    std::unique_ptr<Cloneable> made;
+    if constexpr (std::is_lvalue_reference_v<Self> || std::is_const_v<std::remove_reference_t<Self>>) {
+      made = static_cast<const Cloneable&>(self).copy_();
+    } else {
+      made = static_cast<Cloneable&>(self).move_();
+    }
+    return std::unique_ptr<T>(static_cast<T*>(made.release()));
+  }
+
+ private:
+  constexpr virtual std::unique_ptr<Cloneable> copy_() const = 0;
+  constexpr virtual std::unique_ptr<Cloneable> move_() = 0;
+};
+
+struct Figure : Cloneable { constexpr virtual double area() const = 0; };
+
+struct Square : Figure {
+  double side = 1;
+  std::vector<double> history{};
+  constexpr Square() = default;
+  constexpr explicit Square(double s) : side{s}, history{s} {}
+  constexpr double area() const override { return side * side; }
+ private:
+  constexpr std::unique_ptr<Cloneable> copy_() const override { return std::make_unique<Square>(*this); }
+  constexpr std::unique_ptr<Cloneable> move_() override { return std::make_unique<Square>(std::move(*this)); }
+};
+```
+
+The example also declares the protected, defaulted copy and move operations. They are left out above.
+
+The parameter `self` is deduced from the object the call is made on. That gives `clone()` the static type of the caller without a free function, a `base_type` alias, a friend declaration or a CRTP parameter. The mixin does not name any class that uses it, so it works for any hierarchy.
+
+The two hooks do the virtual part and return `std::unique_ptr<Cloneable>`, so no raw owning pointer crosses a virtual call. Each override is one line of `std::make_unique`. The hooks are not covariant, and the section on PR126324 below says why that helps.
+
+The examples in this series contain no preprocessor conditionals or `-D` switches. Avoiding macros is a best practice, and <PostLink slug="catch-a-forgotten-clone-override">episode 3</PostLink> lists the techniques that replace them.
+
+## What it returns
+
+The program checks these types with `static_assert` and then runs:
+
+| call | result type | hook that runs |
+|---|---|---|
+| `square.clone()` | `std::unique_ptr<Square>` | copy |
+| `figure.clone()`, a `Figure&` bound to a square | `std::unique_ptr<Figure>` | copy |
+| `frozen.clone()`, a const square | `std::unique_ptr<Square>` | copy |
+| `Square{...}.clone()` | `std::unique_ptr<Square>` | move |
+| `std::move(donor).clone()` | `std::unique_ptr<Square>` | move |
+| `std::move(frozen).clone()`, a const rvalue | `std::unique_ptr<Square>` | copy |
+
+<GodboltEmbed id="Wfzb9afYW" gccOnly gccLabel="GCC 16.2" title="A deducing-this clone mixin: static types, rvalue clone and assignment" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O1 · runs live" />
+
+Clang 22.1 builds the same file and prints the same four lines. A constant-evaluated `static_assert` in the file clones through a `Figure&` and from an rvalue.
+
+## Cloning an rvalue moves
+
+The 2014 article asked whether `clone` could take advantage of move semantics for rvalues. With an explicit object parameter the answer is a branch on the deduced type. An lvalue or a const object goes to the copy hook. A non-const rvalue goes to the move hook.
+
+The example's square holds a one-element vector named `history`. After `std::move(donor).clone()` the donor's vector is empty on libstdc++. After `std::move(frozen).clone()` the const source still holds its element, because a const object cannot be moved from. The standard calls a moved-from vector valid but unspecified. Empty is what libstdc++ leaves.
+
+## One override pair per class remains
+
+A function with an explicit object parameter cannot be virtual, [as cppreference notes](https://en.cppreference.com/w/cpp/language/member_functions). So the wrapper is not virtual, and the hooks are. Every concrete class still needs its `copy_` and `move_` overrides. The 2014 design has the same property, with one hook instead of two.
+
+The wrapper ends in the same `static_cast<T*>` as the 2014 helper. Suppose a class derived from `Square` forgets its overrides. Then `clone()` called on it casts a `Square` to the derived type, which is undefined. Episode 3 shows it with this design: a build with the UBSan flag reports a downcast to `ForgetfulTile` of an object of type `Square`. <PostLink slug="clone-helper-ub-forgotten-override">Episode 1</PostLink> shows the sanitizer output for the old helper, and episode 3 shows three ways to catch it.
+
+## Assigning through the base
+
+Copying a polymorphic object through a base reference slices it. The usual guard is to hide the base's copy and move operations. The example makes them protected and defaulted in `Figure`, because the implicit operations of a derived class are public.
+
+The example has no macros, so the cases that must not compile are `static_assert`s on type traits. A passing build proves the rejection:
+
+| assertion | meaning |
+|---|---|
+| `!std::is_assignable_v<Figure&, const Figure&>` | assignment through a `Figure&` does not compile |
+| `std::is_copy_assignable_v<Square>` | a square is still assignable |
+| `!std::is_copy_assignable_v<DeletedDerived>` | a class derived from a base with a deleted assignment is not assignable |
+
+C++26 allows a reason after the deleted function, and writing `operator=(const DeletedBase&) = delete("assigning through a base slices; use clone()")` reads well. The third assertion shows the cost. The deleted base assignment makes the implicit assignment of every derived class deleted too. Protected and defaulted keeps a derived class assignable and still blocks the slicing assignment from outside.
+
+## GCC PR126324: covariant hooks crash constant evaluation
+
+The 2014 design uses a covariant hook, `Square* clone() const override`. A hook that returns a smart pointer cannot be covariant, which is why the design here avoids covariance. A second mixin in the file `covariant_hook.cpp` has the raw-pointer hook. The file calls it through a base reference in a `static_assert` and stores the result in a `Figure*`:
+
+| compiler | `covariant_hook.cpp` |
+|---|---|
+| GCC 13.1 to 13.4 (`-std=c++23`) | internal compiler error in `cxx_eval_store_expression` |
+| GCC 14.1 to 14.4 (`-std=c++23`) | internal compiler error, same function |
+| GCC 15.1 | internal compiler error, same function |
+| GCC 16.1 and 16.2 | internal compiler error, same function |
+| GCC trunk, 2026-11-09 | builds and runs |
+
+<GodboltEmbed id="64G9KT8fY" gccOnly gccLabel="GCC trunk" title="A covariant hook in a constant-evaluated virtual call (builds on trunk, crashes GCC 13 to 16.2)" gcc_subtitle="x86-64 GCC trunk · -std=c++26 -O1 · runs live" />
+
+The Bugzilla entry, [PR126324](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126324), was reported on 2026-07-20 by the user dr.xiaosa with a smaller reproduction. The user pinskia confirmed it, and ppalka wrote that it seems to have started with r13-160, which puts it in GCC 13 and later. Odysseas Georgoudis wrote the patch and Jason Merrill committed it to trunk as r17-3321 on 2026-08-17. On 2026-11-09 the entry was still open with target milestone 14.5 and showed no commit on a release branch.
+
+A first version of my reproduction passed the covariant result straight to a `std::unique_ptr` constructor. It compiled on every GCC I tried it on. The crash needs the result stored in a `Figure*`.
+
+Code that must build on GCC 13 to 16.2 may clone virtual objects at compile time. A hook that returns a smart pointer avoids the bug. The deducing-this program above does a constant-evaluated clone on GCC 16.2 and Clang 22.1.
+
+## Verified on
+
+GCC 16.2 and Clang 22.1.0 run the default program with the same output. The example sources and all outputs are in [`posts/116-deducing-this-clone`](https://github.com/wrocpp/cpp26-reflection-examples/tree/c762ce2f1af9c489a863f362c9b576dc3fce921c/posts/116-deducing-this-clone). Everything here ran on Compiler Explorer on 2026-11-09.
