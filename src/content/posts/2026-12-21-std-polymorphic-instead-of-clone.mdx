@@ -91,11 +91,17 @@ A clone of a `Tile` is a `std::unique_ptr<Tile>`. A clone through a `Figure&` ho
 
 The list is read from the namespace of the static type. A derived class declared in another namespace makes `clone()` throw `clone_unavailable`. The example calls it `elsewhere::Stray`. It is a `std::logic_error` whose message names the dynamic type. An empty pointer would have hidden the mistake until the first dereference. The set is closed in that sense, and it is the price of writing no hook.
 
+The set must also be the same in every translation unit. See the section on the one definition rule below.
+
 <GodboltEmbed id="5jW4GPKa3" gccOnly gccLabel="GCC 16.2" title="A clone mixin with no hooks, found by reflection" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -O1 · runs live" />
 
 The file builds on GCC 16.2 and on clang-p2996 with the same output. Reflection cannot inject a member function in C++26, which is why the mixin dispatches in a function body instead of generating overrides.
 
 The guards matter. Without them, a `using TileAlias = Tile;` in the namespace matched the same class twice. An rvalue clone then moved from the source twice, and the new object held no history. A forward declaration such as `struct Pending;` made the search ill-formed. The example declares both, and the search handles them.
+
+## One definition rule for the hookless mixin
+
+Every translation unit of a program must see the same classes in the searched namespace, so the hierarchy belongs in one header. A unit that sees a different set generates a different `clone()` for the same specialization, which is undefined. It can show up as `clone_unavailable` for a class the caller can see. The way to extend the set is another namespace. The 2014 repo's port checks the requirement with a test that links two translation units and compares the class lists each one sees.
 
 ## What a copy costs
 
