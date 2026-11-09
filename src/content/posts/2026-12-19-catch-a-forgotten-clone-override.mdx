@@ -133,7 +133,9 @@ test: ForgetfulTile clone keeps its type: false
 
 The program returns the number of results that differ from what the lint predicts, so it exits 0. GCC 16.2 and clang-p2996 print these lines.
 
-<GodboltEmbed id="sGnT3E6os" gccOnly gccLabel="GCC 16.2" title="A reflection lint and generated clone tests for every concrete Figure" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -O1 · runs live" />
+<GodboltEmbed id="ehdTer55x" gccOnly gccLabel="GCC 16.2" title="A reflection lint and generated clone tests for every concrete Figure" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -O1 · runs live" />
+
+The sweep skips aliases and classes that are declared but incomplete. The example has both an alias and a forward declaration. The lint therefore lists the tile once, and an incomplete type does not break it.
 
 The sweep is the same idea as <PostLink slug="reflection-dangling-signature">the reflection lint for dangling signatures</PostLink>: look at declarations, report the ones that break a rule. Its limits are real. It sees one namespace in one translation unit. A class in another namespace, or in a file that does not include this one, is not listed. A generated test needs a default constructor, and it compares dynamic types only.
 
@@ -150,4 +152,4 @@ Where reflection is available I would put the lint in a `static_assert`, as the 
 
 Episode 4 removes the need for any of them. `std::polymorphic` copies the dynamic type itself, and a mixin that finds the copy by reflection leaves no hook to forget.
 
-The sources and all outputs are in [`posts/117-forgotten-override-nets`](https://github.com/wrocpp/cpp26-reflection-examples/tree/203fceeae3a16b6fa2fa49b436a4bf47eeeef5fd/posts/117-forgotten-override-nets). Everything here ran on Compiler Explorer on 2026-11-09.
+The sources and all outputs are in [`posts/117-forgotten-override-nets`](https://github.com/wrocpp/cpp26-reflection-examples/tree/1dddd1f39957a460ce451e266724c110a5b89c54/posts/117-forgotten-override-nets). Everything here ran on Compiler Explorer on 2026-11-09.

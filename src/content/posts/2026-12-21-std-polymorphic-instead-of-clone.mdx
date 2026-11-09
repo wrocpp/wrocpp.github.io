@@ -62,11 +62,12 @@ struct AutoCloneable {
         std::meta::parent_of(std::meta::dealias(^^T)), std::meta::access_context::unchecked()));
     std::unique_ptr<T> out;
     template for (constexpr auto member : members) {
-      if constexpr (std::meta::is_type(member) && std::meta::is_class_type(member) &&
+      if constexpr (std::meta::is_type(member) && std::meta::dealias(member) == member &&
+                    std::meta::is_class_type(member) && std::meta::is_complete_type(member) &&
                     std::meta::is_base_of_type(^^AutoCloneable, member) && !std::meta::is_abstract_type(member)) {
         using C = typename [:member:];
         if constexpr (std::is_base_of_v<T, C>) {
-          if (typeid(self) == typeid(C)) out = std::make_unique<C>(static_cast<const C&>(self));
+          if (!out && typeid(self) == typeid(C)) out = std::make_unique<C>(static_cast<const C&>(self));
         }
       }
     }
@@ -76,7 +77,7 @@ struct AutoCloneable {
 };
 ```
 
-The listing leaves out the branch that moves from an rvalue, and the line that declares the exception type. The classes derive from a `Figure` that derives from the mixin, and write nothing more. The mixin is a second kind of mixin than episode 2's, selected by inheritance, and the classes do not change.
+The listing leaves out the branch that moves from an rvalue, and the line that declares the exception type. Two guards came from a review of the old repo's port. The search skips aliases and incomplete classes, and stops at the first match. The classes derive from a `Figure` that derives from the mixin, and write nothing more. The mixin is a second kind of mixin than episode 2's, selected by inheritance, and the classes do not change.
 
 The program shows what it keeps and what it cannot do:
 
@@ -90,9 +91,11 @@ A clone of a `Tile` is a `std::unique_ptr<Tile>`. A clone through a `Figure&` ho
 
 The list is read from the namespace of the static type. A derived class declared in another namespace makes `clone()` throw `clone_unavailable`. The example calls it `elsewhere::Stray`. It is a `std::logic_error` whose message names the dynamic type. An empty pointer would have hidden the mistake until the first dereference. The set is closed in that sense, and it is the price of writing no hook.
 
-<GodboltEmbed id="Ybrjx5n3M" gccOnly gccLabel="GCC 16.2" title="A clone mixin with no hooks, found by reflection" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -O1 · runs live" />
+<GodboltEmbed id="5jW4GPKa3" gccOnly gccLabel="GCC 16.2" title="A clone mixin with no hooks, found by reflection" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -O1 · runs live" />
 
 The file builds on GCC 16.2 and on clang-p2996 with the same output. Reflection cannot inject a member function in C++26, which is why the mixin dispatches in a function body instead of generating overrides.
+
+The guards matter. Without them, a `using TileAlias = Tile;` in the namespace matched the same class twice. An rvalue clone then moved from the source twice, and the new object held no history. A forward declaration such as `struct Pending;` made the search ill-formed. The example declares both, and the search handles them.
 
 ## What a copy costs
 
@@ -113,7 +116,7 @@ The numbers are the same on GCC 16.2 with optimisation levels 1 and 2, and on GC
 
 The variant has one allocation, the vector's buffer, because each element holds its figure by value. The price is that every element is sized for the largest class, and the set is closed. The alias lists the classes of the namespace when the file is compiled.
 
-<GodboltEmbed id="vhcx9Tr5c" gccOnly gccLabel="GCC 16.2" title="Allocations per row copy: hooks, hookless mixin, polymorphic and a reflected variant" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -O1 · runs live" />
+<GodboltEmbed id="booTzjeh7" gccOnly gccLabel="GCC 16.2" title="Allocations per row copy: hooks, hookless mixin, polymorphic and a reflected variant" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -O1 · runs live" />
 
 ## What polymorphic cannot do
 
@@ -135,4 +138,4 @@ The example has no preprocessor test for the missing library. That follows the r
 
 `polymorphic` has no forgotten override because it copies from the type of the object it owns, as cppreference describes the copy constructor. A copy of it allocates, and so does a copy made with a `unique_ptr` and a `clone()`.
 
-The sources and all outputs are in [`posts/118-polymorphic-instead-of-clone`](https://github.com/wrocpp/cpp26-reflection-examples/tree/203fceeae3a16b6fa2fa49b436a4bf47eeeef5fd/posts/118-polymorphic-instead-of-clone). Everything here ran on Compiler Explorer on 2026-11-09.
+The sources and all outputs are in [`posts/118-polymorphic-instead-of-clone`](https://github.com/wrocpp/cpp26-reflection-examples/tree/1dddd1f39957a460ce451e266724c110a5b89c54/posts/118-polymorphic-instead-of-clone). Everything here ran on Compiler Explorer on 2026-11-09.
