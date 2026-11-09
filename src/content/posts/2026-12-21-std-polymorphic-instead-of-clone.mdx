@@ -1,0 +1,134 @@
+---
+title: "std::polymorphic removes clone() and the override you can forget"
+slug: "std-polymorphic-instead-of-clone"
+pubDate: 2026-12-21
+author: filip-sajdak
+language: en
+kind: short
+series: clone-smart-pointers
+series_order: 4
+audience: working-cpp
+tags: [cpp, cpp26, polymorphic, value-semantics, mixin, reflection, variant, gcc]
+summary: "std::polymorphic<Figure> copies the dynamic type of what it holds, and a mixin that finds the copy by reflection needs no hooks either. On GCC 16.2 a row of three copies with four allocations in both, like hand-written hooks, and a reflection-built variant copies with one. polymorphic cannot convert to a base, and libc++ trunk lacks it."
+draft: false
+relatedPosts: [std-indirect-pimpl, clone-helper-ub-forgotten-override, deducing-this-clone-without-covariance, catch-a-forgotten-clone-override]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+Two designs copy a polymorphic object with no clone code in the classes. `std::polymorphic<Figure>` copies the object it holds with that object's dynamic type. A mixin that finds the copy by reflection does the same for `unique_ptr`. On GCC 16.2 both copy a row of three figures with four allocations, the count of the hand-written hooks of episode 2.
+
+## In short
+
+- A `std::vector<std::polymorphic<Figure>>` copies deeply. The copies keep their dynamic types, three of three, and are distinct objects. The classes need no hooks, so there is no override to forget.
+- The mixin `AutoCloneable` has no template parameters and no hooks. Its `clone()` deduces the caller's type and uses reflection to copy with the class that matches the dynamic type. Classes write nothing and repeat no type name.
+- Copying a row of three costs 4 allocations with polymorphic values, 4 with the mixin and 4 with hand-written hooks. A variant of the same classes costs 1.
+- `polymorphic<Square>` does not convert to `polymorphic<Figure>`. A moved-from object is valueless. libc++ trunk on Compiler Explorer had no `std::polymorphic` on 2026-11-09.
+- My default is `polymorphic` for value semantics. I write a `clone()` mixin when a caller needs a `unique_ptr` of the derived type, or the code must build on libc++.
+
+## What std::polymorphic does here
+
+The example uses the series' classes with the clone machinery removed. `Tile` derives from `Square` and has nothing to forget:
+
+```cpp
+std::vector<std::polymorphic<Figure>> row;
+row.emplace_back(std::in_place_type<Square>, kSide);
+row.emplace_back(std::in_place_type<Circle>, kRadius);
+row.emplace_back(std::in_place_type<Tile>, kSide);
+
+auto copy = row;   // deep copy: three new objects of the same three dynamic types
+```
+
+On GCC 16.2 and GCC trunk the program reports three of three copies with the same dynamic type. Three of three are distinct objects. A `static_assert` in the file copies a polymorphic holding a `Tile` in constant evaluation, and it passes on GCC 16.2. [Cppreference](https://en.cppreference.com/w/cpp/memory/polymorphic/polymorphic) describes the copy constructor: the new owned object is constructed with the type of the object that the source owns.
+
+<PostLink slug="std-indirect-pimpl">The PImpl post</PostLink> introduces `std::indirect` and `std::polymorphic`. This one only asks whether `polymorphic` removes the need for `clone()`.
+
+<GodboltEmbed id="vo61oq7sr" gccOnly gccLabel="GCC 16.2" title="Copies of std::polymorphic keep the dynamic type, with no clone hooks" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O1 · runs live" />
+
+## A mixin with no hooks
+
+Episode 2's mixin needs two overrides in every class, and each override names its own class. Reflection can remove both. The mixin below lists the concrete classes of the namespace that derive from it. It copies with the one whose type matches the dynamic type of the source:
+
+```cpp
+struct AutoCloneable {
+  virtual ~AutoCloneable() = default;
+
+  template <class Self>
+  auto clone(this Self&& self) -> std::unique_ptr<std::remove_cvref_t<Self>> {
+    using T = std::remove_cvref_t<Self>;
+    static constexpr auto members = std::define_static_array(std::meta::members_of(
+        std::meta::parent_of(std::meta::dealias(^^T)), std::meta::access_context::unchecked()));
+    std::unique_ptr<T> out;
+    template for (constexpr auto member : members) {
+      if constexpr (std::meta::is_type(member) && std::meta::is_class_type(member) &&
+                    std::meta::is_base_of_type(^^AutoCloneable, member) && !std::meta::is_abstract_type(member)) {
+        using C = typename [:member:];
+        if constexpr (std::is_base_of_v<T, C>) {
+          if (typeid(self) == typeid(C)) out = std::make_unique<C>(static_cast<const C&>(self));
+        }
+      }
+    }
+    return out;
+  }
+};
+```
+
+The listing leaves out the branch that moves from an rvalue. The classes derive from a `Figure` that derives from the mixin, and write nothing more. The mixin is a second kind of mixin than episode 2's, selected by inheritance, and the classes do not change.
+
+The program shows what it keeps and what it cannot do:
+
+```text
+dynamic types kept: 1 1 1
+history left in the donor after clone of an rvalue: 0
+clone of a class outside the namespace is empty: 1
+```
+
+A clone of a `Tile` is a `std::unique_ptr<Tile>`. A clone through a `Figure&` holds a `Tile`. A clone of an rvalue moves. The list is read from the namespace of the static type, so `elsewhere::Stray`, derived from `Figure` but declared in another namespace, gets an empty pointer. The set is closed in that sense, and it is the price of writing no hook.
+
+<GodboltEmbed id="qhras5xnM" gccOnly gccLabel="GCC 16.2" title="A clone mixin with no hooks, found by reflection" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -O1 · runs live" />
+
+The file builds on GCC 16.2 and on clang-p2996 with the same output. Reflection cannot inject a member function in C++26, which is why the mixin dispatches in a function body instead of generating overrides.
+
+## What a copy costs
+
+A third program copies a row of three figures, default-constructed so none of them owns a heap buffer, and counts allocations with a replaced `operator new`. The last design is a `std::variant` of the namespace's concrete classes, built by reflection:
+
+```cpp
+using AnyFigure = [:std::meta::substitute(^^std::variant, concrete_figures()):];
+```
+
+| design | allocations per row copy | element size |
+|---|---|---|
+| `vector<unique_ptr<Figure>>`, hand-written hooks of episode 2 | 4 | 8 bytes |
+| `vector<unique_ptr<Figure>>`, the hookless mixin | 4 | 8 bytes |
+| `vector<polymorphic<Figure>>` | 4 | 8 bytes |
+| `vector<variant<Square, Circle, Tile>>` | 1 | 56 bytes |
+
+The numbers are the same on GCC 16.2 with optimisation levels 1 and 2, and on GCC trunk at level 1. The four allocations are the vector's buffer plus one per figure. The 8 bytes of `polymorphic` are libstdc++ 16.2's layout, not something the standard requires.
+
+The variant has one allocation, the vector's buffer, because each element holds its figure by value. The price is that every element is sized for the largest class, and the set is closed. The alias lists the classes of the namespace when the file is compiled.
+
+<GodboltEmbed id="GMh4dKqGe" gccOnly gccLabel="GCC 16.2" title="Allocations per row copy: hooks, hookless mixin, polymorphic and a reflected variant" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -O1 · runs live" />
+
+## What polymorphic cannot do
+
+- **Convert to a base.** A `std::polymorphic<Square>` does not convert to a `std::polymorphic<Figure>`. The example states it with a type-trait assertion, next to the same check that passes for a `unique_ptr`.
+- **Give back the derived type.** A caller that needs a `unique_ptr<Square>` gets it from a `clone()` mixin, not from here.
+- **Stay usable after a move.** After `std::move(row[0])` the example reports `valueless_after_move()` as true for the source. Test it before touching an object that has been moved from.
+- **Build everywhere.** libstdc++ 16.2 provides it. On 2026-11-09 the clang trunk build on Compiler Explorer with libc++ did not: the example fails there with `no template named 'polymorphic' in namespace 'std'`.
+
+The example has no preprocessor test for the missing library. That follows the rule of this series: no macros where the language has an answer. A file that needs `std::polymorphic` is a file for libraries that have it. A library without it rejects the file with the plain error above.
+
+## Which to use
+
+| need | use |
+|---|---|
+| a container of polymorphic values that copies like values | `std::polymorphic<Base>` |
+| a `unique_ptr` of the derived type from a derived object | a `clone()` mixin: hand-written hooks, or the hookless one inside a single namespace, with a net from <PostLink slug="catch-a-forgotten-clone-override">episode 3</PostLink> |
+| a closed set of classes, the cheapest copy, no heap per element | a `std::variant`, by hand or built by reflection |
+| a standard library without `std::polymorphic` | the hand-written mixin of episode 2 |
+
+`polymorphic` has no forgotten override because it copies from the type of the object it owns, as cppreference describes the copy constructor. A copy of it allocates, and so does a copy made with a `unique_ptr` and a `clone()`.
+
+The sources and all outputs are in [`posts/118-polymorphic-instead-of-clone`](https://github.com/wrocpp/cpp26-reflection-examples/tree/c762ce2f1af9c489a863f362c9b576dc3fce921c/posts/118-polymorphic-instead-of-clone). Everything here ran on Compiler Explorer on 2026-11-09.
