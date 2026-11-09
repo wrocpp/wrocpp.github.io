@@ -22,7 +22,8 @@ Two designs copy a polymorphic object with no clone code in the classes. `std::p
 ## In short
 
 - A `std::vector<std::polymorphic<Figure>>` copies deeply. The copies keep their dynamic types, three of three, and are distinct objects. The classes need no hooks, so there is no override to forget.
-- The mixin `AutoCloneable` has no template parameters and no hooks. Its `clone()` deduces the caller's type and uses reflection to copy with the class that matches the dynamic type. Classes write nothing and repeat no type name.
+- The mixin `AutoCloneable` has no template parameters and no hooks. Its `clone()` deduces the caller's type and uses reflection to copy with the class that matches the dynamic type. Classes write nothing, repeat no type name, and need neither a copy hook nor a move hook.
+- A class outside the searched namespace makes `clone()` throw. The failure is loud, not an empty pointer.
 - Copying a row of three costs 4 allocations with polymorphic values, 4 with the mixin and 4 with hand-written hooks. A variant of the same classes costs 1.
 - `polymorphic<Square>` does not convert to `polymorphic<Figure>`. A moved-from object is valueless. libc++ trunk on Compiler Explorer had no `std::polymorphic` on 2026-11-09.
 - My default is `polymorphic` for value semantics. I write a `clone()` mixin when a caller needs a `unique_ptr` of the derived type, or the code must build on libc++.
@@ -69,24 +70,27 @@ struct AutoCloneable {
         }
       }
     }
+    if (!out) throw clone_unavailable{"no searched class has the dynamic type"};
     return out;
   }
 };
 ```
 
-The listing leaves out the branch that moves from an rvalue. The classes derive from a `Figure` that derives from the mixin, and write nothing more. The mixin is a second kind of mixin than episode 2's, selected by inheritance, and the classes do not change.
+The listing leaves out the branch that moves from an rvalue, and the line that declares the exception type. The classes derive from a `Figure` that derives from the mixin, and write nothing more. The mixin is a second kind of mixin than episode 2's, selected by inheritance, and the classes do not change.
 
 The program shows what it keeps and what it cannot do:
 
 ```text
 dynamic types kept: 1 1 1
 history left in the donor after clone of an rvalue: 0
-clone of a class outside the namespace is empty: 1
+clone of a class outside the namespace throws clone_unavailable: no searched class has the dynamic type N9elsewhere5StrayE
 ```
 
-A clone of a `Tile` is a `std::unique_ptr<Tile>`. A clone through a `Figure&` holds a `Tile`. A clone of an rvalue moves. The list is read from the namespace of the static type, so `elsewhere::Stray`, derived from `Figure` but declared in another namespace, gets an empty pointer. The set is closed in that sense, and it is the price of writing no hook.
+A clone of a `Tile` is a `std::unique_ptr<Tile>`. A clone through a `Figure&` holds a `Tile`. A clone of an rvalue moves.
 
-<GodboltEmbed id="qhras5xnM" gccOnly gccLabel="GCC 16.2" title="A clone mixin with no hooks, found by reflection" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -O1 · runs live" />
+The list is read from the namespace of the static type. A derived class declared in another namespace makes `clone()` throw `clone_unavailable`. The example calls it `elsewhere::Stray`. It is a `std::logic_error` whose message names the dynamic type. An empty pointer would have hidden the mistake until the first dereference. The set is closed in that sense, and it is the price of writing no hook.
+
+<GodboltEmbed id="Ybrjx5n3M" gccOnly gccLabel="GCC 16.2" title="A clone mixin with no hooks, found by reflection" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -O1 · runs live" />
 
 The file builds on GCC 16.2 and on clang-p2996 with the same output. Reflection cannot inject a member function in C++26, which is why the mixin dispatches in a function body instead of generating overrides.
 
@@ -109,7 +113,7 @@ The numbers are the same on GCC 16.2 with optimisation levels 1 and 2, and on GC
 
 The variant has one allocation, the vector's buffer, because each element holds its figure by value. The price is that every element is sized for the largest class, and the set is closed. The alias lists the classes of the namespace when the file is compiled.
 
-<GodboltEmbed id="GMh4dKqGe" gccOnly gccLabel="GCC 16.2" title="Allocations per row copy: hooks, hookless mixin, polymorphic and a reflected variant" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -O1 · runs live" />
+<GodboltEmbed id="vhcx9Tr5c" gccOnly gccLabel="GCC 16.2" title="Allocations per row copy: hooks, hookless mixin, polymorphic and a reflected variant" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -O1 · runs live" />
 
 ## What polymorphic cannot do
 
@@ -131,4 +135,4 @@ The example has no preprocessor test for the missing library. That follows the r
 
 `polymorphic` has no forgotten override because it copies from the type of the object it owns, as cppreference describes the copy constructor. A copy of it allocates, and so does a copy made with a `unique_ptr` and a `clone()`.
 
-The sources and all outputs are in [`posts/118-polymorphic-instead-of-clone`](https://github.com/wrocpp/cpp26-reflection-examples/tree/c762ce2f1af9c489a863f362c9b576dc3fce921c/posts/118-polymorphic-instead-of-clone). Everything here ran on Compiler Explorer on 2026-11-09.
+The sources and all outputs are in [`posts/118-polymorphic-instead-of-clone`](https://github.com/wrocpp/cpp26-reflection-examples/tree/203fceeae3a16b6fa2fa49b436a4bf47eeeef5fd/posts/118-polymorphic-instead-of-clone). Everything here ran on Compiler Explorer on 2026-11-09.
