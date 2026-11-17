@@ -1,0 +1,111 @@
+---
+title: "A clang-tidy hook exits 2 on a header seeded with 3 history comments"
+slug: "tidy-agent-hook-and-skill"
+pubDate: 2026-12-09
+author: filip-sajdak
+language: en
+kind: flagship
+series: tidy-agent
+series_order: 9
+audience: working-cpp
+tags: [cpp, clang-tidy, ai-agents, claude-code, static-analysis, tidy-agent]
+summary: "The tidy-agent Claude Code hook runs clang-tidy after every edit. On a header seeded with 3 history comments it exited 2 and named all 3 lines, and with an empty WarningsAsErrors it only passed them back as context. The closing episode lists the nine checks with one measured number each, shows how a recurring mistake climbs the ladder to a check, and says what is not done."
+draft: false
+relatedPosts: [ai-cpp-workflow-2026, contracts-that-prove-something]
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+I seeded a header with three comments that point at git or narrate history, and ran the tidy-agent hook on it by hand. It exited 2 and named all 3 lines, which is the signal Claude Code turns into "fix this before you continue". This is the last of nine episodes. It shows the hook, the skill that turns a mistake into a check, and one table that says how each of the nine checks did.
+
+## In short
+
+- The hook is a `PostToolUse` hook. It reads `tool_input.file_path` from the event JSON on stdin and runs clang-tidy on that one file.
+- With `WarningsAsErrors: 'wrocpp-*'` it printed 3 findings and exited 2. With an empty list it exited 0 and returned the same 3 as `additionalContext` (clang-tidy 23.1.5, 2026-11-17).
+- The `mistake-to-check` skill tries five rungs in order, from enabling an existing check to writing a plugin. Four of the nine checks are plugin checks, the last rung. Four are queries and one is a config line for an existing check.
+- Nine checks exist and one is blocked: `public-function-contracts` waits for a Clang that parses contracts, according to its spec.
+
+## What the hook is
+
+The plugin registers one hook in `hooks.json`. The event is `PostToolUse`, and the matcher is `Edit|Write|MultiEdit`, so it fires after the edit has already happened. The script `tidy_hook.py` reads the JSON event from stdin and takes `tool_input.file_path`.
+
+Then it runs clang-tidy on that file with the project's own `.clang-tidy` and `compile_commands.json`. [ADR-0003](https://github.com/wrocpp/tidy-agent/blob/main/docs/adr/0003-hook-block-policy.md) fixes the policy. Checks listed in `WarningsAsErrors` block, everything else is advice, and every finding goes to `.tidy-agent/findings.jsonl`.
+
+## The seeded mistake
+
+The header has three comments the check must flag and three it must pass.
+
+- Flagged, a git pointer: `See commit 4f9c2ab for why this takes a string_view.`
+- Flagged, history: `This used to return a raw pointer.` and `An earlier version cached the last name.`
+- Passed: a `///` contract, a spec marker and a `TODO(#42)`.
+
+I did not install the plugin and I changed no settings file. I ran the script directly with a sample event in a scratch project. The check plugin was built at tidy-agent commit 7c64b6c against clang-tidy 23.1.5:
+
+```text
+examples/run-hook.sh <checkout> /opt/homebrew/opt/llvm/bin/clang-tidy <checkout>/build/libwrocpp-tidy.so <scratch> hard
+```
+
+The script builds the project, sends this event and prints the result:
+
+```text
+{"hook_event_name":"PostToolUse","tool_name":"Edit","tool_input":{"file_path":"<scratch>/include/events.hpp"}}
+```
+
+## What came back
+
+With `WarningsAsErrors: 'wrocpp-*'`, stderr carried this and the exit code was 2:
+
+```text
+clang-tidy findings that this project treats as errors; fix them before continuing:
+include/events.hpp:13: header comment points at version control; that belongs in the commit message [wrocpp-header-comment-policy]
+include/events.hpp:21: header comment narrates the code's history; that belongs in the commit message [wrocpp-header-comment-policy]
+include/events.hpp:31: header comment narrates the code's history; that belongs in the commit message [wrocpp-header-comment-policy]
+```
+
+With an empty `WarningsAsErrors`, it exited 0 and printed JSON with the same three lines in `additionalContext`. With the comments rewritten as contracts, it printed nothing and exited 0.
+
+I did not run Claude Code itself on this. That exit code 2 on stderr reaches the agent is what ADR-0003 says, and I did not watch it happen. The tests in the repository pass: 9 tests, including 2 that run a real clang-tidy, once PyYAML is installed.
+
+## The defect in the log
+
+Blocking mode wrote six log lines for three findings, and advisory mode wrote three. In blocking mode clang-tidy tags each finding with a second name, `-warnings-as-errors`, and the hook writes one line per tag. The skill counts findings by check, so it would see a check called `-warnings-as-errors`. I did not fix it.
+
+## From a mistake to a check
+
+The skill is called `mistake-to-check`. You tell it what the agent keeps doing, or it reads review-fix commits and the log. It writes positive and negative cases and tries the rungs in order. It stops at the first rung that flags every positive and no negative. It hands you a diff and enables nothing. The ladder is the one from the <PostLink slug="tidy-agent-array-counted-size">first episode</PostLink>: enable a check, configure one, a compiler warning, a query check, a plugin.
+
+I ran only its collector, on the public `cloudevents-sdk-cpp` at a414e8d. It listed 50 of 528 commits as review-fix candidates that touch C++. The first eight I read were behaviour fixes about CR and LF in a media type. That is not a recurring style mistake, so the confirmation step does the filtering. I did not run the skill's conversation or pass `--transcripts`. [ADR-0004](https://github.com/wrocpp/tidy-agent/blob/main/docs/adr/0004-transcript-privacy.md) makes transcripts opt-in and local, and the skill emits only a pattern in prose and synthetic cases.
+
+The worked example is `header-comment-policy`. Its spec makes it a plugin, a comment handler on the preprocessor, because comments are not AST nodes. The cloudevents history shows why it exists. Commit [7ef3e13](https://github.com/filipsajdak/cloudevents-sdk-cpp/commit/7ef3e13) removed 1,091 lines of prose from `include/`, and the spec notes that only an advisory editor hook had enforced the rule.
+
+## What the check found on that history
+
+I ran the check with its default patterns on each of the 24 headers, one at a time, at the parent of 7ef3e13. It reported 1 location, in one header. At 7ef3e13 and at a414e8d it reported 0.
+
+One location against 1,091 removed lines is a large gap. The default patterns match git pointers and a few narration phrases, not prose in general. Also, 16 of the 24 headers stopped at a missing third-party include that I did not install, so the count is a lower bound. A project would tune `PointerRegex` and `NarrationRegex`.
+
+## The nine checks
+
+Each number is from the episode named in the last column, unchanged. The unit in each cell says what is counted.
+
+| Check | Catches | One number | Source |
+| --- | --- | --- | --- |
+| `array-counted-size` | a const `std::array` with a hand-counted size | 1 declaration flagged, 0 on the `std::to_array` form | <PostLink slug="tidy-agent-array-counted-size">episode 1</PostLink> |
+| `unit-in-integer-name` | `int timeoutMs`, `int64_t ttl_sec` | 2 of 2 fields flagged; 6 of 9 members unreported in a harder file | <PostLink slug="tidy-agent-unit-in-integer-name">episode 2</PostLink> |
+| `brace-init-list-hijack` | `Value{v}` choosing a list constructor | 5 of 8 braced initializations flagged in the second file | <PostLink slug="tidy-agent-brace-init-list-hijack">episode 3</PostLink> |
+| `view-of-temporary` | a view over a temporary owner | 7 of 13 dangling cases flagged, 0 of 4 safe ones | <PostLink slug="tidy-agent-view-of-temporary">episode 4</PostLink> |
+| `magic-numbers-in-tests` | bare thresholds in assertions | 103 locations in 43 test files, 19 judged worth a name | <PostLink slug="tidy-agent-magic-numbers-in-tests">episode 5</PostLink> |
+| `default-then-assign` | `T x;` then field-by-field assignment | 4 sites on a 93-line example, 1 fixed by `--fix` | <PostLink slug="tidy-agent-default-then-assign">episode 6</PostLink> |
+| `needless-shared-ptr` | a `shared_ptr` that is never shared | 3 of 15 local shapes flagged, 3 unshared shapes missed, 1 false positive | <PostLink slug="tidy-agent-needless-shared-ptr">episode 7</PostLink> |
+| `escaping-ref-capture` | a by-reference lambda that outlives its frame | 6 of 9 dangling lambdas flagged, and 3 of 5 safe ones | <PostLink slug="tidy-agent-escaping-ref-capture">episode 8</PostLink> |
+| `header-comment-policy` | git pointers and history in header comments | 1 location at the parent of 7ef3e13, against 1,091 lines removed | this episode |
+
+For `magic-numbers-in-tests` the spec cites commit 40e2442 and 36 unnamed constants. I read that commit. It renames constants in two headers, `core.hpp` and `base64.hpp`, and touches no test. So the cell holds the count from episode 5, not the spec's figure. The spec of `needless-shared-ptr` records no incident, so its cell counts test shapes.
+
+## What is not done
+
+`public-function-contracts` stays blocked. Its spec says it needs a Clang that parses P2900 contracts and AST matchers for them, and I did not check whether one exists. The <PostLink slug="contracts-that-prove-something">contracts posts</PostLink> cover what the language gives today. The README calls the repository pre-release and says names and options may change.
+
+I have no number for the hook's effect on later edits, and none for the hit rate on a large codebase. Google's migration paper, cited in episode 1, is evidence against writing checks for rewrites a model already does well.
+
+Examples, the hook output and the script are in [`posts/130-hook-and-skill`](https://github.com/wrocpp/cpp26-reflection-examples/tree/9e0ec78/posts/130-hook-and-skill). The repository is [wrocpp/tidy-agent](https://github.com/wrocpp/tidy-agent). Everything ran locally on 2026-11-17.
