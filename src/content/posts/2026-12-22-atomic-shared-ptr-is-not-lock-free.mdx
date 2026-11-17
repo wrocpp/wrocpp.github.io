@@ -1,0 +1,89 @@
+---
+title: "std::atomic<std::shared_ptr> is not lock-free in libstdc++ or the MSVC STL"
+slug: "atomic-shared-ptr-is-not-lock-free"
+pubDate: 2026-12-22
+author: filip-sajdak
+language: en
+kind: flagship
+audience: working-cpp
+tags: [cpp, cpp20, cpp26, atomic, shared-ptr, concurrency, threadsanitizer, gcc]
+summary: "std::atomic<std::shared_ptr<T>> removes the data race of a plain shared_ptr, and is_lock_free() is false on GCC 16.2, GCC trunk and MSVC. libstdc++ and the MSVC STL guard the control-block pointer with a lock bit. A load costs 3 locked instructions on GCC 16.2, a plain copy 1. Clang with libc++ does not compile it, and no tested compiler ships hazard pointers or RCU."
+draft: false
+relatedPosts: [print-atomic-per-call, membarrier-asymmetric-fences, tidy-agent-needless-shared-ptr]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+The atomic specialization of `shared_ptr` removes the data race of sharing one pointer between threads, and `is_lock_free()` returns false on every implementation I ran. On GCC 16.2 one `load()` executes 3 locked instructions where a plain copy executes 1. Yahav Gabay wrote a LinkedIn post on this type {/* LINK: Yahav Gabay LinkedIn post, URL from the user */}. It describes a hot reload of configuration "without ever stopping or locking the processing threads". There is no mutex in it. Each library I read does take a lock bit inside `load()`, and this post shows where.
+
+## In short
+
+- Copying and assigning the same plain `shared_ptr` from two threads is a data race. ThreadSanitizer on GCC 16.2 reports it in the copy constructor and the program exits with 66.
+- `is_lock_free()` and `is_always_lock_free` are false on GCC 16.2, GCC trunk, Clang 22.1 with libstdc++ and MSVC. `sizeof` is 16, the same as a plain `shared_ptr`.
+- libstdc++ and the MSVC STL keep a lock in the low bits of the control-block pointer. A reader that meets a set bit spins in libstdc++ and waits in the MSVC STL.
+- On GCC 16.2 a `load()` has 3 locked instructions against 1 for a plain copy. In one thread the fastest runs took 26.9 ns against 19.3 ns. The slowest runs, on a shared machine, were too noisy to compare.
+- `<hazard_pointer>` and `<rcu>` (C++26) were missing on every compiler I tried on 2026-11-17.
+
+## Why the plain version is a data race
+
+A `shared_ptr` has a thread-safe use count. The pointer object itself is two words, and copying it while another thread assigns it reads a half-written value. [Cppreference](https://en.cppreference.com/w/cpp/memory/shared_ptr) says unsynchronized access to the same `shared_ptr` object, where one access is non-const, is a data race. It names the atomic type as the remedy. The LinkedIn post says the same.
+
+The example has one writer doing 1000 stores and eight readers. The LinkedIn post has the same shape with 100,000 loads per reader. Mine does 2000, to keep the sanitizer run short. With the argument `racy` the readers copy a plain `shared_ptr` while the writer assigns it. On GCC 16.2 with `-fsanitize=thread` the report starts like this:
+
+```text
+WARNING: ThreadSanitizer: data race (pid=2)
+  Read of size 8 at 0x000000407180 by thread T2:
+    #0 std::__shared_ptr<Data, (__gnu_cxx::_Lock_policy)2>::__shared_ptr(std::__shared_ptr<Data, (__gnu_cxx::_Lock_policy)2> const&)
+```
+
+The default path loads from an `atomic<shared_ptr>`. It prints `atomic: reads=16000` with exit code 0 under the same sanitizer, on GCC 16.2 and on GCC trunk.
+
+<GodboltEmbed id="rxYT8ajr8" gccOnly gccLabel="GCC 16.2" title="The atomic path is clean under ThreadSanitizer" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O1 -g -fsanitize=thread -pthread · runs live" />
+
+## What the atomic version does instead of a mutex
+
+The standard gives the type a function for this question. `is_lock_free()` returns whether the operations are lock-free, and the answer was false on all of these (2026-11-17):
+
+| compiler and options | `is_lock_free()` | `sizeof` |
+|---|---|---|
+| GCC 16.2, GCC trunk: `-std=c++26 -O2` | false | 16 |
+| Clang 22.1: `-std=c++26 -O2 -stdlib=libstdc++` | false | 16 |
+| MSVC latest: `/std:c++latest /O2 /EHsc` | false | 16 |
+| Clang 22.1 and trunk: `-stdlib=libc++` | does not compile | |
+
+On libc++ the macro `__cpp_lib_atomic_shared_ptr` is undeclared. The probe `std::atomic<std::shared_ptr<Data>> a;` stopped at a static assertion that the type be trivially copyable. The [libc++ C++20 status table](https://github.com/llvm/llvm-project/blob/main/libcxx/docs/Status/Cxx20Papers.csv) lists P0718R2, the paper that added the type, with no status.
+
+<GodboltEmbed id="3sK6zvzs1" gccOnly gccLabel="GCC 16.2" title="is_lock_free() is false for atomic<shared_ptr>" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O2 · runs live" />
+
+I read two sources.
+
+- libstdc++: in [`shared_ptr_atomic.h`](https://github.com/gcc-mirror/gcc/blob/releases/gcc-16/libstdc%2B%2B-v3/include/bits/shared_ptr_atomic.h) on the GCC 16 release branch, `_Sp_atomic` stores the control-block pointer and uses its lowest bit as a lock. `lock()` spins while the bit is set and then takes it with a compare-exchange. `load()` locks, reads the pointer, increments the use count and unlocks with `fetch_sub`. `store()` swaps under the lock, and the old value is released after the unlock.
+- MSVC STL: [`_Locked_pointer`](https://github.com/microsoft/STL/blob/main/stl/inc/atomic) in `stl/inc/atomic` uses the two low bits. A waiter marks "notify needed" and calls `atomic::wait`. The specialization in [`stl/inc/memory`](https://github.com/microsoft/STL/blob/main/stl/inc/memory) locks the same way around `load()`.
+
+So neither is a mutex, and in both the lock covers a few instructions. A reader can still wait for another thread holding the bit, which is what `false` from `is_lock_free()` allows. I did not measure how long that wait gets under load.
+
+## What one load costs
+
+A count does not depend on the machine. On GCC 16.2 with `-O2`, an uncontended `load()` executes three locked instructions. One compare-exchange takes the bit, one fetch-add bumps the use count, and one subtraction releases the bit, each with a `lock` prefix. Copying a plain `shared_ptr` is one `lock xadd`. The same plain copy compiles to a non-atomic increment while the process is single-threaded.
+
+For a time, the example calls `load()` and a plain copy 2,000,000 times in one thread. A warm-up thread runs first, so the plain copy also takes the atomic increment. Nine runs per execution, five executions on Compiler Explorer, nanoseconds per operation:
+
+| case | fastest run | slowest run |
+|---|---|---|
+| plain copy | 19.3 | 31.3 |
+| `load()` | 26.9 | 283.5 |
+
+The fastest runs differ by about 1.4 times. The slowest runs show the shared machine, so read that column as noise. I also tried readers against a writer. The executor reports two hardware threads, the results varied by a factor of 18 between runs, and I do not publish them.
+
+<GodboltEmbed id="xMMGGdqGx" gccOnly gccLabel="GCC 16.2" title="One load() against one plain copy" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O2 -pthread · runs live" />
+
+## When readers must not wait
+
+C++26 adds hazard pointers (P2530) and read-copy-update (P2545), the standard's tools for freeing an object that readers may still hold. I did not run either. On 2026-11-17 `#include <hazard_pointer>` and `#include <rcu>` failed on GCC 16.2, GCC trunk, Clang 22.1 and trunk with libc++, and MSVC latest. The libc++ C++26 status table lists both papers with no status. <PostLink slug="membarrier-asymmetric-fences">The membarrier post</PostLink> says Folly builds its hazard pointers and RCU on the asymmetric fence.
+
+If a lock bit is acceptable, `atomic<shared_ptr>` is the standard type for a configuration object that is replaced rarely. The same data race rule applies to the <PostLink slug="print-atomic-per-call">logging code</PostLink> of the concurrent-io series. For the cost of the control block itself, see <PostLink slug="tidy-agent-needless-shared-ptr">the tidy-agent post on needless shared_ptr</PostLink>.
+
+## What I did not run
+
+Readers against a writer on a machine with enough cores. Any platform other than x86-64 Linux and MSVC. Other versions of libstdc++ or the MSVC STL than the ones named. The examples and the runs are in [`posts/132-atomic-shared-ptr`](https://github.com/wrocpp/cpp26-reflection-examples/tree/cec55b1/posts/132-atomic-shared-ptr).

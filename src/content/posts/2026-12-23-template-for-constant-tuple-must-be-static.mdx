@@ -1,0 +1,85 @@
+---
+title: "template for over a temporary tuple of constants fails on GCC 16.2 and clang trunk"
+slug: "template-for-constant-tuple-must-be-static"
+pubDate: 2026-12-23
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp, cpp26, template-for, fold-expressions, pack-indexing, tuple, gcc, clang]
+summary: "A template for loop with a constexpr variable compiles over a static constexpr tuple and is rejected over a temporary or a local constexpr tuple, on GCC 16.2 and clang trunk. Fold grouping and pack indexing work on GCC 16.2 and Clang 22.1. A structured binding pack is the third way and needs a template."
+draft: false
+relatedPosts: [template-for-expansion-statements, leaner-standard-library, co-yield-inside-template-for, constant-wrapper]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+Leonardo Rossi wrote a LinkedIn post about fold expressions in a Qt code base {/* LINK: Leonardo Rossi LinkedIn post, URL from the user */}. It ends with C++26 features that replace the `index_sequence` lambda. I ran them on 2026-11-17 and found one trap. `template for (constexpr auto v : ...)` is rejected over a temporary tuple and over a local `constexpr` tuple, on GCC 16.2 and clang trunk. It compiles over a `static constexpr` tuple.
+
+## In short
+
+- `(... - v)` of 10, 3, 2 is 5 and `(v - ...)` is 9, with no warning on GCC 16.2 or Clang 22.1. The outside post makes this point.
+- `args...[2]` returns the third argument on both compilers, with `-std=c++26`.
+- A `template for` over a `static constexpr` tuple accepts a constant loop variable. Each element is then a template argument.
+- The same loop over `std::tuple{1uz, 2uz, 3uz}` or a non-static local `constexpr` tuple does not compile. Clang 22.1 has no `template for`; clang trunk does.
+- A structured binding pack, `auto [...xs] = t;`, is the third way. It is accepted only inside a template.
+
+## Grouping and pack indexing
+
+The outside post shows that left and right folds group differently. With 10, 3 and 2, the left fold gives 5 and the right fold gives 9. Both are `static_assert`ed in the example, and neither warns under `-Wall -Wextra -Wpedantic` on GCC 16.2 and Clang 22.1.
+
+Pack indexing is the C++26 answer to "the third argument":
+
+```cpp
+template <class... T> constexpr auto third(T... args) { return args...[2]; }
+```
+
+It compiled and returned 42 on both. <PostLink slug="leaner-standard-library">The post on a leaner standard library</PostLink> meets pack indexing in another setting, and <PostLink slug="template-for-expansion-statements">the template for post</PostLink> introduces the loop.
+
+## The trap
+
+The outside post keeps a signal-to-slot table in a `static constexpr` function that returns a tuple of pairs of member pointers. It walks the table with `std::apply`, and notes that an element cannot be a template argument, because a function parameter is not a constant expression. A `template for` removes the parameter. This is what I tried:
+
+```cpp
+template for (constexpr auto v : std::tuple{1uz, 2uz, 3uz}) { sum += twice<v>; }
+```
+
+Output of the build, `-std=c++26 -Wall -Wextra -Wpedantic`:
+
+```text
+g162:        error: modification of '<anonymous>' from outside current evaluation is not a constant expression
+clang_trunk: error: constexpr variable '[__u0, __u1, __u2]' must be initialized by a constant expression
+             note: reference to temporary is not a constant expression
+```
+
+A local `constexpr std::tuple values{...};` fails too. GCC 16.2 says `address of non-static constexpr variable 'values' may differ on each invocation of the enclosing function; add 'static' to give it a constant address`, and clang trunk prints the same note. The fix is the word `static`:
+
+```cpp
+static constexpr std::tuple values{1uz, 2uz, 3uz};
+template for (constexpr auto v : values) { sum += twice<v>; }
+```
+
+That compiled on both compilers and summed to 12. The wiring table as a `static constexpr` member walked the same way and gave 21 for three pairs, each contributing 7.
+
+## Why it fails
+
+[stmt.expand] paragraph 5.3 of the C++26 draft, at [eel.is/c++draft/stmt.expand](https://eel.is/c++draft/stmt.expand), defines the loop through a hidden `constexpr auto&& [u0, ..., uN-1] = expansion-initializer;`. It is `constexpr` when the loop variable is. A `constexpr` reference to a temporary or to a non-static local has no constant address, which is what the compiler notes say. I did not read the rule for references in constant expressions, so I give the compilers' notes and not a citation for that step. A loop variable that is not `constexpr` compiles over a temporary, and I tested it in a `static_assert` on both compilers.
+
+## Three ways to walk the table
+
+The example has the table once and three walks over it. All three give 21 on GCC 16.2.
+
+| way | lines in the example | needs |
+|---|---|---|
+| `template for` over `static constexpr` | 7 | `static` on the table |
+| `index_sequence` lambda, from the outside post | 5 | nothing beyond C++20 |
+| structured binding pack, `static constexpr auto [...rows] = ...` | 4 | a template |
+
+The loop is not shorter than the lambda. It reads as a loop, and the elements need no `std::get<I>`.
+
+A structured binding pack in `main` is rejected. GCC 16.2 says `structured binding pack outside of template`. Clang 22.1 and clang trunk say `pack declaration outside of template`. Inside a function template it works, and a `static constexpr` pack gives elements that are template arguments.
+
+<GodboltEmbed id="sEc7Mvrf1" gccOnly gccLabel="GCC 16.2" title="Folds, pack indexing and three walks over a constant tuple" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -Wall -Wextra -Wpedantic · runs live" />
+
+The sources and all outputs are in [`posts/133-folds-and-template-for`](https://github.com/wrocpp/cpp26-reflection-examples/tree/b0b567f/posts/133-folds-and-template-for). Everything here ran on Compiler Explorer on 2026-11-17. I did not run MSVC, and I did not check how clang trunk versions earlier than the one on Compiler Explorer that day behave.
