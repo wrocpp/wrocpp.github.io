@@ -1,0 +1,133 @@
+---
+title: "Moving a const object returns a copy: 163 page faults per call on a 400 KB vector"
+slug: "return-std-move-const-copy"
+pubDate: 2026-12-28
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp, move-semantics, copy-elision, performance, glibc, clang-tidy, gcc, clang]
+summary: "On GCC 16.2, return std::move(book) of a const 400 KB vector copies it and takes 163 page faults per call, where a plain return takes none. GCC and Clang warn about it with the text they use for the harmless case, and miss two shapes that clang-tidy flags. A string passed by value costs one allocation from 16 characters."
+draft: false
+relatedPosts: [json-deserialize, pmr-zero-heap, pmr-benchmarks-2026]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+On GCC 16.2, `return std::move(book)` of a `const std::vector<double>` with 400 KB copies the vector and takes 163 minor page faults per call. A plain return takes none. Both GCC 16.2 and Clang 22.1 warn about it, with the same text they print for a harmless `std::move`. Henrique Bucher{/* LINK: Henrique Bucher LinkedIn post, URL from the user */} posted an advert for a paid C++ trading course by Jordan Bucher. It lists costs of this kind. I have not seen the course, its code or its measurements. Every number below comes from programs of my own, run on Compiler Explorer on 2026-11-17.
+
+## In short
+
+- A `const` local returned with `std::move` is a copy. The cast yields a `const T&&`, and only the copy constructor accepts that.
+- A 400 KB const vector returned that way took 163 page faults per call (162.87 to 163.00). A plain or moved non-const vector took 0 to 0.39.
+- GCC 16.2 and Clang 22.1 warn on the const local with `-Wall -Wextra`. They say nothing about a const member moved in a const function. clang-tidy flagged both.
+- A string in a struct, passed by value, costs one allocation from 16 characters on libstdc++. Up to 15 characters it costs none.
+- A parameter that the function stores is the case where by value plus `std::move` wins: 1 allocation against 2 for a temporary.
+
+## Seven return shapes
+
+The advert, as I read it, gives 50 times for `return std::move(book);` on 400 KB. It gives 11 times for a struct that owns a string, passed by value instead of `const&`. Those are the course's numbers, and I do not judge them. The program below measures its own shapes: a `std::array` of 50,000 doubles, and `std::vector` of the same size.
+
+The faults are minor page faults from `getrusage`, divided by the 500 calls of a run. Times are the lowest and highest of seven runs, over three executions of the same binary on GCC 16.2.
+
+| shape | microseconds per call | faults per call | `-Wall -Wextra` on GCC 16.2 and Clang 22.1 |
+|---|---|---|---|
+| array, `return book` | 6.0 to 10.9 | 0 to 0.20 | silent |
+| array, `return std::move(book)` | 20.7 to 38.7 | 0 to 0.20 | `-Wpessimizing-move` |
+| vector, `return book` | 6.0 to 12.0 | 0 to 0.39 | silent |
+| vector, `return std::move(book)` | 6.0 to 11.1 | 0 | `-Wpessimizing-move` |
+| const vector, `return std::move(book)` | 198 to 1354 | 162.87 to 163.00 | `-Wpessimizing-move` |
+| const vector of 100 KB, same | 3.9 to 6.7 | 0 to 0.03 | `-Wpessimizing-move` |
+| 400 KB copied into a reused buffer | 8.6 to 11.9 | 0 | not a return |
+
+The array moves by copying 400 KB, so the moved return is a copy too. Comparing the fastest runs of each execution, it took about 3.4 to 4.2 times a plain return on GCC. On Clang 22.1 it took about 2.3 times. A vector moves three pointers, so the move costs nothing.
+
+The const vector is the expensive row, and its time swings from 198 to 1354 microseconds between runs. The fault count does not swing. I trust it more than the time.
+
+<GodboltEmbed id="McYPK18h6" gccOnly gccLabel="GCC 16.2" title="Return shapes, time and page faults per call" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O2 · runs live" />
+
+## Why the const case copies
+
+[Cppreference](https://en.cppreference.com/w/cpp/utility/move) defines `std::move` as a cast to `std::remove_reference_t<T>&&`. For a const object that type is `const T&&`. A move constructor takes `T&&` and cannot bind to it, so overload resolution picks the copy constructor.
+
+The example proves this with a type that records which constructor made it, inside `static_assert`:
+
+```cpp
+constexpr Probe make_const_moved() { const Probe local; return std::move(local); }
+
+static_assert(make_const_moved().made == Made::copied);
+static_assert(std::is_same_v<decltype(std::move(std::declval<const Probe&>())), const Probe&&>);
+static_assert(!std::is_constructible_v<MoveOnly, const MoveOnly&&>);
+```
+
+The last line shows the same cast on a move-only type: nothing can be constructed from the result. At run time `return local` was built in place and `return std::move(local)` ran the move constructor, on GCC 16.2 and Clang 22.1. The standard permits eliding a named local but does not require it ([cppreference](https://en.cppreference.com/w/cpp/language/copy_elision)). In constant evaluation GCC 16.2 ran the move constructor, so the file asserts only that the plain return is not a copy.
+
+## Where the page faults come from
+
+The `mallopt(3)` [manual page](https://man7.org/linux/man-pages/man3/mallopt.3.html) describes the mechanism. The mmap threshold starts at 128 KiB. When glibc frees a block above it, the threshold rises to that block's size. The trim threshold becomes twice the mmap threshold. Setting any of the parameters turns this adjustment off.
+
+I changed the settings with `mallopt` inside the program and counted faults per call. The file takes one of three words as its first argument: fixed, heap or keep.
+
+| row | default | `heap` | `fixed` | `keep` |
+|---|---|---|---|---|
+| vector 400 KB, plain or moved | 0 to 0.39 | 66 | 98 | 0 to 0.20 |
+| const vector 400 KB, moved | 162.87 to 163.00 | 163 | 196 | 0 to 0.19 |
+| const vector 100 KB, moved | 0 to 0.03 | 17 | 0 to 0.10 | 0 |
+
+`fixed` raises only the trim threshold, so the mmap threshold stays at 128 KiB. Every 400 KB block is then mapped fresh. That gives 98 faults, about 400,000 bytes divided by a 4 KiB page, and 196 for the const case with its two blocks. `heap` raises only the mmap threshold, so blocks stay on the heap and the trim threshold decides. `keep` raises both, and the faults vanish.
+
+Under the default settings my plain return takes no faults. A 400 KB block does not cross the mmap threshold on every call in this program. Two live blocks of that size do cost 163 faults, so memory goes back to the kernel between calls. I did not trace system calls, so I cannot say whether it leaves by unmapping or by trimming the heap. The runs show that raising both thresholds removes the faults, and that the 100 KB case has none by default.
+
+The copy itself is cheap once the memory stays mapped. With both thresholds raised, the const vector took 14.8 to 20.9 microseconds, against 6.0 to 8.8 for a plain return. These counts apply to glibc on Linux. Other allocators will differ.
+
+## Which tool reports it
+
+Seven functions in one file, built with `-Wall -Wextra` on GCC 16.2 and Clang 22.1, and checked with clang-tidy trunk on Compiler Explorer:
+
+| function | GCC 16.2 | Clang 22.1 | `performance-move-const-arg` |
+|---|---|---|---|
+| non-const local, `return std::move(book)` | `-Wpessimizing-move` | `-Wpessimizing-move` | silent |
+| const local, `return std::move(book)` | `-Wpessimizing-move` | `-Wpessimizing-move` | fires |
+| const local, `Levels out = std::move(book)` | silent | silent | fires |
+| const by-value parameter, returned with `std::move` | `-Wredundant-move` | `-Wredundant-move` | fires |
+| const reference parameter, returned with `std::move` | `-Wredundant-move` | silent | fires |
+| member moved in a const member function | silent | silent | fires |
+| member moved in a non-const member function | silent | silent | silent |
+
+The warning for the const local reads "moving a local object in a return statement prevents copy elision". It is the same text as for the vector that moves for free. The compilers do not say that the const case becomes a copy. The clang-tidy message does: "std::move of the const variable 'book' has no effect".
+
+Moving a non-const member out of a function is the correct use, and no tool flagged it. <PostLink slug="json-deserialize">The JSON post</PostLink> does it with `return std::move(*r)` on a non-const local, where there is no local name to elide.
+
+Clang with `-Weverything` added only a C++20 compatibility note on the designated initialisers. GCC with `-Wpedantic -Wconversion -Wshadow -Wold-style-cast` added nothing. The check `performance-no-automatic-move` printed nothing for these shapes, and I did not look into why.
+
+<GodboltEmbed id="Kjch9sMzE" gccOnly gccLabel="GCC 16.2" title="Seven std::move shapes, one file" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O2 · runs live" />
+
+## By value and const reference
+
+The second program passes a struct with a `std::string` and two doubles. A counting `operator new` gives the allocations per call:
+
+| symbol length | by value | `const&` | stored, by value | stored, `const&` |
+|---|---|---|---|---|
+| 4 | 0 | 0 | 0 | 0 |
+| 15 | 0 | 0 | 0 | 0 |
+| 16 | 1 | 0 | 1 | 2 |
+| 28 | 1 | 0 | 1 | 2 |
+
+Fifteen characters is libstdc++'s small-string buffer, so the boundary is its own. Passing by value copies the string, which allocates only when the string does. Time per call over three executions: 4.3 to 8.4 nanoseconds by value against 2.6 to 4.1 for `const&` with 4 characters. With 28 characters, 12.3 to 17.0 against 2.6 to 3.6. Comparing the fastest runs of each execution, that is about 1.6 to 1.8 times for the short symbol. For the long one it is 4.7 to 5.2 times. The timing includes the counting `operator new`, and the struct is not the advert's, so the numbers do not compare with its 11 times.
+
+The last two columns pass a temporary to a function that stores it with `push_back`. By value moves the temporary into the vector, which costs one allocation, the one that built it. `const&` builds it and then copies it. For a parameter that the function keeps, by value plus `std::move` is the right shape. I ran only temporaries here, so I did not measure an lvalue argument to a stored parameter.
+
+<GodboltEmbed id="xdhjxrvdc" gccOnly gccLabel="GCC 16.2" title="Allocations of a string passed by value and by const reference" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O2 · runs live" />
+
+For allocation counting with a replaced allocator, see <PostLink slug="pmr-zero-heap">the polymorphic allocator post</PostLink>. <PostLink slug="pmr-benchmarks-2026">The benchmark post</PostLink> compares allocators and has a live allocation-count demo.
+
+## Not tested
+
+- The `printf` and `unordered_map` costs from the advert.
+- Clang 18, which the advert's exercises use. I ran GCC 16.2 and Clang 22.1.
+- Any trading workload, and any code from the course.
+- Allocators other than glibc's, and page sizes other than 4 KiB.
+- Whether the default-settings faults come from unmapping or from trimming the heap.
+
+The examples, with every observed output, are in the [examples repository](https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/138-return-std-move-cost).
