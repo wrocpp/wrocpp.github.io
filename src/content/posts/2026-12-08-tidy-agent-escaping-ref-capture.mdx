@@ -1,0 +1,109 @@
+---
+title: "The escaping-ref-capture check flags 6 of 9 dangling lambdas and 3 of 5 safe ones"
+slug: "tidy-agent-escaping-ref-capture"
+pubDate: 2026-12-08
+author: filip-sajdak
+language: en
+kind: short
+series: tidy-agent
+series_order: 8
+audience: working-cpp
+tags: [cpp, clang-tidy, ai-agents, lambda, lifetime, static-analysis, cpp23]
+summary: "In 9 small cases where a lambda captures by reference and escapes its function, the tidy-agent plugin check flagged 6. Clang 23.1 warned on 1, or 4 with -Wlifetime-safety, and GCC 16.2 at -O2 on 3 with a misleading wording. One case escaped every tool. The check also reported 3 of 5 correct cases, one of which its own spec says it must not flag."
+draft: false
+relatedPosts: [clang-lifetime-safety-warnings, tidy-agent-view-of-temporary, tidy-agent-array-counted-size]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+The tidy-agent check `wrocpp-escaping-ref-capture` reports a lambda that captures by reference and is returned or turned into a `std::function`. I wrote 9 small cases where such a lambda outlives its function. The check flagged 6 of them, and it also flagged 3 of 5 correct cases. This is episode 8 of a series on clang-tidy checks for mistakes that AI coding agents keep making.
+
+## In short
+
+- The check is a plugin without a fix-it, so it ran locally on Homebrew LLVM 23.1.5, not on Compiler Explorer.
+- It flagged cases 1 to 6: a lambda returned directly, returned as a `std::function`, or stored in a registry.
+- It missed cases 7, 8 and 9, where the lambda is first bound to an `auto` variable or wrapped in a class template.
+- Clang 23.1 warned on 1 case, or 4 with `-Wlifetime-safety`. Together with the check, 7 of 9 are covered. Case 8 escaped every tool.
+- All 9 cases fail under AddressSanitizer on GCC 16.2 and Clang 22.1 with the options named below.
+
+## Why the check exists
+
+The spec of the check in the repository <a href="https://github.com/wrocpp/tidy-agent">wrocpp/tidy-agent</a> records the incident behind it. In a proprietary service, a returned step handler captured a local container by reference while 20 of its 21 siblings captured by value. The spec adds that host tests stayed green and the failure showed only on the target device, because the sanitizer build did not configure. I cannot publish more than that.
+
+The check is small. It matches a lambda with a by-reference capture in two places. One is the operand of a `return`. The other is the argument of a constructor of a type-erased callable, which are `std::function` and its two siblings.
+
+## Nine ways to escape
+
+Each case is one function in a <a href="https://github.com/wrocpp/cpp26-reflection-examples/tree/fd437b1/posts/129-escaping-ref-capture">single file</a>. The lambda captures a long local string and reads its first character.
+
+- Cases 1 to 3 return the lambda: with an `auto` return type, as a `std::function`, and with an init-capture.
+- Cases 4 to 6 store it. The lambda goes through a variable, straight into `add`, and into `push_back`.
+- Cases 7 to 9 hide it. The lambda is bound to a variable and returned, bound to a variable and added, or wrapped in a template class.
+
+Run without an argument, the program runs five safe cases and prints `5 safe cases ran`. `./cases N` calls the escaped lambda of case N, which is undefined behaviour and meant for a sanitizer.
+
+<GodboltEmbed id="6GhbbGz99" gccOnly gccLabel="GCC 16.2" title="Nine escaping lambdas, safe path, built with AddressSanitizer" gcc_subtitle="x86-64 GCC 16.2 · -std=c++23 -O0 -g -fsanitize=address -Wall -Wextra · runs live" />
+
+## The bugs are real
+
+I ran each case with its number as the argument on Compiler Explorer, with GCC 16.2 and Clang 22.1, using `-std=c++23 -O0 -g -fsanitize=address`. All 18 runs ended with `AddressSanitizer: stack-use-after-return` and exit code 1. The report for case 4 starts like this:
+
+```text
+==2==ERROR: AddressSanitizer: stack-use-after-return on address 0x70bc5a3f0068 ...
+READ of size 8 at 0x70bc5a3f0068 thread T0
+    #2 ... in first_char(...) /app/example.cpp:38
+    #3 ... in operator() /app/example.cpp:59
+```
+
+The same build on my Mac with Homebrew clang 23.1.5 told a different story. Stack-use-after-return detection is off by default there. With the macOS default, only cases 5 and 6 produced a report, as a `heap-use-after-free`. Four cases printed a stale byte and exited 0, and three ended without output. With `ASAN_OPTIONS=detect_stack_use_after_return=1` all 9 were reported.
+
+That matters for the incident in the spec. A sanitizer build that does not configure is a build that misses this mistake.
+
+## What each tool said
+
+The check ran as `clang-tidy -load=libwrocpp-tidy.so --checks='-*,wrocpp-escaping-ref-capture'` with `-std=c++23`. Clang used `-Wall -Wextra`, then `-Wlifetime-safety` added. GCC 16.2.0 used `-O2 -Wall -Wextra -Wdangling-pointer=2 -Wdangling-reference`, and printed nothing at `-O0`.
+
+| case | what escapes | the check | Clang 23.1 | Clang 23.1 with `-Wlifetime-safety` | GCC 16.2 at -O2 |
+|---|---|---|---|---|---|
+| 1 | `auto` return | flagged | `-Wreturn-stack-address` | warns | uninitialized value |
+| 2 | `[&]` as `std::function` | flagged | silent | warns | silent |
+| 3 | init-capture, returned | flagged | silent | warns | silent |
+| 4 | `Handler` variable, added | flagged | silent | silent | silent |
+| 5 | passed to `add` | flagged | silent | silent | silent |
+| 6 | `push_back` | flagged | silent | silent | silent |
+| 7 | `auto` variable, returned | silent | silent | warns | uninitialized value |
+| 8 | `auto` variable, added | silent | silent | silent | silent |
+| 9 | template `Holder` | silent | silent | silent | uninitialized value |
+
+The check flagged 6, Clang without the flag 1, Clang with the flag 4, and GCC at `-O2` 3. The check and Clang with the flag overlap on cases 1 to 3 and cover 7 of 9 together. They split the rest: only the check sees the stored lambdas in cases 4 to 6, and only Clang sees case 7.
+
+The GCC reports are not diagnoses. Each says a value is used uninitialized and points inside `basic_string.h`, and all three disappear at `-O0`. I would not count them as a check. <PostLink slug="clang-lifetime-safety-warnings">An earlier post</PostLink> compares the Clang and GCC lifetime warnings on seven other cases, and I do not repeat it here.
+
+The line the check prints for case 4:
+
+```text
+cases.cpp:59:17: warning: lambda captures by reference and escapes the enclosing scope; capture by value, or keep the call inside the scope [wrocpp-escaping-ref-capture]
+```
+
+## What the check does not see
+
+It looks for a lambda written directly under a `return` or a `std::function` constructor. The check loses the lambda once it has a name, as in cases 7 and 8. It also loses it inside a class template, as in case 9.
+
+A lambda handed to a thread or to `std::async` is also outside the `CallableTypes` option, and I did not test it. The check only reads by-reference captures, so a `[this]` lambda that outlives its object is not its job.
+
+## Three false positives
+
+The check reported 3 of my 5 correct cases. In the first, a `[&]` lambda is stored in a member of the object that owns what it captures. In the second, a `std::function` variable is called at once. In the third, a `[&]` lambda is passed to a `const std::function&` parameter that calls it before returning.
+
+The spec lists the first under "Must not flag", and the check as built flags it. The other two follow from the design: any by-reference lambda that becomes a `std::function` is reported, whether or not it escapes. Clang and GCC reported none of the five.
+
+I ran only these 14 functions, so I have no rate for real code. In a project that wraps lambdas in `std::function` for synchronous callbacks, expect noise.
+
+## Why this is a check and not a rule
+
+A prose rule such as "never capture by reference in a returned lambda" depends on the model remembering it. The check runs after each edit and flags a returned or stored `[&]` at once. The cost is the three false positives above and the three misses.
+
+I claim little here. On nine small cases, the check and `-Wlifetime-safety` together cover seven, and neither covers the lambda that is first named. <PostLink slug="tidy-agent-view-of-temporary">Episode 4</PostLink> shows the same pattern for views of temporaries.
+
+All runs are from 2026-11-17. The sources, the ASan outputs and the full table are in <a href="https://github.com/wrocpp/cpp26-reflection-examples/tree/fd437b1/posts/129-escaping-ref-capture">`posts/129-escaping-ref-capture`</a>.
