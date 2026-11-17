@@ -1,0 +1,133 @@
+---
+title: "bugprone-dangling-handle flags 7 of 13 views of a temporary, GCC 16.2 flags none"
+slug: "tidy-agent-view-of-temporary"
+pubDate: 2026-12-04
+author: filip-sajdak
+language: en
+kind: short
+series: tidy-agent
+series_order: 4
+audience: working-cpp
+tags: [cpp, clang-tidy, ai-agents, string-view, lifetime, static-analysis, cpp23]
+summary: "On 13 small programs that build a view from a temporary owner, bugprone-dangling-handle with the project's view class added flags 7. Clang 23.1 warns on 7, or 8 with -Wlifetime-safety, and GCC 16.2 on none. Three cases escape every tool. A deleted rvalue overload turns the project's own view into a compile error."
+draft: false
+relatedPosts: [clang-lifetime-safety-warnings, reflection-dangling-signature, libstdcxx-dangling-pair-tuple]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+I wrote 13 small programs that build a view from a temporary string, and 4 that do not. All 13 read freed memory under AddressSanitizer. The existing clang-tidy check `bugprone-dangling-handle` flagged 7 of them once I added my own view class to its option. GCC 16.2 warned on none, and three cases escaped every tool I ran. This is episode 4 of a series on clang-tidy checks for mistakes that AI coding agents keep making.
+
+## In short
+
+- Rung 2 of the series' ladder needs no new check. One option lists the view classes, and the check does the rest.
+- Seven of 13 dangling cases were flagged, with no report on the 4 safe ones (clang-tidy 23.1.5 and trunk, 2026-11-17).
+- Clang 23.1 warned on 7 cases without a flag and on 8 with `-Wlifetime-safety`. GCC 16.2 warned on none.
+- Cases 7, 8 and 10 escaped every tool: an unlisted view class and two functions that return a view of their argument.
+- Deleting the rvalue overload of the view class makes the mistake a compile error.
+
+## The configuration
+
+The repository <a href="https://github.com/wrocpp/tidy-agent">wrocpp/tidy-agent</a> keeps this episode's check as a configuration file. The project's own view class is called `Slice`, and the list names it:
+
+```yaml
+Checks: "-*,bugprone-dangling-handle"
+CheckOptions:
+  bugprone-dangling-handle.HandleClasses: "std::basic_string_view;std::experimental::basic_string_view;std::span;Slice"
+```
+
+The file is `checks/config/view-of-temporary.yaml` at commit 7c64b6c. The check reports a listed class that is constructed from a temporary and then kept. Without `Slice` in the list, it ignores that class.
+
+I ran it locally with Homebrew LLVM 23.1.5 and on Compiler Explorer with clang-tidy trunk (LLVM 24.0git). Both gave the same seven lines.
+
+## Thirteen ways to dangle
+
+Each case is one function in a <a href="https://github.com/wrocpp/cpp26-reflection-examples/tree/3ce594219ac6db64991c898e12ba99244f01da39/posts/125-view-of-temporary">single file</a>. The cases fall into four groups.
+
+- Cases 1 and 2 build the listed `Slice` from a prvalue and from a function result.
+- Cases 3 to 6 build a standard view from a temporary, with an equals sign, a concatenation or braces.
+- Cases 7 to 10 hide the temporary. They use an unlisted view class, a function returning a view of its argument, a conditional, and a pass-through function.
+- Cases 11 to 13 are a `substr` of a temporary, a raw pointer from `c_str`, and a function that returns a view of a temporary.
+
+Run with `-fsanitize=address`, each case reported a heap use after free, so none of them is a lucky read. The text is longer than the small-string buffer, which is why the sanitizer can see the bytes freed.
+
+## What each tool said
+
+The check is the first column. Clang ran with `-std=c++23 -Wall -Wextra`, then with `-Wlifetime-safety` added. GCC used `-O2 -Wall -Wextra -Wdangling-pointer=2 -Wdangling-reference`, and I repeated it at `-O0`.
+
+| case | what dangles | bugprone-dangling-handle | Clang 23.1 | Clang 23.1 with `-Wlifetime-safety` | GCC 16.2 |
+|---|---|---|---|---|---|
+| 1 | `Slice` from a prvalue | flagged | silent | silent | silent |
+| 2 | `Slice` from a call | flagged | silent | silent | silent |
+| 3 | `string_view` from a call | flagged | warns | warns | silent |
+| 4 | `string_view` from a concatenation | flagged | warns | warns | silent |
+| 5 | `span` from a vector | flagged | warns | warns | silent |
+| 6 | `string_view{make()}` | silent | silent | warns | silent |
+| 7 | view class not in the list | silent | silent | silent | silent |
+| 8 | function returns a view of its argument | silent | silent | silent | silent |
+| 9 | temporary in a conditional | silent | warns | warns | silent |
+| 10 | pass-through function | silent | silent | silent | silent |
+| 11 | `substr` of a temporary | flagged | warns | warns | silent |
+| 12 | raw pointer from `c_str` | silent | warns | warns | silent |
+| 13 | function returns a temporary | flagged | warns | warns | silent |
+
+The check flagged 7, Clang without the flag 7, Clang with it 8, and GCC none. The check and Clang with the flag together cover 10. The two tools overlap less than the totals suggest. Only the check saw cases 1 and 2, and only Clang saw cases 6, 9 and 12.
+
+<GodboltEmbed id="KrMbdjqfr" gccOnly gccLabel="GCC 16.2" title="Thirteen dangling cases compile on GCC 16.2 without a warning" gcc_subtitle="x86-64 GCC 16.2 · -std=c++23 -O2 -Wall -Wextra -Wdangling-pointer=2 -Wdangling-reference · runs live" />
+
+The program prints `4 safe cases ran`. The session below is the same source under clang-tidy trunk with the configuration above:
+
+<GodboltEmbed id="fGv7853da" gccOnly compilerLabel="clang-tidy trunk" title="bugprone-dangling-handle on the thirteen cases" gcc_subtitle="clang trunk · -std=c++23 · clang-tidy trunk with the HandleClasses option" />
+
+For the first two cases the output reads:
+
+```text
+cases.cpp:55:40: warning: Slice outlives its value [bugprone-dangling-handle]
+cases.cpp:56:40: warning: Slice outlives its value [bugprone-dangling-handle]
+```
+
+## Where Clang and GCC stand
+
+The compiler numbers match what I measured for <PostLink slug="clang-lifetime-safety-warnings">the Clang 23.1 lifetime warnings</PostLink>. Clang already warned on most standard-view cases through `-Wdangling-gsl`. The new flag added case 6 here, and a second report on cases it already knew.
+
+GCC 16.2 stayed silent on every case, including the common one in case 3. I did not try other GCC flags or GCC trunk. The `cloudevents-sdk-cpp` project hit the same gap. Its commit <a href="https://github.com/filipsajdak/cloudevents-sdk-cpp/commit/c4b431104f2785d96d77c6e49c9be08b1f0f78aa">c4b4311</a> says a view of a temporary string fails to compile, "which gcc 16 does not warn about".
+
+## What the check does not see
+
+It does not see a class that is not in the list. Case 7 is the proof: `Other` has the same shape as `Slice` and nothing in the config names it. A new view class written by an agent is safe only after someone adds it to the list.
+
+It does not see a function that returns a view of its argument, as in cases 8 and 10. It does not see a raw pointer, and it does not see braces on a `string_view` in case 6. One more shape escaped. In a scratch file, `make_holder().name()` returned a reference into a temporary holder, and no tool I ran reported it.
+
+I found no false positive. The 4 safe cases and 5 more safe shapes in a scratch file produced no report from the check or from Clang with the flag. The shapes were a lifetime-extended reference, a function returning a reference and a view of a view. The others were a temporary passed to a view parameter and an rvalue-reference variable. That is a small sample, and I did not scan a large codebase.
+
+## A deleted overload for the project's own view
+
+For a class you own, the answer can live in the type. Delete the overload that takes a temporary string:
+
+```cpp
+class GuardedSlice {
+public:
+    GuardedSlice(const std::string& s) : data_(s.data()), size_(s.size()) {}
+    GuardedSlice(std::string&&) = delete;
+    // ...
+};
+
+static_assert(!std::is_constructible_v<GuardedSlice, std::string>);
+```
+
+Cases 1 and 2 then stop compiling, with no tool involved. A string literal is refused too, because it builds a temporary string first. That is correct here, since the view would dangle.
+
+<GodboltEmbed id="7P9zxjjqj" gccOnly gccLabel="GCC 16.2" title="A deleted rvalue overload refuses a view of a temporary" gcc_subtitle="x86-64 GCC 16.2 · -std=c++23 -O1 · runs live" />
+
+The limit is the same as the check's. It guards one class and one owner type. A function that returns a view of its argument is not covered.
+
+## Why this is a check and not a rule
+
+A prose rule such as "never build a view from a temporary" asks the model to remember it. The configuration runs after every edit and costs one option per view class. The series argues for that trade, and episode 1 sets out the evidence against it.
+
+My claim here is narrow. A listed class and a deleted overload cover the project's own view classes built from a string temporary, which are cases 1 and 2. Cases 7, 8 and 10 would need annotations on the functions, and I did not test those.
+
+A related dangling shape from reflection is in <PostLink slug="reflection-dangling-signature">an earlier post</PostLink>.
+
+All runs are from 2026-11-17. The sources and outputs are in <a href="https://github.com/wrocpp/cpp26-reflection-examples/tree/3ce594219ac6db64991c898e12ba99244f01da39/posts/125-view-of-temporary">`posts/125-view-of-temporary`</a>.
