@@ -1,0 +1,124 @@
+---
+title: "A shared_ptr nobody shares costs 24 heap bytes where a unique_ptr costs 4"
+slug: "tidy-agent-needless-shared-ptr"
+pubDate: 2026-12-07
+author: filip-sajdak
+language: en
+kind: short
+series: tidy-agent
+series_order: 7
+audience: working-cpp
+tags: [cpp, clang-tidy, ai-agents, smart-pointers, shared-ptr, static-analysis, cpp23]
+summary: "The tidy-agent plugin check needless-shared-ptr flagged 3 of 15 shapes of a local shared_ptr and offered a fix-it for 2. On GCC 16.2 make_shared took 24 bytes and make_unique 4, for a handle of 16 bytes against 8. It missed 3 unshared shapes and has one false positive: a class using shared_from_this."
+draft: false
+relatedPosts: [std-indirect-pimpl, tidy-agent-view-of-temporary, format-smart-pointers]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+A local `std::shared_ptr` that is only dereferenced never shares anything. On GCC 16.2 it still costs a 24-byte heap block for a 4-byte object. A `make_unique` block is 4 bytes, and the handle is 8 bytes instead of 16. The `needless-shared-ptr` check of tidy-agent flagged 3 of my 15 test shapes and rewrote 2 of them. It has one false positive that turns into a crash, and three misses. This is episode 7 of a series on clang-tidy checks for mistakes that AI coding agents keep making.
+
+## In short
+
+- The check flags a local `shared_ptr` from `make_shared` that is only dereferenced, read with `get()` or tested.
+- Of 15 shapes, 3 were flagged, 9 were left alone because the pointer is shared, and 3 were missed.
+- The fix-it renames the factory on an `auto` variable. clang-tidy reported 2 fixes for 3 warnings.
+- A class that uses `shared_from_this` is a false positive, and the fix makes it throw.
+- GCC 16.2: 24 bytes against 4, one allocation each, `use_count` 1. I measured no time.
+
+## What the check looks at
+
+The spec of the check, `docs/checks/needless-shared-ptr.md` in <a href="https://github.com/wrocpp/tidy-agent">wrocpp/tidy-agent</a>, says it plainly: no incident in the two mined codebases. It is in the series as a common habit of agents and as the worked example of a data-flow check. I do not claim a count of how often agents write it.
+
+It is a plugin, because it needs more than one AST node and it carries a fix-it. A plugin cannot run on Compiler Explorer. I ran it locally with Homebrew LLVM 23.1.5, from tidy-agent commit 7c64b6c:
+
+```text
+clang-tidy -load=build/libwrocpp-tidy.so --checks='-*,wrocpp-needless-shared-ptr' cases.cpp -- -std=c++23
+```
+
+The check collects every use of the variable inside its function. Any use other than a dereference, `get()` or a bool test makes it stay silent. A copy, a move, a return, a capture or a call argument counts as sharing, or possibly sharing.
+
+## Fifteen shapes
+
+The <a href="https://github.com/wrocpp/cpp26-reflection-examples/tree/e7578e3/posts/128-needless-shared-ptr">example file</a> has one function per shape. Three were flagged:
+
+```text
+cases.cpp:31:10: warning: 'w' is a shared_ptr that is never shared; use std::unique_ptr or a value [wrocpp-needless-shared-ptr]
+cases.cpp:37:10: warning: 'w' is a shared_ptr that is never shared; use std::unique_ptr or a value [wrocpp-needless-shared-ptr]
+cases.cpp:44:29: warning: 'w' is a shared_ptr that is never shared; use std::unique_ptr or a value [wrocpp-needless-shared-ptr]
+```
+
+The first two use `auto`. The third spells out `std::shared_ptr<Widget>`, so the check reports it and offers no fix.
+
+Nine shapes were left alone, as the spec requires:
+
+- the pointer is returned, returned as a `weak_ptr`, stored with `push_back`, or moved into a container;
+- it is captured by value in a lambda;
+- it is passed by value, or by `const std::shared_ptr&`;
+- it is bound to a reference;
+- only `use_count()` is called.
+
+The last one is conservative. A `use_count()` call is not on the list, so the check does not decide.
+
+## What the fix-it does
+
+Running `clang-tidy --fix` on a copy changed two lines. Each turned `make_shared` into `make_unique`. clang-tidy printed `applied 2 of 2 suggested fixes`. That number counts edits, not warnings. There were three warnings, and one has no fix.
+
+The fixed file built with `g++-16 -std=c++23` and printed the same line as the original. The fix is a one-word rename because the variable is `auto`. A `unique_ptr` supports the same dereference, `get()` and bool test.
+
+<GodboltEmbed id="dW4n9bTW8" gccOnly gccLabel="GCC 16.2" title="Fifteen shapes of a local shared_ptr" gcc_subtitle="x86-64 GCC 16.2 · -std=c++23 -O2 -Wall -Wextra · runs live" />
+
+The embed runs the program, not the check. It prints `15 cases ran, 2 pointers stored, total 32`.
+
+## What it saves
+
+I measured three things on GCC 16.2, with `operator new` replaced to count calls and bytes. The program is built at `-O0`, because at `-O1` GCC removed the unused allocations and both counts were zero.
+
+```text
+sizeof(Widget) 4, sizeof(shared_ptr) 16, sizeof(unique_ptr) 8
+make_shared: 1 allocation, 24 bytes, use_count 1
+make_unique: 1 allocation, 4 bytes
+```
+
+Both make one allocation. `make_shared` puts the control block and the object together, and the extra 20 bytes are that control block and its padding. The same source with Homebrew clang 23.1.5 and libc++ printed 32 bytes for `make_shared` and 4 for `make_unique`. The size depends on the library.
+
+<GodboltEmbed id="d8e8sEjar" gccOnly gccLabel="GCC 16.2" title="make_shared against make_unique, counted" gcc_subtitle="x86-64 GCC 16.2 · -std=c++23 -O0 -Wall -Wextra · runs live" />
+
+I did not measure time. The reference count is atomic in a threaded program, and that is the cost the spec names. A benchmark would have to say which build and which workload, and I did not run one.
+
+## The false positive
+
+A class that hands out `shared_from_this()` is shared even when the function never copies the pointer. The function below only calls `n->announce(registry)`, so the check flags it:
+
+```cpp
+std::size_t register_node(Registry& registry) {
+    auto n = std::make_shared<Node>();
+    n->announce(registry);
+    return registry.size();
+}
+```
+
+`Node::announce` pushes `shared_from_this()` into the registry. With the fix applied, `n` is a `unique_ptr`. The program then ends in an uncaught `std::bad_weak_ptr`. I ran that on a fixed copy; the file in the examples keeps both versions side by side and catches the exception.
+
+<GodboltEmbed id="5PPq3Y7jY" gccOnly gccLabel="GCC 16.2" title="The fix-it breaks a class that shares itself" gcc_subtitle="x86-64 GCC 16.2 · -std=c++23 -O2 -Wall -Wextra · runs live" />
+
+The check does not look at the class, so a hook that applies fixes unattended can break this. Review the fix when the type derives from `enable_shared_from_this`. This is the only false positive I found, in a file I wrote to look for one.
+
+## What it misses
+
+Three shapes are never shared and never flagged:
+
+- `w == nullptr`, because the comparison is an operator call that the check does not recognise;
+- `std::shared_ptr<Widget> w{new Widget{}}`, because only `make_shared` starts a match;
+- `std::allocate_shared`, for the same reason.
+
+It also looks at one function. A pointer that lives in a member, or comes back from a function, is outside it.
+
+## Where it fits
+
+The public codebase of the series, <a href="https://github.com/filipsajdak/cloudevents-sdk-cpp">cloudevents-sdk-cpp</a> at commit a414e8d, has two `make_shared` calls. Both build a `json_document` that keeps the pointer as a copyable handle, so sharing is the design there. I did not run the check on those headers.
+
+When the object is polymorphic or needs a heap block for value semantics, the better answer is often a value type. <PostLink slug="std-indirect-pimpl">`std::indirect` for a pimpl</PostLink> is one example. The check only says the sharing is unused, and a person or an agent still chooses what replaces it. The same split between a check and a decision appears in <PostLink slug="tidy-agent-view-of-temporary">episode 4</PostLink>.
+
+All runs are from 2026-11-17. The sources and outputs are in <a href="https://github.com/wrocpp/cpp26-reflection-examples/tree/e7578e3/posts/128-needless-shared-ptr">`posts/128-needless-shared-ptr`</a>.
