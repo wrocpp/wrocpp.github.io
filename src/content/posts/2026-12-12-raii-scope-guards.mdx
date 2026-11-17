@@ -1,0 +1,106 @@
+---
+title: "Three scope guards, and the one that is allowed to throw"
+slug: "raii-scope-guards"
+pubDate: 2026-12-12
+author: filip-sajdak
+language: en
+kind: flagship
+audience: working-cpp
+tags: [cpp, raii, exceptions, library-fundamentals]
+summary: "Library Fundamentals defines three RAII scope guards. scope_exit and scope_fail run during unwinding, so their destructors are noexcept and a throwing action terminates. scope_success runs only on a normal exit, so its destructor is conditionally noexcept and its action may throw. That makes scope_success the right place for a commit that can fail, and a header that requires every action to be noexcept gives that up. All verified on GCC 16.2."
+draft: false
+relatedPosts: [reflect-tracing, tiny-orm]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+Three RAII scope guards run an action when a scope exits, and only one of them may let that action throw.
+`scope_success` runs on a normal exit, not during unwinding, so its destructor is conditionally noexcept and its action can propagate.
+
+## In short
+
+- Library Fundamentals (P0052) defines three guards, and libstdc++ ships them in `<experimental/scope>`. GCC 16.2 has all three.
+- `scope_exit` runs on every exit. `scope_fail` runs only on an unwinding exception, and `scope_success` only on a normal exit.
+- `scope_exit` and `scope_fail` have unconditionally noexcept destructors. A throwing action there calls `std::terminate`.
+- `scope_success` runs only on a normal exit, so its destructor is conditionally noexcept and its action may throw.
+- A header that requires every action to be noexcept (Amit G.'s, for one) is safe. But it rejects a success action that commits and can fail.
+
+## Which guard fires when
+
+The three guards differ only in which exit runs the action.
+`scope_exit` runs on any exit.
+`scope_fail` runs when the scope is left by an exception, and `scope_success` when it is left normally.
+Run on GCC 16.2, a normal scope fires success and exit, and an exception fires fail and exit:
+
+```
+normal scope:
+  success (fires)
+  exit    (fires)
+scope left by an exception:
+  fail    (fires)
+  exit    (fires)
+  caught
+```
+
+The guards fire in reverse order of declaration, like any stack of objects.
+
+## Only scope_success may throw
+
+The destructors are not the same.
+`scope_exit` and `scope_fail` can run while an exception is unwinding.
+A second exception during unwinding would call `std::terminate`, so their destructors are unconditionally noexcept, and a throwing action is a terminate waiting to happen.
+`scope_success` never runs during unwinding, because an exception is exactly the case it does not fire.
+So its destructor is conditionally noexcept, and it is allowed to throw.
+
+GCC 16.2 reports exactly that for a guard holding a throwing action:
+
+```
+exit    dtor noexcept with a throwing action = 1
+fail    dtor noexcept with a throwing action = 1
+success dtor noexcept with a throwing action = 0
+```
+
+## A commit that fails on success
+
+This is what the conditional noexcept buys.
+A `scope_success` can carry an action that must run on the way out, and that is allowed to fail.
+A commit is the usual example: on a normal exit it finalizes the work, and if finalizing fails the exception propagates out of the scope.
+
+```cpp
+try {
+  auto commit = std::experimental::scope_success([] {
+    do_commit();                 // runs only on a normal exit
+    if (!ok) throw commit_error{};
+  });
+  // ... work that must be committed if it succeeds ...
+} catch (const commit_error&) {
+  // the commit failed on the way out
+}
+```
+
+A `scope_exit` or `scope_fail` cannot do this. Their action must be noexcept, so a failing commit there terminates the program.
+
+<GodboltEmbed id="YT6xMs4s5" gccOnly gccLabel="GCC 16.2" title="The three guards, and the one that may throw" gcc_subtitle="x86-64 GCC 16.2 · -std=c++23 · runs live" />
+
+## The tradeoff an all-noexcept header makes
+
+Amit G. published [a small header](https://github.com/AmitGDev/scope) with the same three guards, and requires every action to be noexcept, enforced with a `static_assert`.
+The reasoning is sound: each destructor is noexcept, so a throwing action would terminate, and the `static_assert` turns that runtime trap into a compile error.
+The README states the tradeoff plainly, that it gives up genuinely throwing exit functions to guarantee no unexpected `std::terminate`.
+
+The cost of that choice falls on `scope_success` alone.
+The standard facility lets a success action throw, so a failing commit is a propagating exception.
+The all-noexcept header rejects that success action at compile time, so the commit has to move out of the guard and be written by hand.
+Neither is wrong. It is a choice between one guard that can commit and three guards that can never terminate.
+
+## Where to get them today
+
+These guards are not in the C++23 standard library, nor in C++26, which is itself not finalized (<PostLink slug="c26-dis-ballot-result">the DIS ballot was reported disapproved</PostLink>).
+They live in libstdc++ as `std::experimental::scope_exit` and the other two, from P0052.
+The names and interface match the proposal, so code written against `<experimental/scope>` moves to a standard header unchanged if one arrives.
+
+The next post takes the guard to a real C API.
+It wraps FFmpeg's `libav*` contexts, frames and packets, so a decode path leaks nothing on an early return.
+
+The runnable example is [in the examples repo](https://github.com/wrocpp/cpp26-reflection-examples/tree/3750457c7720f11d03e5ef2148e0022b6524b2a5/posts/96-raii-scope-guards), compiled and run on Compiler Explorer with GCC 16.2.
