@@ -1,0 +1,87 @@
+---
+title: "The magic-numbers check reports 103 bare numbers in a test suite, and 19 deserve a name"
+slug: "tidy-agent-magic-numbers-in-tests"
+pubDate: 2026-12-05
+author: filip-sajdak
+language: en
+kind: short
+series: tidy-agent
+series_order: 5
+audience: working-cpp
+tags: [cpp, cpp20, clang-tidy, ai-agents, testing, tidy-agent]
+summary: "The wrocpp-magic-numbers-in-tests query check reports 103 unique locations in the 43 test files of cloudevents-sdk-cpp. Reading each line, I judged 19 to be unnamed thresholds or domain constants. The other 84 are sizes, indices, fixture values, pinned constants and loop bounds."
+draft: false
+relatedPosts: [constant-wrapper, verification-unit-tests-live]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+The `wrocpp-magic-numbers-in-tests` check of tidy-agent reports a bare integer in a comparison under `test/`. I ran it on the 43 test files of cloudevents-sdk-cpp at commit a414e8d. It reported 103 unique locations in 24 files. I judged 19 of them to be numbers that need a name, so about one warning in five is worth acting on.
+
+## In short
+
+- The check is a query check, so it runs on Compiler Explorer. It skips 0 and 1, and it skips numbers inside a `constexpr` variable.
+- On the 43 test files: 369 warning lines, 103 unique locations, because a shared helper header repeats its 14 hits in 20 test files.
+- Reading the 103 lines, I found 19 unnamed thresholds or constants, 35 sizes or indices, 26 fixture values, 14 pins and 9 loop bounds.
+- It matches every comparison in a test file, not only assertions. The specification says assertions.
+- It cannot see floating literals, and I found none that it would have mattered for.
+
+## What it reports
+
+This is episode 5 of the tidy-agent series, and it stands alone. The mistake is a threshold written inline, such as `check(latency_ms < 250)`, with no name and no stated source. The same number then appears in several tests, and changing it means finding every copy.
+
+The example file has eight such comparisons. Four are thresholds, one is a status code, and the rest are sizes. The check reports nine warnings, because the index in `kBackoffMs[2] <= 5000` is also a literal inside a comparison.
+
+```cpp
+check(response.latency_ms < 250, "latency below 250 ms");
+check(kBackoffMs[2] <= 5000, "last backoff within 5000 ms");
+check(response.status == 200, "status is 200");
+check(kBackoffMs.size() == 3, "three backoff steps");
+```
+
+<GodboltEmbed id="rsTscEWz3" gccOnly compilerLabel="clang-tidy trunk" title="Eight comparisons with bare numbers, flagged by a query check" gcc_subtitle="x86-64 clang (trunk) · -std=c++20 -fsyntax-only · clang-tidy trunk" />
+
+After I named the four thresholds in `constexpr` constants, five warnings remain: the index, the status code twice, and two sizes. I left those bare on purpose. A constant called `kOk` for 200 adds a line and no information. The program prints the same eight lines before and after, and exits 0 on GCC 16.2 ([run before](https://godbolt.org/z/v99exxjxY), [run after](https://godbolt.org/z/rv4rKdjTY)).
+
+On Compiler Explorer I removed the path clause of the query, because the file there is `<source>`. Locally I kept it. Clang-tidy 23.1.5 gave the same nine and five warnings.
+
+## The real test suite
+
+I ran the check once per test file, with the repository's include paths and `-std=c++20`. Of the 43 files, 40 reported at least one compile error. In 36 of them it was an error inside the regex library header on LLVM 23. 18 files reported further errors, some from macros that the build defines, which I did not sort out one by one. Clang-tidy still analyses past errors, but the counts are lower bounds. 13 files had no hit.
+
+369 warning lines collapse to 103 locations. One helper header, `mini_codec.hpp`, has 14 hits and is included by 20 test files. A count of warning lines would have been more than three times too high.
+
+I read each of the 103 lines and put it in one category. This is one reader's judgement, not a measurement.
+
+| Category | Locations | Example |
+|---|---|---|
+| Size, count or index | 35 | `fields.size() == 3U` |
+| Fixture value | 26 | `read_rate->sampledrate == 30` |
+| Pins a named constant | 14 | `static_assert(field_count<point> == 2)` |
+| Loop bound or modulus | 9 | `for (int shape = 0; shape < 4; ++shape)` |
+| Unnamed threshold or domain constant | 19 | `verbose.detail.size() > 64U` |
+
+The 19 split by place. The test files proper have 6. They are a detail-length limit of 64, the value 2147483647, and the digit count 9 of a nanosecond fraction, at four locations. The two helper headers have 13: the UTF-8 range bounds in `mini_codec.hpp` and a batch size of 100 written three times in `json_format_checks.hpp`. So 6 of the 86 locations in the test files are real. The check earns its keep in the helpers, which are production code that lives under `test/`.
+
+## What it gets wrong
+
+Most false positives have a shape. A size or an index states a fact about a literal list or string, and a name for it would restate the literal. A loop bound in a test generator is a parameter, not a threshold. A number that pins a named constant is the point of the assertion.
+
+The 26 fixture values are the debatable group. `sampledrate == 30` occurs four times across two files, and a shared constant would tie the fixture to the assertion. I judged them as fixture data, not thresholds, but a project could decide the other way.
+
+The check also does not do what its specification says. The spec limits it to comparisons inside assertion macros. The query matches any comparison in a file under `test/`, so loop conditions and `if` statements count. Nine locations are loop bounds, and the `compare(i, 2, "//")` calls count the length of a string.
+
+Floating literals are a known gap of the query form. I grepped the suite for a decimal literal in a comparison and found three, all written as `1.5_d` or `0.25_d`, which is a user-defined literal. A check cannot flag them with the integer matcher either.
+
+## Evidence in the public repository
+
+The five commits the specification cites all name numbers in headers under `include/`, not in tests. The largest, [40e2442](https://github.com/filipsajdak/cloudevents-sdk-cpp/commit/40e24429e56b4d9c021fcf2427b4f88a806f7618), names 17 values in a UTF-8 validator and 19 in base64. Its message says the magic-number checks stay disabled until the remaining sites are named. None of those five commits names numbers in a test.
+
+So the problem is real in production code, and I measured the test version of it directly. Whether agent-written tests drift toward bare numbers more than human-written ones, I did not measure. The related <PostLink slug="tidy-agent-unit-in-integer-name">unit-in-integer-name</PostLink> check works on the same idea for names.
+
+## Is it worth a check?
+
+About one warning in five was useful, so I would run it on helper headers and on assertions against a duration or a limit. I would not run it on every test. The stock `readability-magic-numbers` check is the first rung, and it is noisy for the reasons above. For a team, the 19 are a list to name once, and a `constexpr` name then carries the source of the number.
+
+The examples, the two run outputs and the warning lists are in [`posts/126-magic-numbers-in-tests`](https://github.com/wrocpp/cpp26-reflection-examples/tree/1764e40/posts/126-magic-numbers-in-tests). The check is in [wrocpp/tidy-agent](https://github.com/wrocpp/tidy-agent) at commit 7c64b6c. Programs ran on Compiler Explorer and the scan ran locally, both on 2026-11-17.
