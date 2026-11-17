@@ -1,0 +1,124 @@
+---
+title: "Value{v} built a one-element array, not a copy, and a check flags those lines"
+slug: "tidy-agent-brace-init-list-hijack"
+pubDate: 2026-12-03
+author: filip-sajdak
+language: en
+kind: short
+series: tidy-agent
+series_order: 3
+audience: working-cpp
+tags: [cpp, clang-tidy, ai-agents, initializer-list, braces, static-analysis, series]
+summary: "A JSON-like Value copied with braces becomes a one-element array on GCC and Clang, and a copy on MSVC. A clang-tidy query check flags 2 of 2 such lines in one example and 5 of 8 braced initializations in another. It misses Value{3} and vector<int>{3}. It ran on clang-tidy trunk on Compiler Explorer. Episode 3 of the tidy-agent series."
+draft: false
+relatedPosts: [default-or-braces-constructor-initialisation, span-initializer-list-removed]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+`std::vector<int>{5}` has 1 element and `std::vector<int>(5)` has 5. The same rule makes `Value{v}` a one-element array when `Value` has a list constructor. A clang-tidy query check, `wrocpp-brace-init-list-hijack`, flags a one-element braced list of the class itself. In the first example below it reports 2 of 2 such lines, and 0 on the parenthesized spellings.
+
+## In short
+
+- A class with a list constructor turns `Value{v}` into an array holding one copy of `v`. A copy needs parentheses.
+- On GCC 12.1 to 16.2 and Clang 22.1, the example prints `braces: array of 1`. On MSVC 19.40, 19.44 and 19.51 it prints `braces: object of 0`.
+- The check reports 2 of 2 on the first file and 5 of 8 braced initializations on the second. It misses `Value{3}` and `vector<int>{3}`.
+- A deliberate one-element array is reported too, because the check cannot read intent.
+- This is a query check, so it ran on Compiler Explorer: clang-tidy trunk, LLVM 24.0.0git, 2026-11-17. I found no plugin twin with a fix-it, so I ran none.
+
+## The slip
+
+A JSON value type has a constructor that takes a list of values, to build arrays. Next to it sits the implicit copy constructor:
+
+```cpp
+struct Value {
+    Value() = default;
+    Value(std::initializer_list<Value> items) : kind{Kind::array}, count{items.size()} {}
+
+    Kind kind{Kind::object};
+    std::size_t count{};
+};
+```
+
+Copying with braces then picks the first one:
+
+```cpp
+Value wrap(const Value& v) { return {v}; }
+const Value braces{object};
+const Value parens(object);
+```
+
+The rule is in the order of the search. cppreference, section `cpp/language/list_initialization#Explanation`, says the constructors taking `std::initializer_list` are examined first. Only if that finds no match do all constructors take part. The shortcut that copies a single element of the same type applies to aggregate classes, and `Value` is not one.
+
+On GCC 16.2 the program prints:
+
+```text
+braces: array of 1
+parens: object
+return {v}: array, return Value(v): object
+vector<int>{5}: size 1, vector<int>(5): size 5
+```
+
+I built the same file with `-std=c++20 -O1` on GCC 12.1, 13.2, 16.1 and trunk, and on Clang 22.1 and trunk. The output is identical. MSVC 19.40, 19.44 and 19.51 print `object of 0` for the first and third lines, so they copy. That differs from the rule on the page above. I did not look for an MSVC bug report or note, so I cannot say if it is known.
+
+<GodboltEmbed id="4dzdda3zv" gccOnly gccLabel="GCC 16.2" title="One element in braces becomes an array; vector<int>{5} has one element" gcc_subtitle="x86-64 GCC 16.2 · -std=c++20 -O1 · runs live" />
+
+## It already cost a library four commits
+
+[cloudevents-sdk-cpp](https://github.com/filipsajdak/cloudevents-sdk-cpp) has four commits about this from September 2026. I read each one.
+
+- [`3ad6200`](https://github.com/filipsajdak/cloudevents-sdk-cpp/commit/3ad6200): a polyfill of `std::expected` stored its value with braces. A result holding the JSON object `{"a":1}` came back as `[{"a":1}]`. Nothing caught it before, because the tests only stored `int`, `std::string` and an event class.
+- [`d17af33`](https://github.com/filipsajdak/cloudevents-sdk-cpp/commit/d17af33): `boost::json::value{nullptr}` gave a one-element array on Boost 1.83, which Ubuntu 24.04 ships. On Boost 1.92 from Homebrew it gave the scalar. The commit message says the defect was invisible on the machine it was written on.
+- [`be80f5d`](https://github.com/filipsajdak/cloudevents-sdk-cpp/commit/be80f5d): the same fix in the benchmark code.
+- [`e74a25c`](https://github.com/filipsajdak/cloudevents-sdk-cpp/commit/e74a25c): a document holder initializes its value with parentheses, because braces on `nlohmann::json` wrap the document.
+
+The fix in each case is the parentheses. The header of the Boost codec now carries a comment saying why, so that nobody tidies the parentheses back. A comment asks the next editor to remember. The check reports the line.
+
+## What the check reports
+
+On the first file, clang-tidy trunk prints two warnings, for `return {v};` and for `braces{object}`:
+
+```text
+<source>:28:12: warning: one-element braced list selects the initializer_list constructor and wraps the value; use parentheses to copy or convert [custom-wrocpp-brace-init-list-hijack]
+   28 |     return {v};  // flagged: this is a one-element array, not a copy
+<source>:43:17: warning: one-element braced list selects the initializer_list constructor and wraps the value; use parentheses to copy or convert [custom-wrocpp-brace-init-list-hijack]
+   43 |     const Value braces{object};  // flagged
+```
+
+The query matches a class with a list constructor. The braced list must hold one element, and that element must be a constructor call of the same class. The same files gave the same warnings locally with Homebrew clang-tidy, LLVM 23.1.5.
+
+<GodboltEmbed id="1P8qsdsWW" gccOnly compilerLabel="clang-tidy trunk" title="Two one-element braced lists of the class itself, flagged by a query check" gcc_subtitle="x86-64 clang (trunk) · -std=c++20 -fsyntax-only · clang-tidy trunk, LLVM 24.0.0git" />
+
+## What it does and does not catch
+
+A second file has eight braced initializations. Five are reported:
+
+| line | reported | why |
+|---|---|---|
+| `Value member{Value{}}` as a member initializer | yes | one element of the class |
+| `stored{std::move(value)}` in `Box<T>` with `T` = `Value` | yes | reported at the template line |
+| `auto made = Value{source}` | yes | one element of the class |
+| `Value assigned = {source}` | yes | copy-list-initialization |
+| `make_unique<Value>(Value{source})` | yes | the inner braces |
+| `Value{3}` | no | the element is an `int` |
+| `Value{source, source}` | no | two elements are a real list |
+| `std::vector<int>{3}` | no | the element is an `int` |
+
+The two-element list is correct, so not flagging it is right. `Value{3}` and `std::vector<int>{3}` are the same kind of surprise, one element, one list, and the check does not see them. The query looks for an element of the class itself. A `vector<int>{n}` meant as a size gets no warning. That is the first line of this post, and the check does not cover it.
+
+A line that builds a one-element array on purpose is reported as well. I saw no false positive beyond that in the two files. I did not run the check on the cloudevents sources, so I give no count there.
+
+<GodboltEmbed id="fv3vdeqj1" gccOnly compilerLabel="clang-tidy trunk" title="Eight braced initializations: five flagged, three not" gcc_subtitle="x86-64 clang (trunk) · -std=c++20 -fsyntax-only · clang-tidy trunk, LLVM 24.0.0git" />
+
+## The fix is not automatic yet
+
+The check's spec asks for a plugin twin that rewrites `{x}` to `(x)`. In the repository as I read it, `clang-tidy -load=build/libwrocpp-tidy.so --list-checks` lists four `wrocpp-` checks and none is this one. So the fix here is by hand. Replace the braces with parentheses on each reported line, and build on MSVC as well as GCC, since the two disagree.
+
+## Why a check and not a rule
+
+A line in `CLAUDE.md` saying "use parentheses for copies" asks the agent to remember it. In the library above, the tests passed on one machine and failed on another. A missed line could survive until CI ran a different Boost.
+
+I did not measure how often an agent writes the braced form, or whether the prose rule prevents it. This post shows what the check finds, not that it beats the rule. Episode 2 covered a name check with the same shape of argument. The braces rule connects to <PostLink slug="default-or-braces-constructor-initialisation">the post on empty braces and `= default`</PostLink>, and the list constructor to <PostLink slug="span-initializer-list-removed">the span constructor that C++26 removed</PostLink>.
+
+The sources and all outputs are in [`posts/124-brace-init-list-hijack`](https://github.com/wrocpp/cpp26-reflection-examples/tree/f89e90f0a0f2597857d6822f092e93def97ab18f/posts/124-brace-init-list-hijack). The check lives in [wrocpp/tidy-agent](https://github.com/wrocpp/tidy-agent). The program and clang-tidy runs are from 2026-11-17.
