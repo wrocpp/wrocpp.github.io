@@ -1,0 +1,82 @@
+---
+title: "Twelve Qt security advisories between 2 and 16 November, two rated high"
+slug: "qt-security-advisories-november-2026"
+pubDate: 2026-11-28
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, qt, security]
+summary: "Between 2 and 16 November the Qt Company published twelve security advisories. Two are rated high: a memory corruption in the FFmpeg backend of Qt Multimedia (CVSS 3.1 8.8) and a memory exhaustion in QXmlSimpleReader (CVSS 4.0 8.2). On 17 November the open-source directories list Qt 6.11.3 but no 6.12.1 and no 6.8 release after 6.8.5, so several named fixes are patches only."
+draft: false
+relatedPosts: [qt-security-advisories-october-2026, cra-reporting-live-qt-declaration, sort-qrangemodel-rows-in-qt-6-12]
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+Between 2 and 16 November 2026 the Qt Company published twelve security advisories on its blog. Two are rated high: a memory corruption in the FFmpeg backend of Qt Multimedia, and a memory exhaustion in an XML reader. I read all twelve pages on 17 November. On that day the download directories listed 6.11.3 as the newest 6.11 release. They listed only 6.12.0 for 6.12, and nothing newer than 6.8.5 for 6.8.
+
+## In short
+
+- Twelve advisories, 2 to 16 November. Two high, two medium and eight low.
+- Eleven are scored with CVSS 4.0. The FFmpeg one is scored with CVSS 3.1 (8.8), copied from upstream. The two versions are not comparable, so do not rank the 8.8 against the 8.2.
+- Six advisories name Qt 6.12.1 as fixed, and I found no 6.12.1 in the 6.12 directory. Eleven name 6.8.9 or 6.8.10, and the 6.8 archive lists no release after 6.8.5.
+- Nine pages name Qt 6.11.3 as fixed. It is downloadable, but dated 26 October, and I did not check whether it contains the November fixes.
+- Nine pages give a mitigation or advice. Three say none is available.
+
+## The twelve advisories
+
+The October batch is in <PostLink slug="qt-security-advisories-october-2026">the previous advisories post</PostLink>. Its update of 6 November already names five of the twelve below, without scores. This post gives all twelve in one table.
+
+Every cell is from the advisory page, newest first. Versions are quoted as each page gives them. Scores are CVSS 4.0 unless the cell says 3.1.
+
+| CVE, date | component and effect | severity | affected | fixed | mitigation given |
+|---|---|---|---|---|---|
+| [CVE-2026-105925](https://www.qt.io/blog/security-advisory-cve-2026-105925), 16 Nov | QXmlSimpleReader in Qt 5 Compat (Qt 6) and Qt XML (Qt 5): a crafted document causes excessive memory allocation | high, 8.2 | Qt 5.0.0 to 6.8.10, 6.9.0 to 6.11.2, and 6.12.0 | 6.8.10, 6.11.3, 6.12.1 or later | parse only trusted XML |
+| [CVE-2026-103645](https://www.qt.io/blog/security-advisory-cve-2026-103645), 13 Nov | QTextCodec conversion in Qt 5 Compat, ICU builds only: very large input causes an infinite loop | low, 1.1 | Qt 5.0.0 to 6.8.8, and 6.9.0 to 6.11.2 | 6.8.9, 6.11.3, 6.12.0 or later | convert in chunks of at most 100 MB |
+| [CVE-2026-97845](https://www.qt.io/blog/security-advisory-cve-2026-97845), 12 Nov | QXmlSimpleReader: uncontrolled recursion, the application may crash | medium, 4.3 | Qt 5.0.0 to 6.8.9, and 6.9.0 to 6.11.2 | 6.8.10, 6.11.3, 6.12.0 or later | none in the class; avoid untrusted XML |
+| [CVE-2026-114369](https://www.qt.io/blog/security-advisory-cve-2026-114369), 12 Nov | QWebSocket and QWebSocketServer: a remote peer causes excessive CPU use in the handshake | low, 2.7 | Qt 5.15.0 to 6.8.9, and 6.9.0 to 6.12.0 | 6.8.10, 6.12.1 or later | none available |
+| [CVE-2026-82292](https://www.qt.io/blog/security-advisory-cve-2026-82292), 11 Nov | QDomDocument::setContent(): NULL pointer dereference | low, 1.9 | Qt 4.1.0 to 6.8.8, and 6.9.0 to 6.11.2 | 6.8.9, 6.11.3 or later | validate XML first; keep the default invalid-data policy |
+| [CVE-2026-8461](https://www.qt.io/blog/security-advisory-cve-2026-8461), 11 Nov | FFmpeg backend of Qt Multimedia: a crafted media file corrupts memory; some cases may allow code execution, exploitability not determined | high, CVSS 3.1 8.8 | Qt 6.8.0 to 6.8.8, and 6.9.0 to 6.11.1 | 6.8.9, 6.11.2 or later (both bundle FFmpeg 7.1.5) | rebuild the FFmpeg libraries with 7.1.5; avoid untrusted media |
+| [CVE-2026-116337](https://www.qt.io/blog/security-issue-cve-2026-116337), 9 Nov | HTTP response handling in Qt Network: a malicious server makes the client run out of memory | low, 0.6 | Qt 4.5.0 to "6.8.10 or 6.12.1" | 6.8.10, 6.12.1 or later | none available |
+| [CVE-2026-114366](https://www.qt.io/blog/security-issue-cve-2026-114366), 6 Nov | QWebSocket authentication handling: potential credentials leak | low, 2.3 | Qt 6.6.0 to 6.8.9, 6.9.0 to 6.11.2, and 6.12.0 | 6.8.10, 6.11.3, 6.12.1 or later | do not reuse one socket for several connections |
+| [CVE-2026-107479](https://www.qt.io/blog/security-advisory-cve-2026-107479-integer-truncation-vulnerability-in-qtextcodec-conversion-functions-impacts-qt-framework), 4 Nov | QTextCodec conversion in Qt 5 Compat: integer truncation, the application could crash | low, 1.7 | Qt 5.0.0 to 6.8.8, and 6.9.0 to 6.11.2 | 6.8.9, 6.11.3, 6.12.0 or later | convert large input in smaller chunks through the ConverterState overloads |
+| [CVE-2026-110944](https://www.qt.io/blog/security-advisory-cve-2026-110944), 4 Nov | QHttpServer: crafted requests make it consume excessive memory | low, 2.7 | Qt 6.4.0 to 6.11.2, and 6.12.0 | 6.11.3, 6.12.1 or later | none available |
+| [CVE-2026-103653](https://www.qt.io/blog/security-advisory-cve-2026-103653), 3 Nov | Qt CoAP, message parsing: out-of-bounds read, a crash or a loss of integrity | medium, 6.7 | Qt 5.13.0 to 6.8.8, and 6.9.0 to 6.11.2 | 6.8.9, 6.11.3, 6.12.0 or later | none; accept CoAP traffic only from trusted peers |
+| [CVE-2026-100140](https://www.qt.io/blog/security-advisory-cve-2026-100140), 2 Nov | XML parsing in Qt5Compat: integer overflow, a crash or data corruption | low, 1.9 | Qt 6.0 to 6.8.9, 6.9.0 to 6.11.2, and 6.12.0 | 6.8.10, 6.11.3, 6.12.1 or later | validate or reject unreasonably large XML |
+
+The pages disagree with themselves in places. The 16 November page lists 6.8.10 as both affected and fixed. The 9 November page does the same with 6.8.10 and 6.12.1. The WebSocket handshake page ends its affected range at 6.12.0. It names no 6.11 fix, yet it links a 6.11 patch archive. Read the patch links for your branch before relying on a version number.
+
+## Where the fixes are
+
+I read the download listings on 17 November.
+
+| directory | newest release listed |
+|---|---|
+| official releases, Qt 6.12 | 6.12.0, 30 Sep 2026 |
+| official releases, Qt 6.11 | 6.11.3, 26 Oct 2026 |
+| archive, Qt 6.8 | 6.8.5, 16 Oct 2026 |
+
+The official releases directory has no 6.8 folder (the request returned 404), so for 6.8 I used the archive.
+
+Take the FFmpeg advisory first. It names 6.11.2, dated 18 August in the same listing, so a 6.11 user can already download a release that fixes it. A 6.8 user cannot, because 6.8.9 is not in the archive.
+
+For the other eleven, the picture is less clear. Nine of them name 6.11.3 as fixed, and that release exists. But 6.11.3 is dated 26 October, before every November advisory. I did not unpack it. The 6.11 directory also holds separate patch files for these advisories, for example one for CVE-2026-107479 dated 3 November. That suggests the fixes may not be in the 6.11.3 sources, but I have not confirmed it.
+
+Two advisories, on WebSocket handshakes and HTTP responses, name only 6.8.10 and 6.12.1. Neither is downloadable on 17 November, so those two are patches only.
+
+## What to do now
+
+1. Find the Qt version each shipped binary links, including build images and bundled copies.
+2. If you play untrusted media through Qt Multimedia, update to 6.11.2 or later, or rebuild FFmpeg 7.1.5. It is the only page that mentions possible code execution.
+3. If you parse XML from outside your process with the Qt 5 compatibility classes, apply the limits from the XML rows. Four of the twelve concern that reader or the DOM parser.
+4. For a branch with no fixed release, apply the diffs linked from the advisory. The 6.8 diffs sit on the archive server.
+5. Before trusting "6.11.3 or later", diff your 6.11.3 sources against the linked patch.
+
+## What this post does not cover
+
+- I did not reproduce any of the twelve issues, and I do not rate them beyond the scores on the pages.
+- I read the listing of the Qt blog and each advisory page. Advisories published after 16 November are not in the table.
+- I did not unpack any release, and I did not check commercial channels or the Qt Company's own release announcements.
+- I did not check the CVE records at MITRE or NVD. Scores and vectors are as the Qt pages give them.
+- Third-party packages such as Python wheels bundle their own Qt and may lag behind.
