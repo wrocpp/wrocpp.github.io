@@ -1,0 +1,124 @@
+---
+title: "views::enumerate is sized and common, and zip(iota, r) is neither"
+slug: "enumerate-zip-iota-or-views-enumerate"
+pubDate: 2026-12-26
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp, cpp23, ranges, zip, enumerate, stdlib, gcc]
+summary: "Alex Dathskovsky's hand-written enumerate is zip(iota, r) in a range_adaptor_closure. On GCC 16.2 and libc++ trunk it has no size and no common end, so std::vector cannot take its iterator pair, and ranges::to walks it twice, 2000 iterator steps against 1000 for views::enumerate. A bounded iota brings both back. libc++ 22.1 has no views::enumerate."
+draft: false
+relatedPosts: [generator-enumerate-by-value, gcc-16-2-toolchain-status, views-as-input-before-filter]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+Alex Dathskovsky {/* LINK: Alex Dathskovsky LinkedIn post, URL from the user */} showed a C++23 enumerate adaptor that zips an `iota` with the range, inside a `range_adaptor_closure`. It is a clean example of that class. This post asks what `std::views::enumerate` does differently.
+On GCC 16.2 the hand-written one has no size and no common end. Building a vector from it takes 2000 iterator steps over 1000 elements, and the standard one takes 1000.
+Everything below ran on Compiler Explorer on 17 November 2026. I know the outside post only from screenshots, and the code in it is as I read it there.
+
+## In short
+
+- The hand-written zip over a `std::vector<int>` is not sized and not common. `views::enumerate` is both. Both are random access and borrowed.
+- The hand-written index is the type you pass to `iota`, unsigned in the example. The standard index is the difference type, signed.
+- The hand-written view has no `size()`. It also fails with the iterator-pair vector constructor and with `std::count_if`. The errors are quoted below.
+- `ranges::to<std::vector>` allocates once for both, but takes 2000 iterator steps for the hand-written one and 1000 for the standard one.
+- A bounded `iota` brings back size, common end and the signed index. libc++ 22.1 has no `views::enumerate`, and libc++ trunk has it.
+
+## What the hand-written adaptor is
+
+The adaptor in the outside post, as I read it, passes `views::iota(Index{0})` and the container to `views::zip`. Their screenshot sets `using Index = std::size_t;`, and my copy does the same:
+
+```cpp
+struct Enumerate : std::ranges::range_adaptor_closure<Enumerate> {
+  constexpr auto operator()(Iterable auto&& c) const {
+    return std::views::zip(std::views::iota(std::size_t{0}), std::forward<decltype(c)>(c));
+  }
+};
+```
+
+It gives the right elements. A loop over a vector of three printed `0:10 1:20 2:30`, and so did `views::enumerate`.
+Alex's earlier `std::generator` version is in <PostLink slug="generator-enumerate-by-value">the by-value generator post</PostLink>. This one only compares the two ways of building the pairs from ranges.
+
+## The property table
+
+I asked the compiler about the same `std::vector<int>` through three adaptors, with `static_assert` in the example and a printed table. The third column is a variant of the first, described further down.
+
+| property | `zip(iota, r)` | `views::enumerate` | `zip(bounded iota, r)` |
+|---|---|---|---|
+| `sized_range` | no | yes | yes |
+| `common_range` | no | yes | yes |
+| `random_access_range` | yes | yes | yes |
+| `borrowed_range` | yes | yes | yes |
+| index type | `std::size_t` | `std::ptrdiff_t` | `std::ptrdiff_t` |
+
+The table is the same on libstdc++ 16 with GCC 16.2, libstdc++ 15 with Clang 22.1, and libc++ 24.0 with Clang trunk. The `<ranges>` feature-test macro `__cpp_lib_ranges_enumerate` is 202302 on all three. In the 22.1 release of libc++ it is not defined, and the same file fails:
+
+```text
+error: no member named 'enumerate' in namespace 'std::ranges::views'; did you mean simply 'enumerate'?
+```
+
+So a project on libc++ 22.1 needs a hand-written adaptor. libc++ trunk, version 24.0 on Compiler Explorer, does not.
+
+## Why it is neither sized nor common
+
+With one argument, `iota` is unbounded: its sentinel is `std::unreachable_sentinel_t`, and [cppreference says](https://en.cppreference.com/w/cpp/ranges/iota_view) it is not sized. A `zip_view` has a size [only if every adapted range is sized](https://en.cppreference.com/w/cpp/ranges/zip_view). The unbounded `iota` is not, so the zip is not.
+The same page lists when a `zip_view` is common. The case that would cover a vector requires every adapted view to be random access and sized, and again the `iota` is not sized. [`enumerate_view`](https://en.cppreference.com/w/cpp/ranges/enumerate_view) is sized when its base is, and common when its base is common, forward and sized.
+That matches the table.
+
+## What the loss costs
+
+On GCC 16.2 and libc++ trunk, three ordinary calls on `auto z = v | enumerate;` do not compile.
+
+```text
+z.size()
+  g++ 16.2:    error: no matching function for call to 'std::ranges::zip_view<std::ranges::iota_view<long unsigned int, std::unreachable_sentinel_t>, ...>::size()'
+std::vector<std::tuple<std::size_t, int>> w(z.begin(), z.end())
+  libc++ trunk: candidate template ignored: deduced conflicting types for parameter '_InputIterator' ('__iterator<true>' vs. '__sentinel<true>')
+std::count_if(z.begin(), z.end(), pred)
+  g++ 16.2:    error: no matching function for call to 'count_if(..._Iterator<true>, ..._Sentinel<true>, ...)'
+```
+
+The cause is one fact: `begin()` and `end()` have different types, and the classic container constructors and algorithms want one iterator type. `views::enumerate` has the same type for both. The example asserts that the vector constructor accepts its pair. I did not run `count_if` on it. `std::ranges::to` accepts the hand-written view too, as the next table shows.
+
+A call that compiles can still cost more. I counted the steps of a counting iterator, a sized and common view over 1000 ints, wrapped in each adaptor and fed to `std::ranges::to<std::vector>`. Each of the three allocated once.
+
+| adaptor | allocations | iterator steps |
+|---|---|---|
+| `zip(iota, r)` | 1 | 2000 |
+| `views::enumerate` | 1 | 1000 |
+| `zip(bounded iota, r)` | 1 | 1001 on libstdc++ 16, 1000 on libc++ trunk |
+
+The hand-written view still gets a single allocation, so it does reserve. It takes twice the steps. That is consistent with a counting pass before the copy, because the view has no size to read. I did not read the library source to confirm the mechanism.
+The counts did not change between three optimization levels on GCC 16.2. I did not time anything.
+
+## A bounded iota brings it back
+
+When the range is sized, bound the `iota` by its size and count in the range's difference type:
+
+```cpp
+struct EnumerateSized : std::ranges::range_adaptor_closure<EnumerateSized> {
+  template <std::ranges::viewable_range R>
+    requires std::ranges::sized_range<R>
+  constexpr auto operator()(R&& c) const {
+    using Index = std::ranges::range_difference_t<R>;
+    return std::views::zip(std::views::iota(Index{0}, static_cast<Index>(std::ranges::size(c))), std::forward<R>(c));
+  }
+};
+```
+
+The result is sized, common, random access and borrowed, with the signed index, as the third table column shows. `size()` works and the vector constructor takes the iterator pair on GCC 16.2.
+On libstdc++ 15 with Clang 22.1 the constructor rejects the pair. That claim holds for libstdc++ 16.2 and libc++ trunk only.
+
+One difference remains. The bounded adaptor is constrained to sized ranges, so its `requires` clause rejects an input-only range or a filter view. I did not try those. `views::enumerate` takes any input range, and it is the standard's choice for new code.
+
+<GodboltEmbed id="71qY8qvYx" gccOnly gccLabel="GCC 16.2" title="zip(iota, r), views::enumerate and a bounded iota: properties and iterator steps" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O1 · runs live" />
+
+## Which to use
+
+On a library with `views::enumerate`, use it: it is sized, common, and takes half the steps in `ranges::to`. Without it, the hand-written adaptor still works for a loop. For a sized range, bound the `iota`, and keep the index signed if you compare it with sizes.
+The sources, outputs and the scratch errors are in [`posts/136-enumerate-zip-or-views`](https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/136-enumerate-zip-or-views).
+
+What I did not run: MSVC, a `filter_view` or an input-only source for either adaptor, wall-clock time, and the library source behind the step counts.
