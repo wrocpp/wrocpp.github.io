@@ -1,0 +1,88 @@
+---
+title: "std::from_chars rejects a leading plus, and hex reads 1e3 as 483"
+slug: "from-chars-formats-table"
+pubDate: 2026-12-20
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp, cpp17, from_chars, charconv, parsing, floating-point, libstdcpp, libcxx]
+summary: "Fourteen inputs through std::from_chars with four chars_format values give 56 results: 34 succeed, 15 are invalid and 7 are out of range. A leading plus and a leading space fail in all four formats. hex reads 1e3 as 483 and fixed stops after the 1. libstdc++ and libc++ agree on every count and every errc, and differ only in the value left after an out-of-range result."
+draft: false
+relatedPosts: []
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+The floating-point `std::from_chars` takes a format argument, and its four values give four different parsers. I ran fourteen inputs through all four on GCC 16.2 and on clang 22.1, with libstdc++ and with libc++. Of the 56 results, 34 succeed, 15 are invalid and 7 are out of range. Several of the successes are not what the input says.
+
+## In short
+
+- A leading `+` and a leading space fail in all four formats. `std::strtod` accepts both.
+- Hex format reads hexadecimal digits with the prefix assumed, so `1e3` is 483 and `1.5` is 1.3125.
+- Fixed format stops at the exponent. `1e3` succeeds, consumes 1 character and returns 1.
+- Scientific format fails on `1.5`, because it requires an exponent.
+- libstdc++ and libc++ agree on every consumed count and every error code. They differ in one thing: the value left after an out-of-range result.
+- Daniel Lemire's proposed hints for `fast_float` are a separate API, and its pull request was open on 2026-11-17. The standard function takes none of them.
+
+## The table
+
+Each cell is the number of characters consumed, then the result. The variable starts at -7. The rows come from GCC 16.2 with `-std=c++26 -O2`, and clang 22.1 with libstdc++ gives the same rows.
+
+| input | general | fixed | scientific | hex |
+|---|---|---|---|---|
+| `1.5` | 3, 1.5 | 3, 1.5 | 0, invalid | 3, 1.3125 |
+| `1e3` | 3, 1000 | 1, 1 | 3, 1000 | 3, 483 |
+| `1.5e` | 3, 1.5 | 3, 1.5 | 0, invalid | 4, 1.3671875 |
+| `0x1p4` | 1, 0 | 1, 0 | 0, invalid | 1, 0 |
+| `1p4` | 1, 1 | 1, 1 | 0, invalid | 3, 16 |
+| `+1` | 0, invalid | 0, invalid | 0, invalid | 0, invalid |
+| ` 1` | 0, invalid | 0, invalid | 0, invalid | 0, invalid |
+| `1,5` | 1, 1 | 1, 1 | 0, invalid | 1, 1 |
+| `-0` | 2, -0 | 2, -0 | 0, invalid | 2, -0 |
+| `1e999` | 5, out of range | 1, 1 | 5, out of range | 5, 125337 |
+
+`inf` and `nan` parse to 3 characters in all four formats. A string of 400 nines is out of range in the general, fixed and hex formats, and invalid in the scientific one.
+
+## Rows a working programmer gets wrong
+
+**A success with a short count.** Fixed format on `1e3` reports no error. The pointer sits after the `1`, and the value is 1. Code that checks the error code and ignores the pointer stores 1 where the input said 1000. The same happens for `1,5`, which gives 1 in three of the four formats.
+
+**`0x1p4` in general format.** It consumes the `0`, stops at the `x` and reports success with value 0. The standard has the same example for `0x123`. `std::strtod` reads `0x1p4` whole as the hexadecimal float 16 and consumes 5 characters. Hex format wants the digits alone, so `1p4` gives 16.
+
+**Hex takes any hex digit.** The input `1e3` is 0x1e3. The input `1.5e` consumes its last character as a digit and gives 1.3671875. General format stops before it and consumes 3.
+
+**The leading plus.** [The standard](https://eel.is/c++draft/charconv.from.chars) takes the pattern of `strtod`, except that a plus sign may only appear in the exponent. All four formats reject `+1` and ` 1`. Input with a leading plus or space needs a manual skip before the call. The program also runs `std::strtod` on ` +1`: value 1, 3 characters consumed.
+
+The standard also says the pattern is the one of the "C" locale. I did not run a locale test, so that part is the standard's word, not my measurement.
+
+<GodboltEmbed id="cenobP93f" gccOnly gccLabel="GCC 16.2" title="from_chars with four chars_format values on fourteen inputs" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O2 · runs live" />
+
+## Do libstdc++ and libc++ agree
+
+On every consumed count and every `errc`, yes. I ran the same file with clang 22.1 and `-stdlib=libc++` on Compiler Explorer, and the 56 results match in count and error code.
+
+One value differs. After an out-of-range result, libstdc++ leaves the variable at -7. libc++ writes infinity for `1e999` and for the 400 nines, and 0 for `1e-999`. All 7 out-of-range cells show it.
+
+```text
+libstdc++  1e999  g:5/rng/-7   s:5/rng/-7
+libc++     1e999  g:5/rng/inf  s:5/rng/inf
+```
+
+The same page of the standard says the value is unmodified in that case. The example does not assert the value of an out-of-range cell, so it exits 0 on both libraries. Code that reads the variable after an out-of-range result sees a different number on each.
+
+## Where fast_float fits
+
+libstdc++ takes the work from the `fast_float` library. In the GCC 16 release branch, [`floating_from_chars.cc`](https://github.com/gcc-mirror/gcc/blob/releases/gcc-16/libstdc++-v3/src/c++17/floating_from_chars.cc) calls it for single and double precision when both are IEEE binary types. Hex format has its own function in that file.
+
+I read the libc++ side too. In llvm-project, [`libcxx/src/include/from_chars_floating_point.h`](https://github.com/llvm/llvm-project/blob/main/libcxx/src/include/from_chars_floating_point.h) includes headers from LLVM libc, and the file does not mention `fast_float`. I read both files on 2026-11-17 and did not build either library.
+
+Daniel Lemire's post of 10 November 2026, ["Telling your number parser what to expect"](https://lemire.me/blog/2026/11/10/telling-your-number-parser-what-to-expect/), is about `fast_float` itself. It proposes three hints, passed as a template argument. The names are `unpredictable_sign`, `short_numbers` and `assume_round_to_nearest`. Each tells the parser something about the data, so it can skip branches. For random-sign price changes on an Apple M4 Max, the post reports 153 million numbers per second without hints and 345 million with all three. Those are his numbers, and I did not measure them.
+
+On 2026-11-17 the change, [pull request 434 on fastfloat/fast_float](https://github.com/fastfloat/fast_float/pull/434), was open and unmerged. The hints are not a format value, and the standard function has no parameter for them. The format is the only hint it takes today, and the table shows how much it already decides.
+
+## What I would do
+
+Check the returned pointer as well as the error code. Compare it with the end of the input when the whole string must be a number. Strip a leading plus and white space before the call. Pick the general format unless the format is part of the data contract, and write a test row for each input shape you accept. Do not read the value after an out-of-range result.
+
+The sources, all outputs and the Compiler Explorer links are in [`posts/131-from-chars-formats`](https://github.com/wrocpp/cpp26-reflection-examples/tree/e7afe46/posts/131-from-chars-formats). The runs were made on Compiler Explorer on 2026-11-17: GCC 16.2, and clang 22.1 with libstdc++ and with libc++. I did not run MSVC, `float`, `long double` or any timing.
