@@ -1,0 +1,132 @@
+---
+title: "A std::array with four names for five slots compiles, and the last name is empty"
+slug: "tidy-agent-array-counted-size"
+pubDate: 2026-12-01
+author: filip-sajdak
+language: en
+kind: flagship
+series: tidy-agent
+series_order: 1
+audience: working-cpp
+tags: [cpp, clang-tidy, ai-agents, std-array, static-analysis, cpp20]
+summary: "A const std::array<T, N> written with a hand-counted N rejects a list that is too long but accepts one that is too short, and the tail is zero. GCC 16.2 and clang trunk warn about neither. An eight-line clang-tidy query check flags the declaration, and std::to_array removes the count. Episode 1 of the tidy-agent series, with the thesis and the escalation ladder."
+draft: false
+relatedPosts: [ai-cpp-workflow-2026, constexpr-array-evolution]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+A table declared as `std::array<std::string_view, 5>` with four names compiles on GCC 16.2 and clang trunk, with no warning from either. The fifth name is an empty string. A list with six names is an error. A clang-tidy query check of eight lines flags the declaration, and `std::to_array` removes the count it depends on. This opens a series of nine posts on clang-tidy checks for mistakes that AI coding agents keep making.
+
+## In short
+
+- A const `std::array<T, N>` takes a list shorter than `N` and zero-fills the tail. Only a longer list is an error (GCC 16.2, 2026-11-17).
+- GCC 16.2, clang 22.1 and clang trunk gave no warning about the short list.
+- The query check `array-counted-size` flagged the declaration on clang-tidy trunk (Compiler Explorer) and on a local clang-tidy 23.1.5.
+- `std::to_array` deduces the size, and a `static_assert` states how many entries are wanted.
+- The check flags two cases its spec says to skip, and misses tables built by a function. The planned fix-it twin does not exist yet.
+
+## The mistake
+
+The example is a table of level names indexed by an enum. A fifth level, `Fatal`, has no name in the list:
+
+```cpp
+enum class Level : unsigned { Debug, Info, Warning, Error, Fatal, Count };
+
+constexpr auto kLevelCount = std::to_underlying(Level::Count);
+
+constexpr std::array<std::string_view, kLevelCount> kNames{"debug", "info", "warning", "error"};
+```
+
+The program prints `5 names declared, name of Fatal: '' (0 characters)`. A `static_assert` states that the entry is empty, and it passes. A concept shows that the same array built from six names does not compile.
+
+<GodboltEmbed id="Gas58M57Y" gccOnly gccLabel="GCC 16.2" title="A std::array with four names for five slots compiles" gcc_subtitle="x86-64 GCC 16.2 · -std=c++23 -O1 · runs live" />
+
+The compiler guards the long direction only. The case I worry about is an agent that adds an enum value in one file and never opens the file with the table.
+
+From the author's experience of agent-written code in a proprietary service, the long direction hurt once. A table outgrew its declared size and broke the main build, and every table was then rewritten to `std::to_array`. I give no count and no code from that service.
+
+## No warning to turn on
+
+The cheapest remedy would be a compiler flag. I compiled the example on Compiler Explorer with GCC 16.2, clang 22.1 and clang trunk. The flags were `-Wall -Wextra -Wpedantic`, the two missing-initializer warnings, and `-Weverything` for clang.
+
+None of these runs reported the short list. GCC's only message was about brace elision, and a complete list triggers that too. I did not try other compilers.
+
+## A query check finds the declaration
+
+clang-tidy 22 and later accepts custom checks written as AST matcher queries in a `.clang-tidy` file, with no build step. This is the whole query:
+
+```text
+match varDecl(
+  hasType(qualType(isConstQualified())),
+  hasType(hasUnqualifiedDesugaredType(recordType(hasDeclaration(
+    classTemplateSpecializationDecl(hasName("::std::array")))))),
+  hasInitializer(ignoringImplicit(initListExpr(hasDescendant(
+    expr(unless(anyOf(initListExpr(), implicitValueInitExpr()))))))),
+  unless(isExpansionInSystemHeader())
+).bind("table")
+```
+
+It matches a const `std::array` variable whose initializer is a brace list with at least one real element. That keeps `std::array<int, 8> zeroed{};` out, because an empty list is a zeroed buffer.
+
+The session below runs clang-tidy trunk (LLVM 24.0git) with this query. The config goes in the tool arguments, single-quoted, after `--experimental-custom-checks`. Without that flag the tool reports that no checks are enabled.
+
+<GodboltEmbed id="exYq39df8" gccOnly compilerLabel="clang-tidy trunk" title="The query check flags the hand-counted table" gcc_subtitle="clang trunk · -std=c++23 · clang-tidy trunk with a custom check" />
+
+The output for the example:
+
+```text
+<source>:20:1: warning: constant std::array with a hand-counted size; a shorter list compiles and zero-fills the tail, use std::to_array [custom-wrocpp-array-counted-size]
+   20 | constexpr std::array<std::string_view, kLevelCount> kNames{"debug", "info", "warning", "error"};
+```
+
+A local run with Homebrew clang-tidy 23.1.5 gave the same warning, and the repository's tests for the check pass. The command is `tools/run_tests.py --clang-tidy /opt/homebrew/opt/llvm/bin/clang-tidy array-counted-size`, in a checkout of tidy-agent at commit 7c64b6c.
+
+## The fix removes the count
+
+The warning suggests `std::to_array`, which [cppreference](https://en.cppreference.com/w/cpp/container/array/to_array) lists since C++20. It takes the braced list and deduces `N`:
+
+```cpp
+constexpr auto kNames = std::to_array<std::string_view>({"debug", "info", "warning", "error", "fatal"});
+
+static_assert(kNames.size() == kLevelCount);
+```
+
+With four names the assertion is a build error. The example prints `complete: 5 of 5 entries` and `short:    4 of 5 entries`.
+
+<GodboltEmbed id="x7azYxq53" gccOnly gccLabel="GCC 16.2" title="std::to_array deduces the size and a static_assert states the count" gcc_subtitle="x86-64 GCC 16.2 · -std=c++23 -O1 · runs live" />
+
+The check did not flag the `to_array` version. No tool made the change. The repository plans a plugin twin with a fix-it, and it is not written yet, so I fixed the example by hand.
+
+## What the check gets wrong
+
+I ran three cases that the repository's test file does not cover.
+
+- A size from a named constant. The check flags it, though the spec says to skip it. The example above is this case, so I think the flag is right.
+- A size from a template parameter in a class template. The check flags it, the spec says to skip it, and I count it as a false positive.
+- A table returned by a function. The check does not see it.
+
+The matcher names `std::array`, so I expect it to ignore C arrays, and I did not run one. I did not scan a large codebase. The public `cloudevents-sdk-cpp` needs dependencies I did not install.
+
+## Why check, not write a rule
+
+The series argues one thing: spend tokens on a deterministic check, not on a prose rule in `CLAUDE.md`. A rule is applied when the model remembers it. A check runs in the hook after each edit and in CI.
+
+Evidence points the other way too. Google's FSE 2025 industry paper [Migrating Code At Scale With LLMs At Google](https://arxiv.org/abs/2504.09691) reports 39 migrations over twelve months. The model generated 74.45% of 595 code changes and 69.46% of 93,574 edits. For a rewrite a model does well, a rule-based fixer may cost more than asking the model.
+
+My answer is narrow. A check pays when a mistake returns, fails silently, and a machine can state it. In the `cloudevents-sdk-cpp` repository, commit [20cfed3](https://github.com/filipsajdak/cloudevents-sdk-cpp/commit/20cfed335868653b00cc54815df701241c84f368) says the project's `.clang-tidy` existed from the first milestone and nothing ever ran it. The first run over the headers reported 469 findings. A standard that nothing checks drifts, whoever writes the code.
+
+## The ladder and the repository
+
+The repository is [wrocpp/tidy-agent](https://github.com/wrocpp/tidy-agent), MIT licensed. Its decision record 0005 orders the answers by cost. For each mistake, stop at the first rung that flags every bad case and no good one:
+
+1. enable an existing clang-tidy check;
+2. configure an existing check;
+3. turn on a compiler warning;
+4. write a query check;
+5. write a plugin check, when a fix-it or a multi-node analysis is needed.
+
+The repository puts the array table on rung four. I ran only rung three myself, the compiler warnings above, and I did not search the existing clang-tidy checks for a match. Later episodes use the same ladder. For a broader look at how people use agents on C++, see <PostLink slug="ai-cpp-workflow-2026">the roundup from July</PostLink>.
+
+Sources and outputs are in [`posts/122-array-counted-size`](https://github.com/wrocpp/cpp26-reflection-examples/tree/d90339597c793d02854cc351ff75bc92be354c8a/posts/122-array-counted-size). All runs are from 2026-11-17.
