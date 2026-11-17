@@ -1,0 +1,109 @@
+---
+title: "clang-tidy flags four objects built in steps, and --fix rewrites only the struct"
+slug: "tidy-agent-default-then-assign"
+pubDate: 2026-12-06
+author: filip-sajdak
+language: en
+kind: short
+series: tidy-agent
+series_order: 6
+audience: working-cpp
+tags: [cpp, cpp20, clang-tidy, ai-agents, aggregates, designated-initializers, tidy-agent]
+summary: "The wrocpp-default-then-assign check flags an object that is default-constructed and then filled in. On a 93-line file it reports four sites, and --fix rewrites the one aggregate. It has no fix-it for containers, for classes with a constructor or for a member assigned twice, and its fix reorders evaluation."
+draft: false
+relatedPosts: [gcc-17-base-class-designators, default-or-braces-constructor-initialisation]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+An AI coding agent often writes `Request r;` and then one assignment per member, or a vector followed by a run of `push_back` calls. The `wrocpp-default-then-assign` check of tidy-agent reports that shape. On a 93-line example file it reports four sites, and `--fix` rewrites the one that is an aggregate.
+
+## In short
+
+- The check flags a default-declared aggregate followed by 2 or more member assignments, and a default-declared object followed by 3 or more `push_back`-style calls.
+- It is a plugin check. I ran it locally with clang-tidy 23.1.5, because Compiler Explorer cannot load plugins.
+- `--fix` produces a designated initializer for the aggregate. It offers nothing for the vector, for a class with a constructor, or for a member that is assigned twice.
+- The fix writes the members in declaration order. If the right-hand sides have side effects, that changes the program.
+- It does not flag the pattern when another statement sits between the assignments, or when the object starts as `T x{}`.
+
+## The pattern
+
+This is episode 6 of the tidy-agent series, and it stands alone. The check's specification records it as the most frequent agent mistake in the two codebases the checks came from. Nothing is wrong with the result. The problem is that the value is said in pieces, so nothing checks that the pieces add up.
+
+The example file builds five things in steps:
+
+```cpp
+Request request;
+request.path = std::move(path);
+request.timeout_seconds = kDefaultTimeoutSeconds;
+request.timeout_seconds = kShortTimeoutSeconds;
+request.retry = false;
+```
+
+The second line for `timeout_seconds` is a mistake, and the program accepts it. It prints `timeout=5`, and neither GCC 16.2 nor Clang 22.1 says anything with `-Wall -Wextra`.
+
+<GodboltEmbed id="P5x8MT6n8" gccOnly gccLabel="GCC 16.2" title="Five objects built in steps, one member assigned twice" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O1 · runs live" />
+
+## What the check reports
+
+The command, from a build of the plugin against the same LLVM:
+
+```text
+clang-tidy -load=libwrocpp-tidy.so --checks='-*,wrocpp-default-then-assign' before.cpp -- -std=c++26
+```
+
+It prints four warnings. Two are for the struct. One is for a vector. One is for a class with an `add` method that is called three times:
+
+```text
+before.cpp:40:11: warning: 'request' is default-constructed and then assigned field by field; initialize it in one braced expression
+before.cpp:48:11: warning: 'request' is default-constructed and then assigned field by field; initialize it in one braced expression
+before.cpp:57:20: warning: 'delays' is default-constructed and then filled by 3 mutator calls; initialize it with a braced list
+before.cpp:65:11: warning: 'headers' is default-constructed and then filled by 3 mutator calls; initialize it with a braced list
+```
+
+A fifth function fills a vector in a loop from runtime data. It is not flagged.
+
+## What --fix does and does not do
+
+Run with `--fix --format-style=file`, clang-tidy reports 4 of 4 fixes applied. The count is edits, not warnings: one new initializer and three removed assignments. All four are in `request_for`:
+
+```diff
+-  Request request;
+-  request.path = std::move(path);
+-  request.timeout_seconds = kDefaultTimeoutSeconds;
+-  request.retry = true;
++  Request request{.path = std::move(path), .timeout_seconds = kDefaultTimeoutSeconds, .retry = true};
+```
+
+The fixed file prints the same five lines as before. Without `--format-style=file` the line after the new initializer kept the indentation of a removed line.
+
+The other three warnings stay, with no fix. The check writes a designated initializer only for an aggregate, and only when no member is assigned twice. I rewrote the rest by hand in `after.cpp`. `Headers` needed an initializer-list constructor first, and a `static_assert` in the file records that it is not an aggregate. The <PostLink slug="default-or-braces-constructor-initialisation">constructor post</PostLink> covers what such a constructor changes.
+
+## Why a braced expression is the better form
+
+Naming a member twice in a designated initializer is an error on GCC 16.2: `'.timeout_seconds' designator used multiple times in the same initializer list`. Clang 22.1 compiles the same file and warns with `-Winitializer-overrides`. So the protection is a GCC property today, and a warning on Clang. The assignment form gives neither.
+
+Designated initializers also stop working once a class gets a base. That limit is moving: <PostLink slug="gcc-17-base-class-designators">GCC's development branch</PostLink> already accepts base-class designators.
+
+## What the check missed, and what it got wrong
+
+I wrote a probe file with six variants. The check misses four of them. Two have another statement between the assignments: a `reserve` call and a logging call. One declares `Point p{}`. One assigns members through a pointer. These are false negatives I can name, and I did not count how often they occur.
+
+The fix has a real defect. Given `p.y = next(); p.x = next();`, it writes `{.x = next(), .y = next()}`. The braced list evaluates left to right and the fix sorts the members into declaration order, so the two values swap. The probe printed `2 1` before the fix and `1 2` after, with GCC 16.2 locally. The check does not look at whether the right-hand sides have side effects. Review a fix before accepting it when they do.
+
+## Real code: cloudevents-sdk-cpp
+
+The public repository has the history this check came from. Commit [8caec84](https://github.com/filipsajdak/cloudevents-sdk-cpp/commit/8caec84cb1b475c27fda6f8c4f7671811e825fa4) adds an initializer-list constructor to `headers` because five `add` calls described one message. Commit [3463507](https://github.com/filipsajdak/cloudevents-sdk-cpp/commit/3463507c4b185494b885fbec84f70cbd326afc1d) records in its message that construction and `add` runs in tests became single braced expressions.
+
+I ran the check on the parent of 3463507 (82aae0e) with the repository's include paths. Three dependencies were fetched at their pinned commits. The files also hit one compile error in the regex library on LLVM 23. The check reported 4 sites in one test file and nothing else in the 27 files it could analyse. The commit rewrote three of them. At the current head, a414e8d, two sites remain.
+
+One is a test that compares the `add` form with the braced form on purpose. The check is right about the shape and wrong about the intent. The other builds 13 named events with `push_back` in a corpus header, which is a true positive that the check cannot fix.
+
+The check crashed on 1 of 32 files at the parent and 5 of 47 at head. All of those files fail to compile here because a generated header or `malloc.h` is missing. The check asserts on a local variable whose class has no definition. That is a bug in the check, and I did not fix it.
+
+## Is it worth a check?
+
+A line in `CLAUDE.md` saying "initialize in one expression" is read when the model remembers it. The check runs every time, and the single fix it can make is correct for an aggregate whose right-hand sides are plain values. For the rest it only points. I did not measure whether the warning alone changes what an agent writes next.
+
+The sources, the five outputs and the diagnostics are in [`posts/127-default-then-assign`](https://github.com/wrocpp/cpp26-reflection-examples/tree/523ff8dd448099fc1cabdfff5299704790d1f4e3/posts/127-default-then-assign). The check is in [wrocpp/tidy-agent](https://github.com/wrocpp/tidy-agent). Programs ran on Compiler Explorer and the check ran locally, both on 2026-11-17.
