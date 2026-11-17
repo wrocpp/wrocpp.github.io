@@ -16,5 +16,5 @@ https://wrocpp.github.io/posts/five-spellings-of-a-64-byte-compare/
 wro.cpp card with the magnet logo. Headline reads "A 64-byte compare loop stays scalar on Clang and MSVC" with a subtitle about the library spellings compiling to the same instructions. Citation footer: wro.cpp, 2026-11-25.
 
 ## Suggested post time
-Wednesday 2026-11-25, 16:00 UTC
+Wednesday 2026-11-25, 08:00 UTC
 Reason: the second slot of the day, beside the co_yield post.

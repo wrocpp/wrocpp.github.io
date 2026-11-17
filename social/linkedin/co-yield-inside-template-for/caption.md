@@ -18,5 +18,5 @@ https://wrocpp.github.io/posts/co-yield-inside-template-for/
 wro.cpp card with the magnet logo. Headline reads "co_yield in a template for fails on GCC 16.2" with a subtitle about the constexpr array and index_sequence fold that builds. Citation footer: wro.cpp, 2026-11-25.
 
 ## Suggested post time
-Wednesday 2026-11-25, 08:00 UTC
+Sunday 2026-11-22, 08:00 UTC
 Reason: the morning slot, one day after the generator lifetime post it follows.
