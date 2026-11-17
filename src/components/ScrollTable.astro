@@ -1,0 +1,15 @@
+---
+/**
+ * Replaces every table in post and toolset content, through
+ * `<Content components={{ table: ScrollTable }} />`.
+ *
+ * body has overflow-x: clip, so a table wider than the phone would be cut off
+ * with no way to reach its columns. The wrapper scrolls sideways like a code
+ * block; the table inside keeps width: 100%, so one that fits wraps its cells
+ * as before. tabindex and role make the scroll region reachable by keyboard.
+ */
+const attributes = Astro.props;
+---
+<div class="table-wrap" tabindex="0" role="region" aria-label="Scrollable table">
+  <table {...attributes}><slot /></table>
+</div>

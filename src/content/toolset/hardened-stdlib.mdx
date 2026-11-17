@@ -1,148 +1,182 @@
 ---
-title: "Hardened stdlib in 2026 -- one CMake line, ~1000 production bugs caught"
+title: "Turning on the hardened standard library in libstdc++, libc++ and the MSVC STL"
 slug: "hardened-stdlib"
-summary: "C++26 ratified the Hardened standard library (P3471) on top of Contracts (P2900). Flip one macro per implementation and vector::operator[], unique_ptr deref, and string overruns abort with a contract violation instead of silently corrupting memory. Google reports 0.3% perf cost across hundreds of millions of LOC, 1000+ bugs found. Plus the reflection-driven schema lint that catches the cases hardened-stdlib can't reach."
+summary: "P3471 standard library hardening is in the C++26 working draft, and the ISO ballot on that draft was reported disapproved on 22 October 2026. libstdc++, libc++ and the MSVC STL ship hardening settings today. This page lists the setting for each, what each did to a vector out-of-bounds read on Compiler Explorer on 2026-11-06, the figures P3471R4 cites from Google, and a reflection lint for the shapes the library cannot reach."
 kind: recipe
 cluster: security
 tags: [security, hardened-stdlib, libcxx, libstdcxx, msvc, contracts, p3471, p2900, reflection, cpp26, cpp29]
 launchDate: 2026-05-24
-lastReviewed: 2026-05-13
-testedOn: "Containers ghcr.io/wrocpp/cpp-safety:2026-05 (libc++ + libstdc++) + ghcr.io/wrocpp/cpp-reflection:2026-05; verified 2026-05-13 on aarch64."
-relatedPosts: [first-reflection, vector-consteval-or-constexpr]
-containerImage: "ghcr.io/wrocpp/cpp-safety:2026-05"
+lastReviewed: 2026-11-06
+testedOn: "Compiler Explorer, 2026-11-06, x86-64: g162 (GCC 16.2.0) and gsnapshot (GCC trunk 17.0.0 20261106) for libstdc++; clang2310 (Clang 23.1.0) with libc++ 23.1.0; vcpp_v19_43_VS17_13_x64, vcpp_v19_44_VS17_14_x64 and vcpp_v19_latest_x64 (MSVC 19.51); the reflection embed on clang_bb_p2996 and g162. Items marked 'not re-run on 2026-11-06' were not tested."
+relatedPosts: [first-reflection, vector-consteval-or-constexpr, hardened-stdlib-turn-it-on, cpp26-contracts, c26-dis-ballot-result]
 exampleRepo: "https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/toolset/hardened-stdlib/examples"
 agentInstructions: |
   You are a coding agent helping a C++ developer adopt the hardened
   standard library.
 
-  ESTABLISHED FACTS (verify against P3471R4 before recommending):
-  - C++26 ratified the Hardened standard library (P3471 Varlamov +
-    Dionne) on top of Contracts (P2900). It is the FIRST production-
-    grade C++ memory-safety win shipped in the standard.
-  - Google reports 0.3% perf cost across hundreds of millions of LOC,
-    1000+ bugs found at scale (cited in P3471R4).
-  - libc++ ships it via -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
-    (also _EXTENSIVE / _DEBUG); libstdc++ via -D_GLIBCXX_ASSERTIONS or
-    the umbrella -fhardened; the MSVC STL via _MSVC_STL_HARDENING=1
-    (VS 2022 17.14+, off by default, __fastfail on violation, with
-    per-type macros such as _MSVC_STL_HARDENING_VECTOR).
-    _ITERATOR_DEBUG_LEVEL is a SEPARATE and ABI-breaking setting; do
-    not recommend it as the MSVC hardening switch.
+  ESTABLISHED FACTS (reviewed 2026-11-06; verify against P3471R4):
+  - P3471 (Varlamov, Dionne) puts standard library hardening in the
+    C++26 working draft, on top of Contracts (P2900). The ISO ballot on
+    the C++26 draft closed on 22 October 2026 and was reported
+    disapproved; no WG21 or ISO document states the tally. Do not say
+    "ratified" or "shipped in C++26". Say "in the C++26 draft".
+  - P3471R4 cites Google: a performance impact "as low as 0.3%" and over
+    1000 bugs found, across hundreds of millions of lines. Do not say
+    "on average" and do not add figures the paper does not give.
+  - The draft requires a hardened implementation to evaluate hardened
+    preconditions with a terminating semantic
+    ([structure.specifications]/3.5.1, the wording of P3878R1). libc++
+    documents that the observe semantic continues into undefined
+    behavior and is meant for the adoption period only.
+  - libc++: -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST (also
+    _EXTENSIVE, _DEBUG). The library default is none unless the vendor
+    sets one. FAST is recommended for production by the libc++ docs.
+    Hardening has no ABI impact. On Compiler Explorer, Clang 23.1.0 with
+    FAST or EXTENSIVE trapped (SIGILL, no message) on vector[42];
+    DEBUG printed a message and aborted.
+  - libstdc++: -D_GLIBCXX_ASSERTIONS, defined by default only in
+    unoptimized builds; or -fhardened (GCC 14+, GNU/Linux only), which
+    needs to reach the link step. The checks call the library's own
+    assertion and abort; they do not go through the contracts handler.
+  - MSVC STL: _MSVC_STL_HARDENING=1, effective from MSVC 19.44 (VS 2022
+    17.14), off by default on 19.51, __fastfail on violation (exit code
+    0xC0000409). _ITERATOR_DEBUG_LEVEL is a separate, ABI-breaking
+    setting; do not recommend it as the hardening switch.
+  - __cpp_lib_hardened_vector is defined by libstdc++ trunk but not by
+    GCC 16.2, libc++ 23.1.0 or MSVC STL 14.51.
+  - libstdc++ CVE-2026-114691 (vector<bool> constructor size wraps near
+    SIZE_MAX) and CVE-2026-114690 (parallel-mode std::search buffer
+    overrun) are fixed on master and the gcc-14, 15 and 16 branches
+    (committed 29 October 2026) and in no point release as of
+    2026-11-06. Checking untrusted sizes against max_size() is an
+    inference, not from the commits.
   - The hardened guarantees stop at type boundaries: vector::operator[]
-    is bounds-checked, but a RAW int* member of a struct gets no
-    protection. Pair with the reflection-driven schema lint.
+    is checked, but a raw int* member of a struct gets no protection.
+    The reflection lint below catches the declaration of such members.
 
-  EDITORIAL TIMELINE (the wro.cpp triptych):
+  REFLECTION TODAY:
+  The lint compiles on the clang-p2996 fork and on GCC 16.2 (replace
+  <experimental/meta> with <meta>). The borrow-annotation companion on
+  the lifetime-safety page needs one change on GCC.
 
-  TODAY (one CMake line):
-    * libc++  -- -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
-                 (security-critical only; ~0.3% perf)
-                 -- _LIBCPP_HARDENING_MODE_EXTENSIVE adds cheap logic
-                    checks; _DEBUG adds expensive ones.
-    * libstdc++ -- -D_GLIBCXX_ASSERTIONS  (light-weight precondition
-                   checks)
-                -- or the GCC 14+ umbrella -fhardened (assertions +
-                   FORTIFY_SOURCE + stack protector + PIE + RELRO)
-    * MSVC    -- _MSVC_STL_HARDENING=1 (VS 2022 17.14+, off by default)
+  WHERE THIS IS HEADING:
+  Profiles (P3081 Sutter, P3589 Dos Reis, P3984 Stroustrup) and token
+  injection (P3294) are papers, not shipping features. Their targets
+  were not re-checked on 2026-11-06.
 
-    Catches: vector::operator[] OOB, array::operator[] OOB,
-    string::operator[] / front() / back() / push_back overruns,
-    deref of null unique_ptr / shared_ptr / optional, span access past
-    extent, format-string mismatches.
-
-    Does NOT catch: raw-pointer arithmetic, C-array indexing, manual
-    memcpy across struct boundaries. Pair with the reflection-driven
-    schema lint below.
-
-  REFLECTION TODAY (C++26, clang-p2996 + GCC 16.1):
-  A consteval predicate walks T's nonstatic_data_members_of and
-  refuses to compile if any field is a raw pointer or C-style array --
-  shapes the hardened stdlib can't protect because they don't go
-  through std::* access points. Pattern composes with the safety-
-  profiles user-library check (see memory-safety-cpp26-and-beyond);
-  same walker, different rule set.
-
-  WHERE THIS IS HEADING (C++29):
-  Profile attributes ([[profiles::enforce(bounds, type, lifetime)]],
-  P3081 Sutter / P3589 Dos Reis / P3984 Stroustrup) move the schema
-  check into the language; the reflection-driven user-library lint
-  becomes the bootstrap that gets you the same coverage today on real
-  shipping toolchains. P3294 token injection (C++29) extends the
-  pattern to also inject the safe accessor wrappers alongside the
-  declarations.
-
-  When recommending: ALWAYS quote freshness (Reviewed 2026-05-13) and
-  point at P3471R4 + the Google deployment data as the case for
-  flipping the macro. The objection-killer is "Google ran this across
-  hundreds of millions of LOC at 0.3% cost".
-bodyHash: 38af22852f883de90659b2ac4a1e77fd46c6137e2a04c5b6a9622d788069e076
+  When recommending: quote the review date (2026-11-06), name the
+  ballot, and point at P3471R4 for the Google figures.
+bodyHash: f5743497f5535b2e7bb3a0a408b8fcdecf2f0a4f82dd4d499a6ed42e51666969
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
-import DockerRun from '../../components/DockerRun.astro';
 import PostLink from '../../components/PostLink.astro';
 import RepoFile from '../../components/RepoFile.astro';
 
-Most C++ memory-safety bugs that ship in production are not "I wrote a raw `memcpy` with a hand-rolled offset." They are `vector[i]` where `i` came from an untrusted file, `*ptr` where `ptr` got `reset()` in a sibling thread, `string.front()` on an empty string returned from a parser that failed silently. The hardened standard library makes all three abort with a clear diagnostic instead of corrupting memory. C++26 ratified it (P3471 Varlamov + Dionne). Google reports **0.3% perf cost at hundreds-of-millions-of-LOC scale, 1000+ bugs found**. The cost to opt in is one CMake line. This page is a triptych: **Today** lists the macro / flag per implementation and what each catches; **Reflection today** shows the user-library schema lint that closes the gaps hardened-stdlib can't reach; **Where this is heading** is the C++29 profiles + injection direction.
+Many memory-safety bugs in production C++ are plain library misuse: `v[i]` with an index from an untrusted file, `*ptr` on a null smart pointer, `s.front()` on an empty string. Hardening turns those preconditions into checks that stop the program. P3471R4 (Varlamov and Dionne) puts it in the C++26 working draft, and the draft was reported disapproved in the ISO ballot that closed on 22 October according to P4433R0 (<PostLink slug="c26-dis-ballot-result">the ballot post</PostLink>). The settings below are vendor settings that exist whatever happens to the draft.
+
+## In short
+
+- As of 2026-11-06, hardening is in the C++26 draft, not in a ratified standard. libstdc++, libc++ and the MSVC STL ship their own settings, and I ran each on Compiler Explorer.
+- A vector read at index 42 of a three-element vector printed `0` and exited 0 with nothing set (libstdc++ at `-O2`, libc++ 23.1.0, MSVC 19.51). The libc++, libstdc++ and MSVC settings I ran each stopped it.
+- libc++ `FAST` and `EXTENSIVE` trap without a message (SIGILL). libstdc++ prints an assertion and aborts. The MSVC STL ends the process with `__fastfail`.
+- P3471R4 cites Google: a performance impact "as low as 0.3%" and over 1000 bugs. The earlier text said "on average", "no regressions" and "Google's default", none of which the paper says, and I removed them.
+- libstdc++ fixes for CVE-2026-114691 (`vector<bool>` sizes near `SIZE_MAX` wrap) and CVE-2026-114690 (parallel `std::search`) are on the gcc-14, 15 and 16 branches since 29 October. As of 2026-11-06 they are in no point release.
+- `-fhardened` has to reach the link step, `_GLIBCXX_ASSERTIONS` is already on in unoptimized builds, and the libc++ default is none. The CMake line below reflects that.
 
 ## Today
 
-### One CMake line per implementation
+### One setting per implementation
 
 ```cmake
-if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR
-   CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    # Applies when building against libc++. With libstdc++ use the GNU macro.
     add_compile_definitions(
         _LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
     )
-elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    add_compile_options(-fhardened)         # GCC 14+ umbrella
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_compile_options(-fhardened)   # GCC 14+, GNU/Linux only
+    add_link_options(-fhardened)      # the umbrella adds -pie and -Wl,-z,relro,-z,now
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    add_compile_definitions(_MSVC_STL_HARDENING=1)   # VS 2022 17.14+
+    add_compile_definitions(_MSVC_STL_HARDENING=1)   # VS 2022 17.14 and later
 endif()
 ```
 
-That's the whole opt-in. Drop it once in your top-level CMakeLists; the entire dependency tree picks it up.
+I did not run this fragment through CMake (not re-run on 2026-11-06). I ran each flag by hand on Compiler Explorer, below. Put it near the top of the top-level `CMakeLists.txt`, before the targets are created. Subdirectories added afterwards pick it up.
 
-### What each catches
+### What each setting did
 
-| Family | Catches | Cost | Notes |
-|---|---|---|---|
-| **libc++** `_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST` | `vector::operator[]` OOB, deref of null `unique_ptr` / `shared_ptr` / `optional`, `span` access past extent, `string` overruns | ~0.3% | Security-critical only. **Production-default mode** per [libc++ docs](https://libcxx.llvm.org/Hardening.html). |
-| **libc++** `_LIBCPP_HARDENING_MODE_EXTENSIVE` | Above + cheap logic-error checks | ~1-2% | Adds checks that aren't strictly security-critical but catch common bugs. |
-| **libc++** `_LIBCPP_HARDENING_MODE_DEBUG` | Above + iterator-bounds checks (needs ABI opt-in build) | ~5-15% | Debug builds only; ABI-incompatible with non-debug libc++. |
-| **libstdc++** `-D_GLIBCXX_ASSERTIONS` | Light-weight precondition checks (constant-time) | ~0-6% | Non-ABI-breaking; safe for production. |
-| **libstdc++** `-fhardened` | Above + FORTIFY_SOURCE=3 + stack protector + PIE + RELRO + stack-clash protection | ~1-2% | GCC 14+ umbrella. **The one-flag answer for GCC builds.** |
-| **libstdc++** `-D_GLIBCXX_DEBUG` | Above + iterator invalidation detection | ~30-50% | **ABI-breaking**; mix-and-match with non-debug libstdc++ fails to link. |
-| **MSVC STL** `_MSVC_STL_HARDENING=1` | `vector` / `array` / `string` / `span` / `optional` precondition checks | not published | Shipped in VS 2022 17.14, off by default. Violations call `__fastfail`. Per-type opt-in via `_MSVC_STL_HARDENING_VECTOR` and friends. |
-| **MSVC** `_ITERATOR_DEBUG_LEVEL=1` | Release-mode iterator checks | ~1-3% | A separate, **ABI-breaking** setting, not the hardening switch. Default in `/Od` builds. |
+The test program reads one element past the end of a vector:
 
-### Reproduce locally
+```cpp
+#include <vector>
+#include <print>
+int main(){ std::vector<int> v={1,2,3}; std::println("{}", v[42]); }
+```
 
-A `std::vector<int>` OOB read with libc++ FAST hardening on aborts with a clear diagnostic:
+| Implementation and setting | Catches | Result on Compiler Explorer, 2026-11-06 |
+|---|---|---|
+| libc++ 23.1.0, nothing set | nothing | printed `0`, exit 0 |
+| libc++ `_LIBCPP_HARDENING_MODE_FAST` | bounds checks on element access and input ranges. The libc++ docs recommend it for production | no output, SIGILL (exit 132) |
+| libc++ `_LIBCPP_HARDENING_MODE_EXTENSIVE` | FAST plus null-pointer checks and further cheap checks | no output, SIGILL (exit 132) |
+| libc++ `_LIBCPP_HARDENING_MODE_DEBUG` | every available check, with message text. Not for production, per the docs | `vector.h:414: libc++ Hardening assertion __n < size() failed: vector[] index out of bounds`, SIGABRT |
+| libstdc++ (GCC 16.2) at `-O2`, nothing set | nothing | printed `0`, exit 0 |
+| libstdc++ `-D_GLIBCXX_ASSERTIONS` at `-O2` | precondition checks, such as string and vector bounds | `stl_vector.h:1253: ... Assertion '__n < this->size()' failed.`, SIGABRT |
+| libstdc++ at `-O0`, nothing set | the same checks, which are on by default in unoptimized builds | the same assertion, SIGABRT |
+| libstdc++ `-fhardened` at `-O2` | defines `_GLIBCXX_ASSERTIONS` and `_FORTIFY_SOURCE=3`, among other flags | both macros defined (checked with `#ifdef`) |
+| libstdc++ `-D_GLIBCXX_DEBUG` | adds iterator checks. It changes container sizes, so debug and non-debug code cannot exchange container instances (libstdc++ manual) | not run |
+| MSVC STL, `/D_MSVC_STL_HARDENING=1` | `vector`, `array`, `string`, `span`, `optional` preconditions | MSVC 19.44 and 19.51: exit code 3221226505 (0xC0000409, `__fastfail`). MSVC 19.43: printed `0`, exit 0 |
+| MSVC STL, nothing set | nothing | 19.51: `_MSVC_STL_HARDENING` is 0, printed `0`, exit 0 |
+| MSVC `_ITERATOR_DEBUG_LEVEL` | a separate, ABI-breaking setting, not the hardening switch. Debug builds default to level 2 (MS STL wiki) | not run |
 
-<DockerRun
-  image="ghcr.io/wrocpp/cpp-safety:2026-05"
-  command={"bash -c 'cat > /tmp/oob.cpp <<EOF\n#include <vector>\n#include <print>\nint main(){ std::vector<int> v={1,2,3}; std::println(\"{}\", v[42]); }\nEOF\nclang++ -std=c++23 -stdlib=libc++ -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST /tmp/oob.cpp -o /tmp/oob && /tmp/oob 2>&1 | head -3; echo exit=$?'"}
-  expected={"libc++ aborted: vector[] index out of range\nexit=134"}
-  title="libc++ hardened FAST aborts on vector OOB (cpp-safety container)"
-/>
+Notes on the rows:
 
-The diagnostic is intentionally short (the goal is `abort()` before memory corruption, not a stack trace). Wire your crash reporter to capture it.
+- The libc++ mapping is from its Hardening documentation. FAST covers the `valid-element-access` and `valid-input-range` categories, and EXTENSIVE adds `non-null` among others. The earlier text listed `unique_ptr` and `shared_ptr` null dereference under FAST, and the documentation puts those checks in EXTENSIVE.
+- libc++ hardening has no ABI impact, and the library default is none unless the vendor sets one. The earlier text called FAST the "production-default mode" and DEBUG "ABI-incompatible". The documentation says otherwise.
+- The libstdc++ manual says `_GLIBCXX_ASSERTIONS` is defined by default when compiling without optimization.
+- The GCC 16.2 manual lists what `-fhardened` enables (below), and says it is supported on GNU/Linux only.
+- The earlier cost column (0.3%, 1-2%, 5-15%, 30-50%, 1-3%) had no source for most rows, and I removed it (not re-run on 2026-11-06).
+- The libc++ 23.1.0 release notes (releases.llvm.org, read 2026-11-06) do not mention hardening modes or assertion semantics. Their one related line is an ABI note about the bounded vector and string iterators that the `_LIBCPP_ABI_BOUNDED_ITERATORS_IN_VECTOR` and `_IN_STRING` options enable. The modes are documented on the libc++ Hardening page.
+- The MSVC rows used `/std:c++latest /O2`. I tested 19.43 (VS 2022 17.13), 19.44 (17.14) and 19.51. The MS STL wiki says the setting was planned as off by default with a later change to on; on 19.51 it was still 0.
 
-### The Google deployment data (why this matters)
+The flags that `-fhardened` enables on GCC 16.2, per its manual:
 
-Per [P3471R4](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3471r4.html), Google deployed libc++ hardened-mode-equivalent checks across hundreds of millions of lines of C++ code and reported:
+```
+-D_FORTIFY_SOURCE=3 -D_GLIBCXX_ASSERTIONS -ftrivial-auto-var-init=zero
+-fPIE -pie -Wl,-z,relro,-z,now -fstack-protector-strong
+-fstack-clash-protection -fcf-protection=full   (the last on x86 GNU/Linux only)
+```
 
-- **Performance impact: 0.3% on average.** Some workloads showed sub-noise impact; few showed >2%.
-- **Bug discovery: over 1000**, including security-critical ones. Bugs that lived for years in mature code were surfaced by the hardened checks the first time the asserting code path executed in production.
-- **No regressions reported.** The hardened mode is now Google's default for new C++ builds.
+In my run, libstdc++ 16.2 did not route its hardened check through the contracts machinery. With `-O2 -D_GLIBCXX_ASSERTIONS -fcontracts`, the vector read aborted with the library's assertion under both `-fcontract-evaluation-semantic=ignore` and `observe`. I tested those two semantics on GCC 16.2 only, and not libc++.
 
-The honest counter: the 0.3% number is across a large, mixed workload. Latency-critical paths (HFT, render loops) may show higher overhead on specific operations. Profile your workload; the cost is rarely the bottleneck people fear.
+### Where the standard stands
 
-## Reflection today (C++26, clang-p2996 + GCC 16.1)
+The draft says a hardened implementation evaluates hardened preconditions "with a terminating semantic" ([structure.specifications]/3.5.1, read on eel.is on 2026-11-06). That is the wording of [P3878R1](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3878r1.html). The paper argues that an implementation using `observe` is not hardened. libc++ documents the same risk for its own `observe` semantic. Continuing after a failed check is undefined behavior, so the semantic is meant for the adoption period.
 
-The hardened stdlib protects you when you USE its containers. It can't protect you when you DECLARE a raw `int*` or `char[64]` field -- those types don't go through any std::* access point that the library could intercept. Reflection closes the gap at the schema layer with a consteval predicate that walks the struct's data members and refuses to compile if any field uses a shape the hardened stdlib can't reach:
+P4433R0 (note 6) reports that this fix was applied to C++26 at Kona in November 2025. It answers the claim in P4334R0 that contracts are not appropriate for hardened libraries. The two papers disagree, and I take no side. I tested nothing beyond the runs above.
+
+The draft's feature-test macro for hardened vector, `__cpp_lib_hardened_vector`, was defined by libstdc++ trunk (`202502`) in my run. GCC 16.2, libc++ 23.1.0 and MSVC STL 14.51 did not define it. I checked no other hardened macro.
+
+### Two libstdc++ security fixes in October 2026
+
+As of 2026-11-06, two libstdc++ fixes by Jonathan Wakely are on master and on the gcc-14, gcc-15 and gcc-16 branches, and in no point release. GCC 16.2 (7 August) is still the newest 16.x release, 15.3 (12 June) the newest 15.x and 14.4 (26 June) the newest 14.x. I read the commits and not the trackers.
+
+- CVE-2026-114691, titled "Fix overflow in `std::vector<bool>` constructors" ([master commit](https://github.com/gcc-mirror/gcc/commit/2fd8866591), authored 26 October). Some constructors pass a user-provided size to `_S_nword`, which adds to find the number of words. A size close to `SIZE_MAX` wraps to zero. The fix adds a function that checks against `max_size()` and rejects negative and out-of-range values first.
+- CVE-2026-114690, titled "Fix buffer overrun in `__gnu_parallel` search" ([master commit](https://github.com/gcc-mirror/gcc/commit/c1f32b6751), authored 21 October). Parallel mode, enabled by `_GLIBCXX_PARALLEL` or by including its headers, declares an array of N elements where the search needs N+1. The parallel `std::search` writes out of bounds.
+
+The branch commits are dated 29 October. A practice follows, that code taking a size from untrusted input compares it with `max_size()` before constructing, and rebuilds against fixed headers once a release carries them. That practice is my inference, not the commits'. I did not read the trackers, their CVSS scores or the report provenance, and I did not run a reproducer (not re-run on 2026-11-06).
+
+### What P3471R4 says about deployment
+
+[P3471R4](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3471r4.html) (14 February 2025) says in its section on deployment experience that its authors have deployed hardening on Apple platforms in several existing code bases. It also says Google "recently published an article where they describe their experience with deploying this very technology to hundreds of millions of lines of code. They reported a performance impact as low as 0.3% and finding over 1000 bugs, including security-critical ones."
+
+Three things from the earlier version of this page are not in the paper: "0.3% on average", "no regressions reported" and "now Google's default for new C++ builds". I removed them. The paper's authors also say the library checks only a minimal set that suits production, and that checking all preconditions is an explicit non-goal.
+
+"As low as" makes the figure a floor from one organisation's workloads, not a prediction for yours. Measure your own. I did not measure overhead on 2026-11-06.
+
+## Reflection today (C++26, clang-p2996 and GCC 16.2)
+
+The hardened library protects you when you use its containers. It cannot protect a raw `int*` or `char[64]` field, because those types give the library nothing to intercept. Reflection closes the gap at the schema layer with a consteval predicate that walks the data members and refuses to compile when a field has a shape the hardened library cannot reach:
 
 ```cpp
 template <typename T>
@@ -173,31 +207,39 @@ struct Frame {
 static_assert(meets_hardened_field_shapes<Frame>());
 ```
 
-Replace `payload` with `std::byte* payload;` and the build fails with the field name in the diagnostic. Replace it with `char tag[64];` and the build fails with the C-array check. The hardened runtime + the reflection-driven schema lint together cover the full surface: the library catches USE, the schema lint catches DECLARATION.
+Replace `payload` with `std::byte* payload;` and the build fails. On GCC 16.2 the message reads:
+
+```
+error: static assertion failed: hardened-stdlib check: raw-pointer member -- use std::span or std::unique_ptr so the library's checks apply at access
+  • '!(bool)std::is_pointer_v<std::byte*>' evaluates to false
+```
+
+A `char name[64]` field fails the C-array check in the same way. The diagnostic names the field type and the instantiated struct (`[with T = FrameBadPtr]`), not the field. The earlier text said it names the field, which was wrong.
 
 Full source: <RepoFile path="posts/toolset/hardened-stdlib/examples/reflect-hardened-fields.cpp" branch="main" />.
 
 <GodboltEmbed id="ex43cheWa" title="Reflection-driven hardened-field-shapes lint (clang-p2996)" />
 
-<DockerRun
-  image="ghcr.io/wrocpp/cpp-reflection:2026-05"
-  command="bash -c 'clang++ -std=c++26 -freflection-latest -stdlib=libc++ -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST posts/toolset/hardened-stdlib/examples/reflect-hardened-fields.cpp -o /tmp/h && LD_LIBRARY_PATH=/opt/p2996/clang/lib/aarch64-unknown-linux-gnu /tmp/h'"
-  expected={"Frame passes the hardened-field-shapes check.\nUncomment the v[42] line + rebuild with hardened mode\nto see libc++ terminate with a bounds violation."}
-  title="reflect-hardened-fields locally on cpp-reflection"
-/>
+I re-ran the embedded source on 2026-11-06 on `clang_bb_p2996` with `-std=c++26 -freflection-latest -stdlib=libc++ -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST`. It compiled and exited 0 with:
 
-The same walker pattern shows up in three other toolset entries: <PostLink slug="memory-safety-cpp26-and-beyond">memory-safety-cpp26-and-beyond</PostLink> uses it for the basic safety profile, <PostLink slug="testing-for-safety-2026">testing-for-safety-2026</PostLink> uses it for `arbitrary<T>` + `pretty_diff`, <PostLink slug="profiling-cpp-2026">profiling-cpp-2026</PostLink> uses it for auto-trace wrappers. Reflection-as-structural-traversal is the cross-cluster kernel.
+```
+Frame passes the hardened-field-shapes check.
+Uncomment the v[42] line + rebuild with hardened mode
+to see libc++ terminate with a bounds violation.
+```
+
+On GCC 16.2 the same source works after replacing `#include <experimental/meta>` with `#include <meta>` (`-std=c++26 -freflection`, exit 0, same output). The container image this page used to cite was pruned, so there is no longer a `docker run` line.
+
+The same walker pattern appears in three other toolset entries: [memory-safety-cpp26-and-beyond](/toolset/memory-safety-cpp26-and-beyond/) uses it for a basic safety profile, [testing-for-safety-2026](/toolset/testing-for-safety-2026/) uses it for `arbitrary<T>` and `pretty_diff`, and [profiling-cpp-2026](/toolset/profiling-cpp-2026/) uses it for auto-trace wrappers.
 
 ## Where this is heading (C++29)
 
-Three C++29-direction pieces extend the hardened story:
+Three directions extend the hardened story. All three are papers, and I did not re-check their schedules on 2026-11-06.
 
-**1. Safety profiles (P3081 Sutter / P3589 Dos Reis / P3984 Stroustrup).** Promote the user-library `meets_<profile>` checks into language-level `[[profiles::enforce(bounds, type, lifetime)]]` attributes. The reflection-driven lint above becomes obsolete the day the attribute hard-enforces equivalent rules at namespace / class scope. Until then, the user library is the bootstrap.
+Safety profiles: [P3081R2](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3081r2.pdf) (Sutter, "Core safety profiles for C++26"), [P3589R1](https://isocpp.org/files/papers/P3589R1.pdf) (Dos Reis, the framework) and [P3984R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3984r0.pdf) (Stroustrup, a type-safety profile). P3589R1 defines `[[profiles::enforce]]` and names a hardened-library profile in its examples. If profiles are adopted, a language-level check could replace the lint above. <PostLink slug="profiles-p4415-implementation-status">The 31 October post</PostLink> covers the two experimental implementations that P4415R0 reports.
 
-**2. Contracts (P2900, already C++26).** The hardened stdlib is built on contracts -- `vector::operator[]` has a `pre(size() > i)` clause that the library implementation honors. C++26 ships the language piece; production-grade enforcement is the next ratchet. Cross-link: <PostLink slug="memory-safety-cpp26-and-beyond">memory-safety-cpp26-and-beyond</PostLink> covers contracts + reflection together.
+Contracts: the hardened library is specified on top of contract violations, and the semantic rule above ties it to the dispute. See [the contracts page](/toolset/contracts-2026/), which also records that libstdc++ 16.2 does not route its checks through the contracts handler.
 
-**3. Token injection (P3294, C++29 target).** An annotation on a struct triggers the compiler to inject the safe accessor wrappers (bounds-checked, lifetime-tracked) alongside the data members. The schema declares the intent; the compiler writes the safe API. The reflection-driven lint catches the manual-declaration case; injection makes the safe declaration the default.
+Token injection: [P3294R2](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3294r2.html) (Alexandrescu, Revzin and Vandevoorde) proposes code injection. Compiler Explorer lists no P3294 build. The earlier text suggested it could generate checked accessors, which is my speculation, not something the paper claims.
 
-The state of the codebase one decade out: hardened stdlib is just on (the macro is a no-op because the default is hardened). Profile attributes enforce the schema-level rules at compile time. Injection generates the safe accessors. The CVE class -- "vector OOB / null deref / string overrun" -- becomes "the developer disabled the hardened mode for a hot loop and forgot to re-enable it", which is a code-review issue, not a runtime exploit.
-
-Cross-references: <PostLink slug="sanitizers-2026">sanitizers-2026</PostLink> covers the runtime-instrumentation cousin (ASan + UBSan + TSan); the hardened stdlib is the always-on production complement. <PostLink slug="memory-safety-cpp26-and-beyond">memory-safety-cpp26-and-beyond</PostLink> is the umbrella story of memory safety in C++26.
+Cross-references: [sanitizers-2026](/toolset/sanitizers-2026/) covers the runtime instrumentation cousin (ASan, UBSan, TSan), and [memory-safety-cpp26-and-beyond](/toolset/memory-safety-cpp26-and-beyond/) is the umbrella entry. <PostLink slug="hardened-stdlib-turn-it-on">The October post</PostLink> walks through turning the settings on.

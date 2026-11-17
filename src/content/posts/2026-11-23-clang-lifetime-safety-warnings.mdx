@@ -1,0 +1,92 @@
+---
+title: "Clang 23.1 -Wlifetime-safety warns on 6 of 7 dangling cases, GCC 16.2 on 1"
+slug: "clang-lifetime-safety-warnings"
+pubDate: 2026-11-23
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, clang, gcc, lifetime, safety, warnings, cpp26]
+summary: "On seven small dangling cases, Clang 23.1 with -Wlifetime-safety warns on six. GCC 16.2 with -Wall -Wextra -Wdangling-pointer=2 -Wdangling-reference gives a correct dangling report on one, from inside a standard header. Without the flag Clang already warned on three. The flag adds an escaping lambda capture, a reference across push_back and a view field set from a parameter, and it flags one correct program. Trunk renamed the push_back check."
+draft: false
+relatedPosts: [reflection-dangling-signature, clang-lifetimebound-condition, libstdcxx-dangling-pair-tuple]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+I wrote seven small programs that dangle and compiled each with Clang 23.1, Clang trunk and GCC 16.2 on 2026-11-17. With `-Wlifetime-safety`, Clang 23.1 warned on six. GCC 16.2 with `-Wall -Wextra -Wdangling-pointer=2 -Wdangling-reference` gave a correct dangling report on one, and that one points into a standard header. Half of Clang's lead is not new, as the table shows.
+
+## In short
+
+- Clang 23.1 added `-Wlifetime-safety`, which is off by default and part of `-Weverything`. The release notes call it a lifetime analysis for use-after-free and related bugs.
+- Without the flag, Clang 23.1 already warned on cases 1, 2 and 6. With it, each of those gets a second warning.
+- Only with the flag did Clang warn on an escaping lambda capture, a reference held across `push_back`, and a view field set from a parameter.
+- GCC 16.2 was silent on five of seven. On case 3 it printed two warnings located inside a standard header. On case 4 it printed a warning about an uninitialized variable.
+- Trunk moved the `push_back` check behind a different flag name. Copying the 23.1 flags to a trunk build loses that warning.
+- On a correct program that calls `reserve` first, Clang warned anyway.
+
+## The seven cases
+
+Each case is a small file in the <a href="https://github.com/wrocpp/cpp26-reflection-examples/tree/1ec7a5ec864d8b0e0c7a77f8254c703eaa86a4c1/posts/119-clang-lifetime-safety">examples repository</a>. Run without an argument, a file prints one line and exits 0. All seven are views and references: a returned `string_view`, a field, a lambda capture, a reference into a vector.
+
+| case | what dangles |
+|---|---|
+| 1 | a `string_view` returned from a local string |
+| 2 | a `string_view` returned from a by-value parameter |
+| 3 | a reference field bound to a temporary through a constructor |
+| 4 | a lambda that captures a local by reference and is returned |
+| 5 | a reference to a vector element, used after `push_back` |
+| 6 | a `string_view` initialised from a temporary string |
+| 7 | a `string_view` field set from a by-value parameter |
+
+Clang ran with `-std=c++26 -Wall -Wextra` alone, and then with each lifetime flag added. GCC used `-std=c++26 -O2 -Wall -Wextra -Wdangling-pointer=2 -Wdangling-reference`.
+
+## What each compiler said
+
+| case | Clang 23.1, no lifetime flag | Clang 23.1 with the flag | GCC 16.2 |
+|---|---|---|---|
+| 1 | `-Wreturn-stack-address` | adds `stack memory associated with local variable 'text' is returned [-Wlifetime-safety-return-stack-addr]` | silent |
+| 2 | `-Wreturn-stack-address` | adds `stack memory associated with parameter 'owner' is returned [-Wlifetime-safety-return-stack-addr]` | silent |
+| 3 | silent | silent (suggestion only with `-all`) | two warnings, inside `basic_string.h` |
+| 4 | silent | `stack memory associated with local variable 'local' is returned [-Wlifetime-safety-return-stack-addr]` | `'local' may be used uninitialized`, at O2 only |
+| 5 | silent | `local variable 'v' is later invalidated [-Wlifetime-safety-invalidation]` | silent |
+| 6 | `object backing the pointer will be destroyed at the end of the full-expression [-Wdangling-gsl]` | adds `temporary object does not live long enough [-Wlifetime-safety-use-after-scope]` | silent |
+| 7 | silent | `stack memory associated with parameter 's' escapes to the field 'name' which will dangle [-Wlifetime-safety-dangling-field]` | silent |
+
+So the count is this. Without the flag, Clang warned on 3 of 7 (cases 1, 2 and 6). With it, Clang warned on 6, and the three new ones are cases 4, 5 and 7. Case 3 stayed silent apart from a suggestion to mark the constructor parameter with `[[clang::lifetimebound]]`, which appears only with `-Wlifetime-safety-all`.
+
+GCC's output on case 3 is real but hard to read. The first warning is `using a dangling pointer to an unnamed temporary [-Wdangling-pointer=]`, and it points at line 238 of `bits/basic_string.h`, not at the program. The warning for case 4 names the wrong problem. It says the captured variable may be used uninitialized, and it disappears at `-O0`.
+
+## The bugs are real
+
+I ran cases 1 and 5 with `-std=c++26 -O1 -g -fsanitize=address` and the argument `bug`, on both GCC 16.2 and Clang 23.1. Both compilers produced `heap-use-after-free` and exit code 1 for both cases. The read in case 1 is of one byte, and in case 5 of four. I did not run cases 2, 3, 4, 6 and 7 under AddressSanitizer.
+
+<GodboltEmbed id="nf1jEMb7T" gccOnly gccLabel="GCC 16.2" title="Case 1: a string_view returned from a local string, safe path" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O2 -Wall -Wextra -Wdangling-pointer=2 -Wdangling-reference · runs live" />
+
+## Names that changed between 23.1 and trunk
+
+The Clang documentation groups the checks. `-Wlifetime-safety-permissive` is the high-confidence subset and the page recommends it for initial adoption. `-Wlifetime-safety-strict` adds checks with a `-moved` variant. `-Wlifetime-safety-all` enables everything, including suggestions. The documentation says move semantics are not tracked, and calls the tool a bug finder, not a verifier.
+
+On Clang 23.1 the invalidation check is `-Wlifetime-safety-invalidation`, and `-Wlifetime-safety` turns it on. On Clang trunk of 2026-11-17 that name is unknown, and the check is `-Wlifetime-safety-experimental-invalidation`. The experimental group is not part of `-Wlifetime-safety-all`. On trunk, case 5 was silent with `-Wlifetime-safety` and with `-Wlifetime-safety-all`, and it warned only with the experimental flag added. The reverse also holds: 23.1 rejects the new name as an unknown option.
+
+I did not run `-Wlifetime-safety-strict` on cases 1 to 7, so I have no numbers on its extra warnings.
+
+## One false positive
+
+Case 8 is correct. It calls `reserve` with room for both elements, takes a reference to the first and then pushes a second. Clang 23.1 still prints `local variable 'v' is later invalidated`. The program prints 7 and GCC is silent. The analysis does not appear to model the capacity, so it treats `push_back` as an invalidation.
+
+The suggestion warnings are a different kind of noise. A function that returns one of two parameters gets two `should be marked [[clang::lifetimebound]]` notes under `-Wlifetime-safety-all`. They are correct and show what the analysis wants annotated.
+
+## What to add to Clang CI
+
+- Add `-Wlifetime-safety-permissive` first, as the documentation advises, and fix what it reports.
+- Add `-Wlifetime-safety` on the Clang 23 job once that is clean. It is the flag that caught cases 4, 5 and 7.
+- Keep `-Wlifetime-safety-all` on a separate job, because the suggestions are useful but noisy.
+- Do not copy the flag list to a trunk job. Check each name against that compiler first, since an unknown warning option is only a warning.
+- Silence a false positive at the line, with a comment that names the reason, not with a global `-Wno-`.
+- Keep GCC's warnings on. They gave one correct report here, on case 3, and cost nothing.
+
+The analysis is intra-procedural and treats unannotated calls optimistically, so it will miss bugs that cross functions. For a stronger check, see the reflection lint in <PostLink slug="reflection-dangling-signature">this earlier post</PostLink> and the attribute in <PostLink slug="clang-lifetimebound-condition">the lifetimebound post</PostLink>. The <a href="/toolset/lifetime-safety-2026/">lifetime safety toolset page</a> compares Clang, GCC and MSVC on one sample.
+
+Sources: the [Clang 23.1.0 release notes](https://releases.llvm.org/23.1.0/tools/clang/docs/ReleaseNotes.html) and the [Clang lifetime safety page](https://clang.llvm.org/docs/LifetimeSafety.html), both read on 2026-11-17. The sources and all outputs are in [`posts/119-clang-lifetime-safety`](https://github.com/wrocpp/cpp26-reflection-examples/tree/1ec7a5ec864d8b0e0c7a77f8254c703eaa86a4c1/posts/119-clang-lifetime-safety). Everything else ran on Compiler Explorer on 2026-11-17. I did not run MSVC.

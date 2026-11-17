@@ -65,3 +65,11 @@ So an open-source user on Qt 6.11 has two ways to the fixes. One is to move to 6
 - I did not reproduce any of the six issues, and I do not rate them beyond the scores on the pages.
 - Commercial release channels were not checked.
 - Third-party packages such as Python wheels bundle their own Qt and may lag behind.
+
+## Update on 6 November
+
+The line above that found no 6.11.3 is out of date. On 6 November the open-source 6.11 directory lists 6.11.3, dated 26 October. The 6.12 directory still lists only 6.12.0, dated 30 September.
+
+Between 27 October and 6 November the Qt Company published ten more advisories. Five name 6.12.1 as fixed, together with 6.11.3: the Qt3D assimp importer ([CVE-2026-111487](https://www.qt.io/blog/security-advisory-cve-2026-111487)), the CBOR to JSON conversion ([CVE-2026-105924](https://www.qt.io/blog/security-advisory-cve-2026-105924)), the Qt 5 Compatibility XML reader ([CVE-2026-100140](https://www.qt.io/blog/security-advisory-cve-2026-100140)), `QHttpServer` ([CVE-2026-110944](https://www.qt.io/blog/security-advisory-cve-2026-110944)) and `QWebSocket` ([CVE-2026-114366](https://www.qt.io/blog/security-issue-cve-2026-114366)). I found no 6.12.1 in the 6.12 directory, so a 6.12 user has the patches only.
+
+The other five are [CVE-2026-105946](https://www.qt.io/blog/security-advisory-cve-2026-105946), [CVE-2026-103653](https://www.qt.io/blog/security-advisory-cve-2026-103653), [CVE-2026-107590](https://www.qt.io/blog/security-advisory-cve-2026-107590), [CVE-2026-107457](https://www.qt.io/blog/security-advisory-cve-2026-107457) and [CVE-2026-107479](https://www.qt.io/blog/security-advisory-cve-2026-107479-integer-truncation-vulnerability-in-qtextcodec-conversion-functions-impacts-qt-framework). I have not checked whether 6.11.3 contains the fixes for advisories published after 26 October.

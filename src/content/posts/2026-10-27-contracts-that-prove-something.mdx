@@ -59,7 +59,9 @@ bool valid_address(const Address&);
 Address make_address(int port) pre(valid_port(port)) post(r : valid_address(r));
 ```
 
-At the ignore semantic the program links and runs, because the predicates are never evaluated. At the other three it fails with `undefined reference to valid_port(int)`. A contract predicate is code. The compiler needs its definition the moment a check exists.
+At the ignore semantic the program links and runs on GCC 16.2. At the other three it fails with `undefined reference to valid_port(int)`. A contract predicate is code. The compiler needs its definition the moment a check exists.
+
+Correction of 6 November: I first wrote that ignore links "because the predicates are never evaluated". The standard gives no such reason. P2900R14 section 3.5.4 says the predicate is potentially evaluated but not evaluated, so the names in it are odr-used. An odr-used non-inline function needs a definition, with no diagnostic required. GCC 16.2 and trunk link at ignore, at `-O0` and `-O2`, and the standard does not promise it.
 
 ### A postcondition does not travel to the caller
 

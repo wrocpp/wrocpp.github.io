@@ -2,6 +2,7 @@
 import { getCollection, render, type CollectionEntry } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import ReviewedBadge from '../../components/ReviewedBadge.astro';
+import ScrollTable from '../../components/ScrollTable.astro';
 
 export async function getStaticPaths() {
   const entries = await getCollection('toolset', ({ data }) => !data.draft);
@@ -37,7 +38,7 @@ const { title, summary, kind, lastReviewed, nextReviewBy, testedOn, tags, licenc
     />
 
     <article class="prose reveal reveal-1">
-      <Content />
+      <Content components={{ table: ScrollTable }} />
     </article>
 
     <footer class="toolset-footer reveal reveal-2">

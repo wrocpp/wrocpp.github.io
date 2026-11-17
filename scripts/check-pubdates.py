@@ -92,6 +92,23 @@ def yellow(s: str) -> str:
     return f"\033[33m{s}\033[0m"
 
 
+GAP_WARN_DAYS = 3  # days after today that must already have a post
+
+
+def warn_about_gaps() -> None:
+    """Advisory: the site promises a post every day, so name a day in the next days that has none."""
+    import importlib.util
+    from datetime import datetime, timedelta, timezone
+
+    spec = importlib.util.spec_from_file_location("check_daily_gap", REPO / "scripts" / "check_daily_gap.py")
+    gap = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gap)
+    start = datetime.now(timezone.utc).date() + timedelta(days=1)
+    gaps = gap.find_gaps(gap.published_days(POSTS), start, GAP_WARN_DAYS)
+    if gaps:
+        print(f"{yellow('WARN')}  no post planned for {', '.join(gaps)}; fill the day or re-date a queued post")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--strict", action="store_true",
@@ -194,6 +211,7 @@ def main() -> int:
     if warnings and args.strict:
         print(f"{red('FAIL')}: {len(warnings)} warning(s) under --strict.")
         return 1
+    warn_about_gaps()
     print(green(f"OK: {total} posts, no scheduling conflicts."))
     return 0
 
