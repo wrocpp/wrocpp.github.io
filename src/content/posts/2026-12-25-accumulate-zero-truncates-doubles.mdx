@@ -1,0 +1,80 @@
+---
+title: "std::accumulate with a 0 over doubles returns an int, and fold_left does not"
+slug: "accumulate-zero-truncates-doubles"
+pubDate: 2026-12-25
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp, cpp23, cpp26, algorithms, accumulate, fold_left, warnings, gcc, msvc]
+summary: "Over a vector of three 0.5 values, std::accumulate with an initial 0 returns the int 0 and std::ranges::fold_left returns the double 1.5. GCC 16.2 and Clang 22.1 stay silent with -Wall, -Wextra and -Wconversion, and Clang with -Weverything. MSVC warns with C4244, and clang-tidy has a check for it. At -O3 all three sums vectorise."
+draft: false
+relatedPosts: [handle-overflow-and-division-by-zero-without-ub, enum-to-string]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+Prince Patel {/* LINK: Prince Patel LinkedIn post, URL from the user */} posted a PHP picture of three array sums and asked which you would merge. The three are a loop, one library call and a defensive version. The C++ answer has the same three shapes, plus one trap: the initial value of `std::accumulate` decides the type of the result. Over three values of 0.5, an initial `0` makes it return the integer 0. `fold_left` returns the double 1.5.
+
+## In short
+
+- `std::accumulate(v.begin(), v.end(), 0)` over three 0.5 values returned 0. A loop and `fold_left` returned 1.5. Both facts are `static_assert`s in the example.
+- GCC 16.2, GCC trunk and Clang 22.1 printed no warning. I ran `-Wall -Wextra -Wconversion -Wfloat-conversion` on GCC, and `-Weverything` on Clang.
+- MSVC warns with C4244 at its default warning level. clang-tidy's `bugprone-fold-init-type` warns too.
+- For `int`, the three sums compile to the same add loop at `-O2` on GCC 16.2. At `-O3` all three vectorise, on GCC 16.2 and on Clang 22.1.
+- `std::saturating_add` clamps at `INT_MAX` on GCC 16.2. I would merge `fold_left`, and `accumulate` only with a double.
+
+## The trap
+
+The example sums three halves three ways:
+
+```cpp
+const std::vector<double> halves(3, 0.5);
+
+double total = 0;
+for (double x : halves) total += x;                          // 1.5
+auto a = std::accumulate(halves.begin(), halves.end(), 0);  // int, 0
+auto f = std::ranges::fold_left(halves, 0, std::plus{});    // double, 1.5
+```
+
+The result type of `accumulate` is `T`. The literal `0` makes it `int`. Each addition converts the running sum back to an integer, and 0.5 becomes 0 every time. The program prints `accumulate  0`. [Cppreference](https://en.cppreference.com/w/cpp/algorithm/accumulate) declares the return type as `T`.
+
+<GodboltEmbed id="PsEY39G3a" gccOnly gccLabel="GCC 16.2" title="Three sums of {0.5, 0.5, 0.5}: loop, accumulate and fold_left" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O1 · runs live" />
+
+## Why fold_left gets it right
+
+The result type of `fold_left` comes from the operation. [Cppreference](https://en.cppreference.com/w/cpp/algorithm/ranges/fold_left) gives it as the decayed result of invoking the function with the initial value and an element. With `std::plus{}`, an integer plus a double is a double. The initial `0` only seeds the sum. The standard names the algorithm in [alg.fold]; I read the cppreference page and not the draft.
+
+`fold_left` is C++23. <PostLink slug="enum-to-string">The enum-to-string post</PostLink> uses it for another job.
+
+## Who warns
+
+I ran the same two calls on Compiler Explorer on 2026-11-17, in a copy of the program without `saturating_add`. Clang 22.1 does not have it.
+
+| compiler | options | `accumulate` | `fold_left` |
+|---|---|---|---|
+| GCC 16.2 | `-Wall -Wextra -Wpedantic -Wconversion -Wfloat-conversion -Wsign-conversion -Wdouble-promotion` | none | none |
+| Clang 22.1, libc++ and libstdc++ | `-Weverything` without the C++98 groups | none | none |
+| MSVC (CE `vcpp_v19_latest_x64`) | default, `/W1` to `/W4`, `/Wall` | C4244 | none |
+| clang-tidy trunk | `-checks=-*,bugprone-fold-init-type` | one warning | none |
+
+The MSVC text is `warning C4244: '=': conversion from 'double' to '_Ty', possible loss of data`, with `_Ty=int`. A note names the `accumulate` instantiation at the call line. The clang-tidy text is `folding type 'double' into type 'int' might result in loss of precision`. GCC trunk was run with `-Wall -Wextra -Wconversion -Wfloat-conversion` on the full example, and was also silent. I did not run `-Weverything` on GCC, which has no such flag, and I did not test other clang-tidy versions.
+
+## Same assembly for int
+
+The assembly comparison is for `std::span<const int>`, where there is no conversion to lose.
+
+On GCC 16.2 at `-O2`, the loop and `accumulate` give one four-instruction loop: an add, a pointer step, a compare and a branch. The `fold_left` version loads the first element and then enters that loop. At `-O3` GCC 16.2 vectorises all three, with `paddd` in each. Clang 22.1 with libc++ vectorises all three at `-O2` and `-O3`. I read x86-64 only.
+
+<GodboltEmbed id="q5o9jqhdE" gccOnly gccLabel="GCC 16.2" title="Assembly of a loop, accumulate and fold_left over std::span<const int>" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O2 · assembly view" />
+
+## The defensive version
+
+A defensive sum in C++ guards one thing: `int` overflow. The usual `try` and `catch` does not help, because signed overflow throws nothing. C++26 adds `std::saturating_add` in `<numeric>`. On GCC 16.2, `saturating_add(INT_MAX, 1)` returned 2147483647, and a loop built on it returned the same for `{INT_MAX, 1}`. The name in the proposal, `add_sat`, is not a member of `std` on GCC 16.2. <PostLink slug="handle-overflow-and-division-by-zero-without-ub">The overflow post</PostLink> compares saturating, checked and trapping arithmetic.
+
+## Which one to merge
+
+I would merge `fold_left` for a sum, because the result type follows the elements and no compiler needs to catch a slip. Keep `accumulate` only with an initial value of the element type, such as `0.0`, and keep the loop when you need saturating or checked steps.
+
+The sources and all outputs are in [`posts/135-sum-three-ways`](https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/135-sum-three-ways). Everything here ran on Compiler Explorer on 2026-11-17.
