@@ -1,0 +1,103 @@
+---
+title: "An empty constructor written {} stops {} from zeroing the object"
+slug: "default-or-braces-constructor-initialisation"
+pubDate: 2026-11-24
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp, cpp26, constructors, initialization, erroneous-behavior, sanitizers, gcc, clang]
+summary: "With the empty constructor spelled = default in the class, T() and T{} zero a class and the class stays trivial. Spelled {} or defined outside the class, neither zeroes it and the class is not trivial. On GCC 16.2 and Clang 22.1 the difference shows in constant expressions, in traits and in what a read of an unset member gives."
+draft: false
+relatedPosts: [match-each-ub-case-to-a-checking-tool, erroneous-behavior, sanitizers-on-ce, trivially-copyable-but-not-copyable]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+A class with three members and an empty constructor has two spellings, `= default` and `{}`, and they are not the same constructor. With `= default` in the class, `T{}` reads as zero and the class is trivial. With `{}` the same expression leaves the members alone and the class is not trivial. Daniel Lemire [measured the speed cost](https://lemire.me/blog/2026/11/02/default-and-braces-are-not-the-same-constructor/) of this choice on 2 November 2026. I did not run timings; this post checks the semantics on Compiler Explorer.
+
+## In short
+
+- With the constructor defaulted in the class, `T()` and `T{}` zero the members and the class is trivial. With `Braced() {}` neither does.
+- `= default` on a later definition outside the class is user-provided, so it behaves like `{}`.
+- `T t;` leaves the members alone for every class here, unless each member has a default member initialiser.
+- A read of an unset local printed `0` on GCC 16.2 in C++26 mode, and Clang's MemorySanitizer reported the same read.
+- My default is a default member initialiser on every member, and `= default` in the class.
+
+## Three spellings of one constructor
+
+The classes differ in one line. `Defaulted` has `Defaulted() = default;` in the class. `Braced` has `Braced() {}`. `OutOfLine` declares its constructor in the class and defines it as `= default` outside. Each holds a start pointer, a length and an end pointer, plus a constructor that sets all three.
+
+I decide "zeroed" in a constant expression. If a form leaves the length unset, reading it is not a constant expression, so no unset value is read at run time. The program prints this on GCC 16.2, GCC trunk, Clang 22.1 and Clang trunk:
+
+```text
+Defaulted        trivial 1 | T t;: left alone | T(): zeroed     | T{}: zeroed
+Braced           trivial 0 | T t;: left alone | T(): left alone | T{}: left alone
+OutOfLine        trivial 0 | T t;: left alone | T(): left alone | T{}: left alone
+Plain            trivial 1 | T t;: left alone | T(): zeroed     | T{}: zeroed
+```
+
+`Plain` is an aggregate of two ints and follows `Defaulted`. [Cppreference](https://en.cppreference.com/w/cpp/language/value_initialization) gives the rule. A class without a user-provided default constructor is zero-initialised first, and then default-initialised. A user-provided one runs alone, and members it does not set stay unset. `{}` and `= default` outside the class are both user-provided.
+
+`std::make_unique<Defaulted>()` value-initialises, and the program prints length `0` and a null pointer for it. `std::span<int>` has a user-provided default constructor. A `std::span<int> view{}` has a null data pointer and size 0, and the span class is not trivially default constructible.
+
+<GodboltEmbed id="4PcM4bG9j" gccOnly gccLabel="GCC 16.2" title="Which initialisation forms zero a class, and the traits of each spelling" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O1 -Wall -Wno-deprecated-declarations · runs live" />
+
+## What the spelling does to the traits
+
+Each row is a `static_assert` in the example.
+
+| class | trivially default constructible | `std::is_trivial_v` | aggregate |
+|---|---|---|---|
+| `Defaulted` | yes | yes | no |
+| `Braced` | no | no | no |
+| `OutOfLine` | no | no | no |
+| `WithInitialiser` (`int length; int extra = 7;`) | no | no | yes |
+| `Plain` | yes | yes | yes |
+
+Choosing `{}` costs triviality, not copyability. `Braced` and `OutOfLine` are still trivially copyable, so copying their bytes stays valid. GCC 16.2 also warns that `std::is_trivial_v` is deprecated and suggests testing the two parts separately. The example hides that warning on purpose.
+
+## Default member initialisers
+
+`WithInitialiser` shows what an initialiser does. Its implicit constructor is not trivial, because `extra` is set to 7. Both `WithInitialiser()` and `WithInitialiser{}` print length 0 and extra 7, since the zeroing happens first.
+
+A class where every member has an initialiser needs no zeroing at all. The example's `Initialised` gives its pointers `nullptr` and its length 0. A plain `Initialised plain;` prints length 0 and a null start. It is not trivial and it is still an aggregate.
+
+One discrepancy: GCC 16.2 and GCC trunk reject `WithInitialiser()` in a constant expression with the error `accessing uninitialized member`. The same program prints 0 at run time, and Clang accepts it. Cppreference describes zero-initialisation first, so I read this as a gap in GCC. I did not check whether it is reported.
+
+## What a read of an unset value gives
+
+The same constructors matter when a member is read before anything sets it. A second program reads the length of one object, chosen by an argument. GCC 16.2 printed these values at `-O0`:
+
+| mode | `-std=c++23` | `-std=c++26` | `-std=c++26 -ftrivial-auto-var-init=pattern` |
+|---|---|---|---|
+| `Defaulted d;` | `-104` | `0` | `-16843010` |
+| `Braced b;` | `0` | `0` | `-16843010` |
+
+The C++23 values are whatever was on the stack. C++26 changes the status of the first two rows: reading an automatic variable that nothing initialised is erroneous behaviour, not undefined. [GCC 16 lists P2795R5](https://gcc.gnu.org/gcc-16/changes.html) as implemented, and [cppreference lists only GCC 16](https://en.cppreference.com/w/cpp/compiler_support/26.html) for it. Clang 22.1 ignored `[[indeterminate]]` with a warning, so I did not test its erroneous values. The uninitialised read is one row of the table in <PostLink slug="match-each-ub-case-to-a-checking-tool">which tool catches which case</PostLink>. <PostLink slug="erroneous-behavior">The post on erroneous behavior</PostLink> covers the rule.
+
+An object from `new` stays indeterminate. The [draft rule](https://eel.is/c++draft/basic.indet) gives erroneous values to automatic storage unless `[[indeterminate]]` applies, and indeterminate values to dynamic storage. So `std::make_unique_for_overwrite<Defaulted>()` followed by a read is still undefined. It printed `0` on GCC 16.2, which proves nothing.
+
+Clang 22.1 with `-fsanitize=memory` found four of the reads:
+
+```text
+==2==WARNING: MemorySanitizer: use-of-uninitialized-value
+    #0 ... in read_automatic() /app/example.cpp:29:3
+SUMMARY: MemorySanitizer: use-of-uninitialized-value /app/example.cpp:29:3 in read_automatic()
+```
+
+The same report named the braced local, the `[[indeterminate]]` local and the heap read. `std::make_unique<Defaulted>()` ran clean. At `-O1` the sanitizer reported only the heap read, because the optimiser had folded the others before instrumentation. See <PostLink slug="sanitizers-on-ce">the sanitizers post</PostLink> for running these on Compiler Explorer.
+
+GCC 16.2 with `-O1 -Wall` warned `is used uninitialized [-Wuninitialized]` on the local reads, and on the heap read in the helper.
+
+## What I write
+
+- Give every member a default member initialiser. Then all three forms agree, and the question above does not arise.
+- When the empty constructor is wanted, write `T() = default;` in the class. The class stays as trivial as its members allow.
+- For a type without initialisers, such as a plain aggregate, value-initialise at the call site with `T{}`. Do not rely on a `{}` constructor to do it.
+- Treat a `{}` constructor as a choice with a price. It makes the class non-trivial and stops `T{}` from zeroing.
+
+Lemire's timings show that the price can be speed. This post shows that it is also the zeroing and the traits.
+
+The sources and all outputs are in [`posts/120-default-vs-empty-constructor`](https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/120-default-vs-empty-constructor). Everything here ran on Compiler Explorer on 2026-11-17.
