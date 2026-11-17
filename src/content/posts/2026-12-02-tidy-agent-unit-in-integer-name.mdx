@@ -1,0 +1,102 @@
+---
+title: "A TTL of 30 seconds became 30 milliseconds, and a name check flags both fields"
+slug: "tidy-agent-unit-in-integer-name"
+pubDate: 2026-12-02
+author: filip-sajdak
+language: en
+kind: short
+series: tidy-agent
+series_order: 2
+audience: working-cpp
+tags: [cpp, clang-tidy, ai-agents, chrono, units, static-analysis, series]
+summary: "A TTL stored in a field called timeoutMs compiles and runs 1000 times too short. A clang-tidy query check flags integer fields and variables whose name ends in a unit, 2 of 2 in the example, and cannot see a unit in a comment or a type alias. It ran on clang-tidy trunk on Compiler Explorer. Episode 2 of the tidy-agent series."
+draft: false
+relatedPosts: [unit-bug-mars-orbiter, units-road-to-cpp29, unit-safe-text]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+A struct with `std::int64_t ttl_sec` and `std::int64_t timeoutMs` accepts the same number in both. A clang-tidy query check, `wrocpp-unit-in-integer-name`, flags every integer or floating variable and field whose name ends in a unit. In the example below it reports 2 of 2 such fields. It reports 0 on the same struct written with `std::chrono` durations.
+
+## In short
+
+- Storing a TTL of 30 seconds into `timeoutMs` compiles without a warning and gives 30 ms where 30000 ms was meant.
+- The check matches names that end in a unit suffix, for example `Ms` or `_sec`. It reports 2 of 2 on the example, and 3 of 3 on a second file built to have hits.
+- It does not read comments or type aliases, and it misses `Milliseconds` and `Minutes`. Six of nine members in the second file go unreported.
+- Seconds convert to milliseconds exactly, and the reverse does not compile. That is the fix the check points at.
+- This is a query check, so it ran on Compiler Explorer: clang-tidy trunk, LLVM 24.0.0git, 2026-11-17.
+
+## The slip
+
+Agents that write a config struct often put the unit in the name, so a reader knows what the number means. The compiler does not read names:
+
+```cpp
+struct Config {
+    std::int64_t ttl_sec;
+    std::int64_t timeoutMs;
+};
+
+Config plain_config() {
+    return {.ttl_sec = kTtlValue, .timeoutMs = kTtlValue};
+}
+```
+
+With `kTtlValue` equal to 30, the program prints `plain: timeoutMs = 30 (meant 30000)`. It built and exited 0 on GCC 16.2 with `-std=c++20 -O1`. The same slip with durations is not a slip:
+
+```cpp
+struct Config {
+    std::chrono::seconds ttl;
+    std::chrono::milliseconds timeout;
+};
+```
+
+Here `.timeout = ttl` converts exactly, and the program prints `typed: timeout = 30000 ms`. Two assertions in the file state the other direction. Seconds convert to milliseconds, and milliseconds do not convert to seconds. <PostLink slug="unit-bug-mars-orbiter">The first mp-units episode</PostLink> tells of a unit slip that cost a spacecraft, and <PostLink slug="units-road-to-cpp29">the last one</PostLink> follows the units library toward the standard.
+
+## What the check reports
+
+On the plain struct, clang-tidy trunk prints two warnings and none for the typed one:
+
+```text
+<source>:15:5: warning: a unit that lives only in the name is not checked; use a std::chrono duration or a units type [custom-wrocpp-unit-in-integer-name]
+   15 |     std::int64_t ttl_sec;
+<source>:16:5: warning: a unit that lives only in the name is not checked; use a std::chrono duration or a units type [custom-wrocpp-unit-in-integer-name]
+   16 |     std::int64_t timeoutMs;
+```
+
+The check is one matcher in a YAML file. It matches a variable or field of integer or floating type, not `bool`, whose name matches a regular expression of unit suffixes. The suffixes and the paths it skips are edited in that file. The same files gave the same warnings locally with Homebrew clang-tidy, LLVM 23.1.5.
+
+<GodboltEmbed id="MsY1oKG1T" gccOnly compilerLabel="clang-tidy trunk" title="Two integer fields with a unit in the name, flagged by a query check" gcc_subtitle="x86-64 clang (trunk) · -std=c++20 -fsyntax-only · clang-tidy trunk, LLVM 24.0.0git" />
+
+## What it does not catch
+
+A second file declares nine members. The check flags three and passes six:
+
+| member | reported | why not |
+|---|---|---|
+| `deadlineMs`, `retry_sec`, `chunk_bytes` | yes | suffix in the list |
+| `timeout` with a comment saying milliseconds | no | the unit is in a comment |
+| `delay` of type `Millis`, an alias of `std::int64_t` | no | the unit is in a type alias |
+| `period` with a comment saying seconds | no | the unit is in a comment |
+| `lifetimeMilliseconds`, `windowMinutes` | no | those suffixes are not in the list |
+| `ms` | no | the pattern needs a character before the suffix |
+
+The suffix list can grow. A name pattern cannot read a comment, and an alias hides the unit from the name. A units library such as mp-units closes both, because the unit is part of the type. The check only finds the places where an agent should have used one.
+
+<GodboltEmbed id="soqefM48M" gccOnly compilerLabel="clang-tidy trunk" title="Nine members: three flagged, six invisible to a name check" gcc_subtitle="x86-64 clang (trunk) · -std=c++20 -fsyntax-only · clang-tidy trunk, LLVM 24.0.0git" />
+
+## A false positive I saw
+
+I ran the check on [cloudevents-sdk-cpp](https://github.com/filipsajdak/cloudevents-sdk-cpp) at commit `a414e8d`, on its headers and on a few of its test files. It flagged constants such as `max_string_bytes` and `word_bytes`, which hold a size in bytes. They are correct, and the standard library has no byte-count type to put them in. The check reports them anyway, so expect to exempt byte counts, or the `Bytes` suffixes, in a project that uses them. I scanned only some of the files, since the test files need a library I did not install, so I give no total.
+
+Since commit `4327ffc`, that repository's `CLAUDE.md` requires every time quantity to be a chrono type. Commit `2a05d72` then turned the place values in its timestamp parser into durations. The remaining hit I saw for a time unit was `max_timestamp_seconds`. Its type is `std::chrono::seconds`, so the check does not report it.
+
+## Why a check and not a rule
+
+A line in `CLAUDE.md` asks the agent to remember. A query check reports the line it did not remember, with a file and a line number, at no token cost.
+
+The check's spec cites a proprietary service of about 160,000 lines. A TTL in seconds was assigned to a millisecond timeout there, and 8 or more refactor commits followed. 99 integer declarations with a unit suffix remained outside tests. These are the spec's figures from the author's work on agent-written code, and I did not re-run the count.
+
+I also did not measure how often an agent breaks the prose rule. This post shows what the check finds, not that it beats the rule.
+
+The sources and all outputs are in [`posts/123-unit-in-integer-name`](https://github.com/wrocpp/cpp26-reflection-examples/tree/79189e284815e71c90f940398c7878d5bbbe881d/posts/123-unit-in-integer-name). The check lives in [wrocpp/tidy-agent](https://github.com/wrocpp/tidy-agent). The program runs and the clang-tidy runs are from 2026-11-17.

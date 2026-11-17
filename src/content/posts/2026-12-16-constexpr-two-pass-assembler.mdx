@@ -1,0 +1,150 @@
+---
+title: "Two passes in one constexpr function: labels in a compile-time assembler"
+slug: "constexpr-two-pass-assembler"
+pubDate: 2026-12-16
+author: filip-sajdak
+language: en
+kind: flagship
+audience: working-cpp
+tags: [cpp, constexpr, assembler, x86-64]
+summary: "A forward jump names a label that is not defined yet, so an assembler needs two passes. Andrew Alekseev built one out of find-and-replace and hid the passes in the program's run time. In C++ the two passes are two loops in a constexpr function. This one assembles nine real x86-64 instructions, checks 44 bytes with a static_assert, and runs them on native x86-64: the program sums 3 + 2 + 1 and returns 6."
+draft: false
+relatedPosts: [raii-ffmpeg-libav, flag-that-moves-code]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+A forward jump needs two passes, because the label it names is not defined yet.
+In a constexpr function the two passes are two loops, and the result is checked before the program runs.
+
+## In short
+
+- Andrew Alekseev wrote on LinkedIn about an assembler bootstrapped from find-and-replace. Labels were the biggest problem, because a jump may name a label defined later.
+- Their answer was to run the program twice. The first run only records label addresses, and the second runs for real.
+- A compile-time assembler gets the same two passes from two loops. Pass 1 records where each label lands. Pass 2 emits bytes with every label known.
+- My version assembles nine real x86-64 instructions into 44 bytes, with one backward and one forward reference.
+- The bytes match a table I wrote by hand, and a disassembler reads them back as the source. On native x86-64 they run and return 6.
+
+## The problem with labels
+
+An assembler turns `jmp done` into bytes.
+The jump's operand is a distance, and the distance depends on where `done` is.
+If `done` is defined three lines later, the assembler has not seen it yet.
+
+The standard answer is two passes.
+The first pass only measures: it walks the source and notes the address of each label.
+The second pass emits bytes, and every label, including the ones defined after a jump, is already known.
+
+Andrew Alekseev's first assembler could not do that.
+Their post says it is a shell script of `sed` commands, which cannot make two passes over a file.
+So they hid the two passes in the run time of the program.
+The [project's README](https://github.com/blankyet/BlankedASM/blob/d3f45a3d164b42c060477efe062ac46672b405ce/README.md) describes it.
+In the first run every instruction is skipped, and each label stores its address.
+At the end of the file a flag flips and execution jumps back to the start, and the second run executes for real.
+
+That project has no license, so I used none of its code.
+Everything below is my own, and it is a different design for a different constraint.
+
+## Two loops
+
+In C++ nothing stops the assembler from reading its input twice.
+Pass 1 is a function that returns the label table and the total size:
+
+```cpp
+constexpr Layout layout(std::string_view source) {
+  Layout out;
+  for_each_line(source, [&](const Line& line) {
+    if (!line.label.empty()) {
+      if (out.count == kMaxLabels) fail("too many labels");
+      out.labels[out.count++] = Label{line.label, out.size};
+    }
+    out.size += size_of(line);
+  });
+  return out;
+}
+```
+
+Pass 2 calls it, then emits.
+A jump's operand is the label's address minus the address of the next instruction:
+
+```cpp
+const auto rel32 = [&](const Line& line) {
+  const auto end_of_instruction = static_cast<std::int64_t>(at + size_of(line));
+  return static_cast<std::int32_t>(
+      static_cast<std::int64_t>(address_of(l, line.op1)) - end_of_instruction);
+};
+```
+
+A bad program is a compile error.
+`fail` is declared and never defined, so calling it while evaluating a constant expression stops the build.
+
+## The program
+
+The program sums 3 + 2 + 1.
+It has a backward reference, `jne top`, and a forward one, `jmp done`.
+The forward one is the case a single pass cannot handle:
+
+```
+        mov rax, 0
+        mov rcx, 3
+top:    add rax, rcx
+        sub rcx, 1
+        cmp rcx, 0
+        jne top          ; backward: top is already known
+        jmp done         ; forward: done is defined below
+        nop              ; skipped by the jump
+done:   ret
+```
+
+The assembler produces 44 bytes.
+The two jumps show the arithmetic.
+`jne top` sits at offset 31 and is 6 bytes long, so the next instruction is at 37, and `top` is at 14.
+The operand is 14 − 37 = −23.
+`jmp done` sits at 37 and is 5 bytes long, so the next instruction is at 42, and `done` is at 43.
+The operand is +1.
+
+## Three checks
+
+The first check is a `static_assert` against a table of bytes I derived by hand from the encodings.
+It does not use the assembler, so the assembler cannot grade itself.
+
+The second is a disassembler.
+The disassembler is `llvm-mc` from LLVM 23.1.1.
+It reads the 44 bytes back as the program above, with `jne -23` and `jmp 1`.
+
+The third is running it.
+The bytes are copied into executable memory and called as a function, which works on x86-64 Linux.
+On Compiler Explorer, native x86-64 GCC 16.2, the call returns 6 at `-O0` and at `-O2`.
+
+<GodboltEmbed id="M3TcGq99K" gccOnly gccLabel="GCC 16.2" title="A two-pass assembler at compile time" gcc_subtitle="x86-64 GCC 16.2 · -std=c++23 · assembles at compile time, then runs the bytes" />
+
+I could not run the generated code on my own machine, which is arm64 without Rosetta.
+There the file still assembles and checks the bytes, and prints that it did not run them.
+
+## What an undefined label looks like
+
+Flipping the `#if 0` block in the example assembles `jmp nowhere`.
+GCC 16.2 stops the build and points at the failing call:
+
+```
+error: call to non-'constexpr' function 'void casm::fail(const char*)'
+  fail("undefined label");
+```
+
+It names the call and its message string, so it is readable.
+
+## What it does not cover
+
+It knows two registers and nine instruction forms.
+Every jump uses a 32-bit distance.
+A real assembler picks short jumps when it can.
+That makes an instruction's size depend on distances, so pass 1 needs more than one loop.
+I did not build that.
+There are no data directives and no useful error messages beyond the line that failed.
+
+It is a model of the label problem, not an assembler.
+The `sed` version solves a harder problem, which is building an assembler out of nothing.
+This one only shows that, given a language with loops, two passes are cheap.
+
+The file is [in the examples repo](https://github.com/wrocpp/cpp26-reflection-examples/tree/ee4df2863453a67157a19cd3a600d08d59a95c61/posts/100-constexpr-assembler).
