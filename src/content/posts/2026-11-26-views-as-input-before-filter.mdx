@@ -1,0 +1,95 @@
+---
+title: "views::as_input before filter turns a reverse bug into an error"
+slug: "views-as-input-before-filter"
+pubDate: 2026-11-26
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp, cpp26, ranges, views, filter, undefined-behavior, gcc]
+summary: "On GCC 16.2, filter then reverse then as_rvalue over a vector of strings reads past the vector under AddressSanitizer. Put views::as_input before filter and the same pipeline stops compiling at the reverse. The cost is that the filtered view is input-only. libc++ trunk lacks as_input."
+draft: false
+relatedPosts: [ranges-views-wave, generator-enumerate-by-value, generator-const-reference-lifetime]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+A pipeline of filter, reverse and `as_rvalue` over a vector of strings compiles on GCC 16.2 and is undefined behavior. AddressSanitizer reports a heap-buffer-overflow in the filter's predicate. One adaptor in front, `views::as_input`, makes the same pipeline a compile error at the `reverse`.
+
+## In short
+
+- `names | filter(pred) | reverse | as_rvalue | ranges::to<vector>()` builds on GCC 16.2 and trunk. Under `-fsanitize=address` it fails with a heap-buffer-overflow inside `pred`.
+- `names | as_input | filter(pred) | reverse` does not build. GCC reports `no match for 'operator|'` at the `reverse`.
+- The reason is in the types. A filter over `as_input` is an input range and not a forward range, and `reverse` needs a bidirectional one. A filter over a `std::generator` has the same limit.
+- The price is single pass. The filtered view cannot be reversed, restarted or iterated twice.
+- libc++ trunk on Compiler Explorer has no `views::as_input` on 2026-11-17. My default is to put it before `filter` when a pipeline moves elements out.
+
+## The pipeline that compiles
+
+The case comes from P3725R3, a paper by Nicolai Josuttis dated 2026-03-24. [P3725R3](https://wg21.link/p3725r3) lists three ways filter surprises people, and the first is this one. The example moves the long names out of a vector, in reverse order:
+
+```cpp
+auto names = Names{"Amsterdam", "Berlin", "Cologne", "LA"};
+auto reversed = names | std::views::filter(IsLong{})
+                      | std::views::reverse
+                      | std::views::as_rvalue
+                      | std::ranges::to<Names>();
+```
+
+I ran this with `-std=c++26 -fsanitize=address,undefined` on GCC 16.2 and on GCC trunk of 2026-11-17. Both exit with code 1 and report the error below. Without the sanitizer I did not run it, and the paper says the outcome depends on the strings and the predicate.
+
+```text
+==2==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x760dc5fe0028 ...
+READ of size 8 at 0x760dc5fe0028 thread T0
+    #0 ... std::__cxx11::basic_string<...>::size() const
+    #1 ... operator() /app/example.cpp:25
+    #4 ... operator-- .../ranges:1825
+```
+
+The trace ends in the decrement of the filter's iterator, which calls the predicate again. My reading is that `as_rvalue` has already moved from some strings, so the predicate sees changed elements, and the walk back passes the first one. The paper describes the same program as undefined behavior. I did not trace it further.
+
+## The same pipeline with as_input
+
+[Cppreference](https://en.cppreference.com/w/cpp/ranges/as_input_view) describes `views::as_input` as a range adaptor that presents a view as an input-only range. Its result never models `forward_range`, and the page notes that it is meant to avoid the cost of stronger iterator categories.
+
+Adding it in front of the filter changes the type of everything after it:
+
+```cpp
+auto r = names | std::views::as_input | std::views::filter(IsLong{}) | std::views::reverse;
+```
+
+```text
+error: no match for 'operator|' (operand types are 'std::ranges::filter_view<std::ranges::as_input_view<
+std::ranges::ref_view<std::vector<std::__cxx11::basic_string<char> > > >, IsLong>' and
+'const std::ranges::views::_Reverse')
+```
+
+GCC 16.2 and GCC trunk print this message. The first operand type holds the answer, a `filter_view` of an `as_input_view`. Clang trunk with libstdc++ also rejects it, with `invalid operands to binary expression`.
+
+The example states the same facts as `static_assert`s. A concept wraps a requires-expression for `views::reverse`. It is true for the filter over a vector, and false for the filter behind `as_input` and for a filter over a `std::generator<std::string>`. The pipeline without `reverse` still works and prints `moved in order: Amsterdam Berlin Cologne`.
+
+<GodboltEmbed id="j1dEh9K7W" gccOnly gccLabel="GCC 16.2" title="reverse refuses a filter behind views::as_input" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O1 · runs live" />
+
+## What the paper asks for, and what I did not check
+
+P3725R3 proposes `as_input` before filter as a workaround. It also adds a const `begin()` and `end()` to filter over input ranges. The paper lists SG9, LEWG and LWG as its audience. I did not look up where it stands in the process, so I do not say whether it is adopted.
+
+The compile error of this post does not depend on the paper. It follows from the range categories that the libraries already have. I did not test the const iteration the paper adds.
+
+The name is a moving target. The paper says `as_input` is the new name of `to_input`, proposed in P3828, and I did not open P3828. [P3137R3](https://wg21.link/p3137r3), dated 2025-02-10, is titled `views::to_input`. Compiler Explorer shows both names in libraries:
+
+| library | name | feature macro |
+|---|---|---|
+| libstdc++ 15 (clang 22.1 on Compiler Explorer) | `views::to_input` | `__cpp_lib_ranges_to_input` 202502 |
+| libstdc++ 16.2 and trunk | `views::as_input` | `__cpp_lib_ranges_as_input` 202502 |
+| libc++ trunk | neither name is a member of `std::ranges::views` | `__cpp_lib_ranges_to_input` not defined, the `as_input` macro not checked |
+
+On libstdc++ 15, `as_input` is unknown and the compiler suggests `to_input`. On GCC 16.2, `to_input` is unknown and the compiler suggests `as_input`. Code that has to build with both gates on the feature-test macro, not on the compiler version.
+
+## When to use it
+
+- **A pipeline moves out of the source.** Put `as_input` before `filter`. A later `reverse` fails to compile.
+- **You need the filter to be reversible or multi-pass.** Leave `as_input` out and accept the filter's caching and its undefined behavior when an element changes under it.
+- **The library has neither name.** Use the plain filter and keep the move-out step out of a reversed pipeline.
+
+The example file has no macro. It needs a library with `views::as_input` and `<generator>`, and libc++ trunk fails it. The sources and all outputs are in [`posts/121-views-as-input`](https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/121-views-as-input). Everything here ran on Compiler Explorer on 2026-11-17.
