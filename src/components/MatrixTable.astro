@@ -32,6 +32,7 @@ const { compilers, groups } = Astro.props;
       <h3 class="matrix-group__title">
         {g.href ? <a href={g.href}>{g.title}</a> : g.title}
       </h3>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Scrollable table">
       <table class="matrix-table">
         <thead>
           <tr>
@@ -61,6 +62,7 @@ const { compilers, groups } = Astro.props;
           ))}
         </tbody>
       </table>
+      </div>
     </section>
   ))}
 </div>

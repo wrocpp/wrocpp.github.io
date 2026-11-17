@@ -189,5 +189,12 @@ def main() -> int:
     return 0
 
 
+def report_calendar_gaps() -> None:
+    """After queueing, tell the user about any day without a post in the next days."""
+    subprocess.run([sys.executable, str(REPO / "scripts" / "check_daily_gap.py"), "--notify"], check=False)
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    code = main()
+    report_calendar_gaps()
+    raise SystemExit(code)

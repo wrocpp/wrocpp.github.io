@@ -1,0 +1,276 @@
+---
+title: "What Bjarne Stroustrup's three October profile papers say"
+slug: "what-the-three-profile-papers-say"
+pubDate: 2026-11-10
+author: filip-sajdak
+language: en
+kind: flagship
+audience: working-cpp
+tags: [wg21, profiles, safety, cpp29, standardization, news]
+summary: "Bjarne Stroustrup's P3704R1, P4222R3 and P4418R0 say what a C++ profile is and give two concrete ones, for initialization and for invalidation. This post summarises each paper from the PDF, shows how a profile is enabled and suppressed, and lists where the papers and the implementation report disagree. It takes no side."
+draft: false
+relatedPosts: [profiles-p4415-implementation-status, wg21-2026-10-pre-buzios-mailing, brno-profiles-contracts, contracts-dispute]
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+Three papers by Bjarne Stroustrup say what a C++ profile is and give two worked designs. One requires every object to be initialized before use. The other rejects access through dangling pointers. The papers are in the 2026-10 pre-Búzios mailing: the PDFs are dated 22 October and the index lists them on 23 October. This post summarises each paper and shows how a profile is switched on and off. It also lists where the papers disagree with each other or with the implementation report, and it argues for no side.
+
+## In short
+
+- P3704R1 defines a profile as a set of guarantees checked at compile time or run time. Profiles are opt-in, the set is open, and the paper adds a list of what profiles are not.
+- P4222R3 requires every object to be initialized once before use and destroyed once. It checks at compile time and adds three attributes and one function for uninitialized memory.
+- P4418R0 forbids dereferencing a dangling pointer, letting a pointer outlive its target, and deleting an owner twice. It analyses one function at a time.
+- The framework paper P3589R3 supplies the attributes that enable and suppress a profile. Each design paper adds its own escape hatch.
+- P3704R1 and P4418R0 show a Clang build that rejects the invalidation example. P4415R0 says Clang has no invalidation profile. None of the Clang builds on Compiler Explorer that I tried rejects it.
+
+## The papers and who wrote them
+
+Stroustrup announced the papers in a [LinkedIn post](https://lnkd.in/p/dteC5Vzh) that lists all three and says which one to start with. The link preview names that document as p3704r1.pdf. The post also points to a CppCon video version, and I could not open that link. Stroustrup's CppCon 2026 keynote on profiles, titled Profiles for Simplicity and Guarantees, is [on CppCon's channel](https://www.youtube.com/watch?v=41USGJaGsAo). It was an unlisted prerelease link when I checked on 2 November (see <PostLink slug="cppcon-2026-recap">the recap post</PostLink>). I have not watched it.
+
+The table lists the papers this post uses. The first three are the subject. <PostLink slug="wg21-2026-10-pre-buzios-mailing">The mailing digest</PostLink> lists the rest of the mailing by title.
+
+| Paper | Title | Authors | Pages | Role |
+|---|---|---|---|---|
+| [P3704R1](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3704r1.pdf) | What are profiles? | Bjarne Stroustrup | 10 | what a profile is and is not |
+| [P4222R3](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4222r3.pdf) | An initialization profile | Bjarne Stroustrup | 43 | design |
+| [P4418R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4418r0.pdf) | An invalidation profile | Bjarne Stroustrup | 16 | design |
+| [P4416R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4416r0.pdf) | Proposed wording for the initialization profile | Michael Wong, Bjarne Stroustrup | 31 | wording for P4222R3 |
+| [P4417R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4417r0.pdf) | Proposed wording for the invalidation profile | Michael Wong, Bjarne Stroustrup | 18 | wording for P4418R0 |
+| [P4415R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4415r0.pdf) | Profiles: implementation status and experience | Michael Wong, Krystian Stasiowski, Ville Voutilainen | 19 | status report |
+| [P4401R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4401r0.pdf) | UB and profile-defined behavior | Herb Sutter | 5 | a question for SG23 |
+| [P3589R3](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3589r3.pdf) | C++ Profiles: The Framework | Gabriel Dos Reis | 12 | how a profile is enabled and suppressed |
+
+## P3704R1: what a profile is, and what it is not
+
+P3704R1 is the framing note. It says it explains general ideas and is not a fully worked-out proposal. Its abstract defines the term in one sentence: "A profile is a set of guarantees enforced at compile time and/or run time" (P3704R1, abstract).
+
+A profile is usually implemented by banning language and library features that could break the guarantee. Library support makes conforming code easier to write. Use is opt-in. For code without undefined or erroneous behaviour, the paper says the meaning is the same with or without enforcement. The set of profiles is open: some would be standardized, and users can define their own.
+
+The paper lists five needs that profiles could serve:
+
+- teaching a smaller, modern subset of C++
+- memory safety, through run-time range and null checks in hardened libraries and compile-time elimination of dangling-pointer dereference
+- resource safety, meaning no leaks
+- type safety, including guaranteed initialization
+- real-time limits, such as banning the free store or exceptions where their cost cannot be bounded
+
+It rejects the view that profiles are only a late answer to Rust's borrow checker, and says they also serve technical-debt management and teaching.
+
+### The new list of what profiles are not
+
+Section 5 is new in R1. The paper says some promises made for profiles were inflated, and that this led to misconceptions.
+
+| The paper says a profile is not | The qualification it gives |
+|---|---|
+| a change to the meaning of a program | beyond giving meaning to former undefined behaviour when enforced |
+| a change to the base language | beyond adding attributes and libraries |
+| a dialect | it enforces a subset of a superset |
+| whole-program analysis | none |
+| purely static or purely run-time checking | the initialization and invalidation profiles are purely static |
+| a borrow checker or a garbage collector | none |
+| a source of unverifiable attributes | any profile can be suppressed |
+| compulsory or a closed set | not every profile will be in the standard |
+| a new, untried idea | it combines guidelines, static analysis and run-time assertions |
+
+Two more positions in that section matter for what follows. The paper calls composability of arbitrary profiles ideal but infeasible without restrictions that would hurt some profiles. For profiles designed to work together, such as those meant for standardization, it expects composability to be feasible. It also answers the claim that giving meaning to undefined behaviour creates a dialect: by that definition, it says, every implementation-defined feature would create one.
+
+R1 also adds an example from current implementations, clarifies a few ideas and updates the references. I did not read R0. The example is the vector relocation case shown in the invalidation section below. The paper says its experimental implementations are not claimed to be production quality.
+
+## How a profile is switched on and off
+
+The three papers leave the mechanics to the framework paper P3589R3 by Gabriel Dos Reis. In P3589R3, enabling is one attribute at global scope, before any declaration. It covers everything from that point to the end of the translation unit. P4415R0 adds that on both implementations it must also come before any include.
+
+Suppression is a second attribute on one declaration or statement. It covers only that declaration or statement. P3589R3 allows an optional `justification:` string and an optional `rule:` argument that names one rule of the profile.
+
+The profile names in the papers are placeholders. P4416R0 says the final spelling of `std::init` is for the committee. P4417R0 says the same of `std::invalidation`. P4416R0 also says rule names are implementation-defined, so it proposes none. P4415R0 reports that the Clang branch has twelve named rules for the initialization profile, and the GCC branch recognized none on 6 October. Both branches also accept `-fprofiles-enforce=` on the command line.
+
+This is the form I compiled on 2 November 2026 on both Compiler Explorer profile builds:
+
+```cpp
+[[profiles::enforce(std::init)]];
+
+int read_into(char* buf, int n);
+
+int use() {
+    [[profiles::suppress(std::init)]]
+    char buffer[64];
+    int n = read_into(buffer, 64);
+    char copy[64];
+    return n + copy[0];
+}
+```
+
+Both builds exit with status 1. Each reports only `copy` on line 9, as uninitialized and unmarked, and accepts `buffer`. The GCC build is `gcontracts-p4324-trunk` with `-std=c++23 -pedantic-errors`. The Clang build is `clang_profiles_init` with `-std=c++26 -fprofiles`.
+
+I also tried the optional string. The Clang build accepted `justification:` on its own. The GCC build reported `expected 'rule'` for it. It reported the same when `justification:` came before `rule:`. P3589R3 says the order of the two does not matter.
+
+## P4222R3: the initialization profile
+
+P4222R3 is the longest of the three. It says 90 percent or more of its text covers rejected alternatives and the handling of uninitialized buffers and pools. Without that need, it says, the paper would be about three pages instead of 40.
+
+The rules, in plain words:
+
+- every object is initialized at its definition or marked as deliberately uninitialized, and implicit initialization counts
+- reading uninitialized memory is an error, except for `std::byte` and `unsigned char`
+- a marked object must be initialized before use, and initializing it twice is an error
+- destroying an object makes its memory uninitialized again, and destroying it twice is an error
+- every non-local object with static or thread storage duration needs static initialization
+
+Pointers and references to uninitialized memory carry a marker, so that code such as a vector implementation can manage raw buffers. The paper does not put initialized or uninitialized into the type system. It gives reasons: slower compilation, breaking older code, and changing overload resolution.
+
+The paper lists these changes since R1 and R2:
+
+- testing against implementations, with examples
+- a companion paper on invalidation
+- once-only initialization, and destruction before memory is reused
+- delayed initialization relaxed and elaborated
+- stated limits on the complexity of the static analysis
+- improved wording
+
+It also records that `[[uninitialized]]` became `[[uninit]]`. The `[[must_init]]` attribute and the `now_init()` function entered after R0.
+
+On C++26, the paper calls erroneous behaviour for uninitialized reads an improvement whose response is implementation-defined. It says the profile gives a stronger guarantee at the cost of stricter rules, and checks at compile time. See <PostLink slug="erroneous-behavior">the post on erroneous behavior</PostLink>.
+
+| | P4222R3 |
+|---|---|
+| Guarantee | Every object is initialized before use, constructed once and destroyed once. Compile-time only, with no run-time code. |
+| Rejects | A local `int loc;` with no initializer and no marker. A read of an `[[uninit]]` object before it is initialized. A second initialization. |
+| Adds | The attributes `[[uninit]]`, `[[ref_to_uninit]]` and `[[must_init]]`, and the function `now_init()`. |
+| Enabled | `[[profiles::enforce(std::init)]];`, as in the paper's screenshots. |
+| Suppressed | The framework's suppress attribute for the whole profile. `now_init()` marks one hole that the analysis cannot verify. |
+| Implementations | A GCC branch and a Clang branch, both on Compiler Explorer. The paper says they are tested nightly. |
+| Wording | P4416R0 |
+
+## P4418R0: the invalidation profile
+
+P4418R0 restates the design of P3446R0 from October 2024. It is not a revision. The changes it lists are that the owner type became an attribute, screenshots were added, and many definitions are more precise.
+
+In this profile a pointer means anything that refers to an object:
+
+- raw pointers and references
+- iterators
+- lambdas that capture by reference
+- smart pointers, and a thread object that holds pointers
+
+The analysis is deliberately local. Within one function it follows a simple linear flow. Every deletion and every access through a pointer counts as unconditional. An action must appear on every path, and a loop may run zero or more times. So a delete under one condition, followed by an unconditional use, is an error.
+
+Across functions the paper uses constness. A non-const member function, or a function that takes a pointer to a non-const argument, is assumed to invalidate. A const one is assumed not to. A not-invalidating attribute marks the exceptions, and the compiler verifies it where the definition is compiled.
+
+A pointer may be returned only if it was passed in, points to static storage, or points to a free-store object. The owner attribute marks a pointer that must be deleted or passed on exactly once. A non-owner must not be deleted, and the result of a new expression is an owner.
+
+The paper says the library needs many not-invalidating annotations and estimates a few hours of manual work for the standard library. P4415R0 puts a number on it: across 24 standard containers and wrappers it counts 286 non-const overloads that do not invalidate and 364 that do. That count is credited to a personal communication from M. Bracco.
+
+| | P4418R0 |
+|---|---|
+| Guarantee | A pointer is dereferenced only if it points to an existing object. No pointer escapes the lifetime of its target. A non-static `[[owner]]` is deleted exactly once. |
+| Rejects | A returned pointer to a local. An owner that is never deleted. Use of an iterator after a call that may relocate the vector: `auto p = v.begin(); f(v); *p = 7;` |
+| Adds | The attributes `[[not_invalidating]]` and `[[owner]]`, and the intrinsic function `no_dangling()`. |
+| Enabled | `[[profiles::enforce(std::invalidation)]];`, as in the paper's GCC screenshots. |
+| Suppressed | The framework's suppress attribute for the whole profile. `no_dangling()` for one expression. Section 11 asks whether the intrinsic is needed. |
+| Implementations | The paper names a GCC branch and a Clang branch, with a screenshot of each. See the section on the Clang screenshot. |
+| Cost and scope | No run-time cost for code that obeys it. Null, range and subscript checks belong to a separate profile. |
+| Wording | P4417R0 |
+
+## The wording papers and the implementation report
+
+P4416R0 and P4417R0 put the two designs into working-draft form. They are written against N5054, the C++29 working draft of 16 July 2026, and against the framework in P3589R3. Both are marked information only and not yet ready for review. They propose a new Profiles clause with one subclause per profile and tag every rule with the guarantee it delivers. Each says the design paper governs where the two differ.
+
+P4415R0 is a status report on two implementations, marked information only and not for scheduling. It checked the revisions before this mailing, P4222R2 and P3589R2. Of 87 examples in P4222R2 that Krystian Stasiowski compiled, it says 59 match the paper and 19 differ. It reports that Clang's LLVM IR is byte-identical with the initialization profile enforced. I did not reproduce its test counts or timings. My <PostLink slug="profiles-p4415-implementation-status">earlier post</PostLink> ran five small functions on both builds.
+
+## Where the papers disagree
+
+I did not try to settle any of these. Each row attributes a position to its paper.
+
+| Topic | One paper says | Another source says |
+|---|---|---|
+| Clang and invalidation | P3704R1 (section 6) and P4418R0 (section 3) say experimental implementations exist for GCC and Clang, and show a Clang screenshot | P4415R0 (sections 7.2 and 11) says Clang has no invalidation profile |
+| Attributes of the initialization profile | P4222R3 says three attributes and one function | P4416R0 lists four attributes, adding `[[now_init]]`, and says it tracks a draft of 13 October |
+| Member-wise assignment of an `[[uninit]]` aggregate | P4222R3 (section 5.4) rejects it | P4415R0 (sections 6.2 and 6.4) says the GCC branch accepts it, and the Clang branch accepts only whole-object initialization |
+| Bridge from uninitialized to initialized storage | P4222R3 uses the function `now_init()` and `[[must_init]]` on a parameter | P4415R0 (section 6.4): Clang has `[[now_init]]` on the function, GCC has `std::now_init` and `[[must_init]]`, and no spelling compiles on both |
+| Marker for the destroy side | P4222R3 (section 8.5) lists one library function, and P4416R0 says there is no `now_uninit` | P4415R0 (section 6.1) expected R3 to add a destroy-side marker, with the name to be agreed |
+| Escape hatches of the invalidation profile | P4418R0 (section 12.3) lists one library function, `no_dangling()` | P4415R0 (section 7.1): the GCC branch also has `std::as_owner`, `std::now_valid` and `std::no_escape` |
+| Flow analysis | P4418R0 (section 2) describes a simple linear flow analysis | P4415R0 (section 7.3): zero false negatives needed a path-sensitive analysis across branch merges, and it asks the specification to state the rules as may-rules |
+| Revisions checked | P3704R1, P4222R3 and P4418R0 are the revisions in this mailing | P4415R0 checked P4222R2 and P3589R2 |
+
+There is one more difference of framing. P3704R1 describes a profile as a set of guarantees. P3100R9 (section 4.4) suggests defining profiles as a higher-level feature built on three of its own tools. Those are language subsets, replacement behaviour for undefined behaviour, and run-time checks. P3100R9 says there is no consensus yet on how profiles relate to its strategy.
+
+## The Clang screenshot, and what I ran
+
+P3704R1 (pages 7 and 8) and P4418R0 (page 5) show the same vector example in two Compiler Explorer screenshots. A paper sentence above them says experimental implementations exist for GCC and Clang. The GCC message matches what the GCC build prints today. The Clang output pane is labelled `clang 21.1.8 (invalidation profile)` and ends in `error: reference validation failed` with a note that the value was invalidated at the earlier call. The visible source in that screenshot has no enforce line. Neither paper links that screenshot to a Compiler Explorer session.
+
+Both papers' reference lists name the Clang implementation as the `profiles-init` branch of the C++ Alliance's Clang. P4415R0 says that branch covers the framework and the initialization profile and has no invalidation profile. The P4415R0 section 11 summary says invalidation exists on one compiler.
+
+### The Compiler Explorer builds
+
+On 2 November 2026 I fetched the Compiler Explorer C++ compiler list from `https://godbolt.org/api/compilers/c++`. It has 1218 entries. No entry is named `clang 21.1.8 (invalidation profile)`, and no entry has invalidation in its name. The entries that mention profiles or P4324 are these four:
+
+- `clang_profiles_init`, the initialization profile of P4222
+- `clang_profiles_core_ub`, a profile for P4317 by Vinnie Falco
+- `clang_cppa_p4324`, Clang for the P4324 contracts
+- `gcontracts-p4324-trunk`, GCC for P4324 contracts and profiles
+
+I compiled the example from the two papers on each of them, with the enforce line added. The runs were between 20:00 and 20:15 UTC that day. This is the exact source:
+
+```cpp
+[[profiles::enforce(std::invalidation)]];
+
+#include <vector>
+
+void f(std::vector<int>& vi) { vi.push_back(9); }
+
+void g() {
+    std::vector<int> vi1{1, 2};
+    f(vi1);
+
+    std::vector<int> vi2{1, 2};
+    auto p = vi2.begin();
+    f(vi2);
+    *p = 7;
+}
+```
+
+| Compiler id | Options | Exit | Output |
+|---|---|---|---|
+| `gcontracts-p4324-trunk` | `-std=c++23 -pedantic-errors` | 1 | error on line 14, quoted below |
+| `clang_profiles_init` | `-std=c++26 -fprofiles` | 0 | none |
+| `clang_profiles_init` | `-std=c++23 -pedantic-errors` | 0 | none |
+| `clang_profiles_core_ub` | `-std=c++26 -fprofiles` | 0 | none |
+| `clang_profiles_core_ub` | `-std=c++23 -pedantic-errors` | 0 | none |
+| `clang_cppa_p4324` | `-std=c++23 -pedantic-errors` | 0 | warning: unknown attribute `profiles::enforce` ignored |
+
+The `clang_cppa_p4324` build rejects `-fprofiles` as an unknown argument, so I ran it only with the second set of options. The GCC build printed this, with the colour codes removed:
+
+```
+<source>: In function 'void g()':
+<source>:14:6: error: use of a value bound to 'vi2', potentially invalidated by an earlier mutation of 'vi2', not permitted under the 'std::invalidation' profile
+   14 |     *p = 7;
+      |      ^
+```
+
+That a Clang build prints nothing for an unknown profile fits what P4415R0 says about unknown profile names. I report it as what I ran. It does not explain the screenshot. Compiler Explorer builds follow their development branches, so these results are of 2 November and can change.
+
+## Where profiles stand in the committee
+
+Everything in this section comes from Herb Sutter's trip reports or from the papers.
+
+### The meetings
+
+- **Croydon, March 2026.** [Sutter's report of 29 March](https://herbsutter.com/2026/03/29/c26-is-done-trip-report-march-2026-iso-c-standards-meeting-london-croydon-uk/) says the committee adopted the C++29 schedule, a three-year cycle. EWG's direction was to pursue further development of safety profile papers in SG23, to be brought back to EWG targeting C++29. SG23 worked on Stroustrup's P3984 type safety profile using the Dos Reis framework.
+- **Brno, June 2026.** [Sutter's report of 13 June](https://herbsutter.com/2026/06/13/brno-trip-report/) says SG23 decided to create a specification for Profiles. It would be merged into C++29 if it arrives in time, and otherwise could be published as a white paper alongside C++29. SG23 also reviewed a draft of P4222. Sutter expects more progress this year, including implementation experience in at least one major compiler codebase. <PostLink slug="brno-profiles-contracts">An earlier post</PostLink> covers the Brno profiles and contracts news.
+- **Búzios, 16 to 21 November.** The draft agenda [N5058](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/n5058.html) gives the primary goal as work on C++29 features and lists SG23 among the subgroups. It names no paper and is marked subject to revision.
+
+### Other papers, and contracts
+
+- **P3081R2** is Herb Sutter's paper on core safety profiles for C++26, and the latest revision I found. It is dated 4 February 2025 and addressed to EWG and LEWG. Its table of contents lists type, bounds, lifetime and arithmetic profiles. P3589R3 says it does not compete with Sutter's proposal, and cites P3081R1.
+- **P3100R9** by Timur Doumler and Joshua Berne enumerates the undefined behaviour in the core language. It proposes a strategy of seven tools, including erroneous behaviour and implicit contract assertions. It is in the same mailing, and the Brno report says EWG approved a line-by-line telecon review of P3100.
+- **P4401R0** by Herb Sutter asks whether code may rely on behaviour that a profile defines for what is otherwise undefined. It uses three hypothetical profiles under which signed overflow saturates, wraps or throws. It lists options and the drawbacks of each. One is to say nothing. Another is to tell programmers not to rely on it. A third is to make those cases erroneous behaviour in the base language. P3704R1 says using a profile does not change the base language beyond possibly giving meaning to former undefined behaviour. P3704R1 also cites a Sutter discussion of hypothetical arithmetic profiles, and its reference entry for it has no title yet. I cannot tell from the papers whether that is P4401R0.
+- **Contracts.** The dispute over C++26 contracts and the ballot are told in <PostLink slug="contracts-dispute">the contracts dispute post</PostLink> and <PostLink slug="c26-dis-ballot-result">the ballot result post</PostLink>. <PostLink slug="cpp26-contracts">The contracts post</PostLink> runs the feature on GCC 16. I add no position here.
+
+## What I did not check
+
+- I read P3704R1, P4222R3, P4418R0, P4401R0 and P4415R0 in full. I skimmed P4416R0 and P4417R0, and from P3589R3 I read only the sections on enforcement and suppression. I did not read P3704R0, P3446R0 or P4296R0.
+- Apart from the runs above, I did not reproduce any claim about implementations. That includes the nineteen adversarial cases, the test counts and the compile-time costs in P4415R0.
+- I did not watch the keynote, and I did not read the comments under Stroustrup's LinkedIn post.
+- I give no date for P3589R3 or P4401R0, because the PDF and the mailing index disagree. The PDF of P4401R0 says 20 September and the index says 19 October. The PDF of P3589R3 says 1 December 2025 and the index says 21 July 2026.
+- Compiler Explorer results are from 2 November 2026 on x86-64 and may have changed.

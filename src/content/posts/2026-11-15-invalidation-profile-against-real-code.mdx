@@ -1,0 +1,111 @@
+---
+title: "What the invalidation profile says about P4418R0's own examples"
+slug: "invalidation-profile-against-real-code"
+pubDate: 2026-11-15
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [wg21, profiles, safety, gcc, invalidation, dangling]
+summary: "I ran the examples of P4418R0, the invalidation profile, plus some it does not show, on the experimental GCC branch on Compiler Explorer. The build rejects the paper's bad examples. It accepts without a message a pointer to a local stored in a global, a reference-capturing lambda stored in a std::function, and a this capture handed to a detached thread."
+draft: false
+relatedPosts: [init-profile-against-real-code, what-the-three-profile-papers-say, profiles-p4415-implementation-status, reflection-dangling-signature]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+The invalidation profile of [P4418R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4418r0.pdf) exists only on an experimental GCC branch, listed on Compiler Explorer as `gcontracts-p4324-trunk`. It is a research compiler, not a shipping one. I ran the paper's examples on it on 2 November 2026. The build rejects the bad ones with messages that match the paper. It says nothing about several escapes the paper's rules appear to cover. This follows <PostLink slug="init-profile-against-real-code">the same test of the initialization profile</PostLink>.
+
+## In short
+
+- The paper's bad examples from sections 1, 2 and 8 are rejected. The error counts match the paper for sections 2 and 8.
+- Three escapes get no message: a local's address in a global, a reference-capturing lambda in a `std::function`, and a `this` capture in a detached thread.
+- `[[not_invalidating]]` changes what callers are told. The paper says the build checks it where the function is defined, and on 2 November it did not.
+- The paper's factory example is accepted only after `std::no_dangling` is added inside the factory, which the paper does not show.
+- None of the three Clang builds I tried checks any of this. Whether a Clang build with an invalidation profile exists is still open.
+
+## What I ran
+
+Every case starts with `[[profiles::enforce(std::invalidation)]];`, before any include. I compiled with `gcontracts-p4324-trunk`, "x86-64 gcc (P4324 contracts, and profiles)", and `-std=c++23 -pedantic-errors`. The papers name Ville Voutilainen's `p4324` branch of GCC as the implementation. I took this build to be that branch and did not confirm it. I did not read its source.
+
+The vector iterator example of section 3 is in <PostLink slug="what-the-three-profile-papers-say">the post on the three papers</PostLink>. The four cases of <PostLink slug="profiles-p4415-implementation-status">the October 31 post</PostLink> are not repeated. One file holds the rest. The forms the profile accepts run by default. Each case that is rejected, or that I expected to be rejected, sits behind one `SHOW_` macro.
+
+<GodboltEmbed id="h8KW8xY6T" compilerLabel="gcontracts-p4324-trunk" title="Invalidation profile: accepted forms, one macro per case" gcc_subtitle="gcontracts-p4324-trunk · -std=c++23 -pedantic-errors · runs live, prints 7 8 3 3 2 7 1" />
+
+Add `-DSHOW_<NAME>` to the options to compile one case. The README in [the examples repository](https://github.com/wrocpp/cpp26-reflection-examples/tree/519a2850799410642122b952edce0bc0555ee5c6/posts/107-invalidation-profile) lists every macro.
+
+## The paper's own bad examples
+
+The messages below are quoted from the build, shortened to the part after the line number.
+
+| Case (section of P4418R0) | Result |
+|---|---|
+| delete through a plain `int*`, `*p = 9`, `return &x` (1) | 3 errors: `'delete' of a pointer not marked '[[owner]]'`, `'p' is read here, after possibly already being consumed`, `returning a pointer or reference to a local`. GCC adds its own `-Wreturn-local-addr` warning |
+| `delete q;` on an `[[owner]]`, then `*q` (1, with the attribute) | 1 error: `'q' is read here, after possibly already being consumed on some path reaching this point` |
+| the `f(x, y)` function with conditional deletes (2, with `[[owner]]`) | 5 errors: four reads after a possible delete, and `'[[owner]]' pointer 'p' is never deleted or passed on` at the declaration of `p` |
+| `use(p, q)` with a plain `p` from `new` (8) | 2 errors: `the freshly-allocated value assigned to 'p' is never deleted or passed on`, and `'q' is consumed again here` |
+| `vector<int*>` with `{p}`, then with `{p, &x}` (6) | only the second is rejected: `returning a pointer or container that may hold a pointer to a local` |
+| lambda capturing a local by reference, returned (4) | the same error |
+| `std::jthread` holding a reference to a local, returned (4) | the same error |
+
+For the section 2 function I added `[[owner]]` to both pointers. Without the attribute the build also rejects the deletes, as in the first row. The paper's counts match what I saw: five errors for the function, two for the transfer example.
+
+## Where the build is silent
+
+The paper's section 6 says storing the address of a local in a global is an error: "pointer to local; will dangle". Its rule is that no pointer may outlive its target. Section 4 counts reference captures and `jthread` among the pointers. I compiled each of the following. Every one gave exit code 0 and no output:
+
+| Case | Result |
+|---|---|
+| `glob_ptr = &x;` in a function with a local `x` (6) | accepted, no message |
+| `keep = [&n] { return n; };` into a global `std::function` | accepted, no message |
+| `callback = [this] { ... }` stored in a member, then `return w.callback;` from a function that owns `w` | accepted, no message |
+| `std::thread{[this] { ... }}.detach();` in a member function of a local object | accepted, no message |
+| `std::thread t{[&n] { ... }}; t.detach();` with a local `n` | accepted, no message |
+
+The paper gives no example of the last four, so I cannot say it intends the profile to reject them. The escaping-address cases in P4415R0 section 7.2 are all returns, such as a returned lambda or vector. None names a store into a global. The returned versions of my cases are rejected, as the table above shows. The stored versions are not.
+
+## The attribute and its check
+
+Section 3 of the paper says: "a [[not_invalidating]] attribute is verified when the function definition is compiled". P4415R0 describes it as checked "where the definition is visible".
+
+- On a free function, the attribute is an error: `'not_invalidating' only supported on a non-static member function or a parameter`.
+- On a parameter, and on a member function, it works as an opt-out. A call that only reads a vector does not invalidate an iterator held by the caller. Without the attribute the same call is rejected, with `use of a value bound to 'v', potentially invalidated by an earlier mutation of 'v'`. I checked both forms against a control without the attribute.
+- Inside a function marked this way, `v.push_back(...)` was accepted, on the parameter and on the member. That is the case the paper says the build verifies. On 2 November it did not, so a wrong annotation goes unreported.
+
+## no_dangling and the factory
+
+Section 7 of the paper builds a `WidgetFactory` that holds pointers to a window and a logger. Its `create_widget` returns a `Widget` that holds a pointer. The paper writes the escape hatch as `no_dangling()`. P4417R0 spells it `std::no_dangling`, and P4415R0 puts it in `<utility>`. The unqualified spelling does not compile on this build: `'no_dangling' was not declared in this scope; did you mean 'std::no_dangling'?`
+
+I wrote a `Widget` that stores a pointer to the window, because the paper does not show one. With that, the three shapes behave like this:
+
+- A factory built over a local `Logger` and returned directly is rejected, as the paper says: `returning a pointer or container that may hold a pointer to a local`.
+- The same code with `std::no_dangling(factory.create_widget())` is accepted.
+- The paper's fix is to pass the logger in. In my version, the factory's own `return Widget2{*window_};` is rejected with the same message, with no caller involved. A `create_widget` that wraps that return in `std::no_dangling` is accepted.
+
+The paper does not say a factory member needs the escape hatch. This build wants it there.
+
+## Clang, and the screenshot
+
+P4418R0 (page 5) and P3704R1 show a Compiler Explorer screenshot of a Clang build rejecting the vector example. P4415R0, sections 7.2 and 11, says Clang has no invalidation profile. I did not reconcile the two, and I do not know which is current.
+
+I fetched the Compiler Explorer C++ compiler list again on 2 November. It has 1218 entries. Four mention profiles or P4324: the GCC build and three Clang builds.
+
+- `clang_profiles_init`
+- `clang_profiles_core_ub`
+- `clang_cppa_p4324`
+
+Nothing is named for invalidation, and the screenshot's label, `clang 21.1.8 (invalidation profile)`, is not on the list.
+
+I compiled the same file, one macro at a time, on the three Clang builds. The first two used `-std=c++26 -fprofiles`. The third, the P4324 contracts build, used `-std=c++23 -pedantic-errors`. Clang has no `std::no_dangling`, so I removed each call and kept its argument.
+
+Every case compiled with exit code 0 and no error on all three builds, including the ones the GCC build rejects. The one exception is the unqualified `no_dangling` spelling, which fails on Clang as well. The output was unknown-attribute warnings, which also name `profiles::enforce` on `clang_cppa_p4324`. Three of the returned-address cases also got Clang's ordinary `-Wreturn-stack-address`. That fits P4415R0. It does not explain the screenshot.
+
+## What I did not check
+
+- Appendix A of P4415R0, with its nineteen cases and fifteen further rules. I ran the cases above, not that set.
+- Loops, containers other than `std::vector`, and `unique_ptr`.
+- The library functions `std::as_owner` and `std::now_valid`.
+- Whether the silent cases are bugs in the branch or limits of a local analysis. I did not read the source.
+- Any run-time behaviour of the accepted cases. They have undefined behaviour, so I compiled them and did not run them.
+- Both the branch and the Compiler Explorer build follow development, so these are results of 2 November 2026.

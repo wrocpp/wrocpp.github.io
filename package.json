@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "astro dev",
     "start": "astro dev",
-    "prebuild": "python3 scripts/check-llms-sync.py && python3 scripts/check-pubdates.py && python3 scripts/prose-lint.py --all --strict && npm run check:future",
+    "prebuild": "python3 scripts/check-llms-sync.py && python3 scripts/check-pubdates.py && python3 scripts/prose-lint.py --all --strict && npm run check:future && npm run check:tables",
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
@@ -21,18 +21,19 @@
     "check:pubdates": "python3 scripts/check-pubdates.py",
     "check:cards": "python3 scripts/check-social-render.py --all",
     "check:future": "WROCPP_RENDER_ALL=1 astro build --outDir dist-preflight",
+    "check:tables": "python3 scripts/check-table-wrap.py dist-preflight",
     "check:volatile": "python3 scripts/check-volatile-claims.py --days 14"
   },
   "dependencies": {
-    "@astrojs/mdx": "^8.0.3",
+    "@astrojs/mdx": "^8.1.2",
     "@astrojs/rss": "^4.0.18",
     "@astrojs/sitemap": "^3.7.4",
-    "astro": "^7.3.8",
-    "js-yaml": "^5.4.3"
+    "astro": "^7.4.5",
+    "js-yaml": "^5.5.0"
   },
   "devDependencies": {
-    "@astrojs/check": "^0.9.10",
-    "@tailwindcss/vite": "^4.3.3",
+    "@astrojs/check": "^0.9.12",
+    "@tailwindcss/vite": "^4.3.4",
     "@types/js-yaml": "^4.0.9",
     "tailwindcss": "^4.3.1",
     "typescript": "^6.0.3"

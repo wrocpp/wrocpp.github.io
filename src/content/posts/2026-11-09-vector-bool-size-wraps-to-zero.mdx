@@ -1,0 +1,155 @@
+---
+title: "A vector<bool> of SIZE_MAX bits builds on GCC 16.2 and throws on trunk"
+slug: "vector-bool-size-wraps-to-zero"
+pubDate: 2026-11-09
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, gcc, stdlib, safety]
+summary: "On GCC 16.2, std::vector<bool> built from a size within 62 of SIZE_MAX constructs without an error, reports that size and owns no storage. GCC trunk of 6 November throws std::length_error. The libstdc++ fix for CVE-2026-114691 is on the 14, 15 and 16 branches since 29 October and in no point release. Only AddressSanitizer reports the bad access."
+draft: false
+relatedPosts: [hardened-stdlib-turn-it-on, libstdcxx-dangling-pair-tuple]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from "../../components/PostLink.astro";
+
+A `std::vector<bool>` built from one of the 63 largest `size_t` values constructs without an error on GCC 16.2. Its `size()` equals the request and its `capacity()` is 0. A GCC trunk build of 6 November throws `std::length_error` on the same line. The fix is libstdc++ commit 2fd8866591, tracked as CVE-2026-114691, and, as of 6 November, no GCC point release contains it.
+
+## In short
+
+- On 16.2, a vector built with a size from `SIZE_MAX - 62` up to `SIZE_MAX` claims that many bits and owns zero words. Trunk throws.
+- Nothing fails at construction. Reading element 0 printed 0 and exited 0 in plain, UBSan, assertions and hardened builds. Only AddressSanitizer reported it.
+- The fix is on master and the GCC 14, 15 and 16 branches since 29 October. The latest releases, 14.4, 15.3 and 16.2, predate it.
+- Check an untrusted count against `max_size()` before the constructor, and rebuild against fixed headers.
+
+## What the constructor does with a size near SIZE_MAX
+
+libstdc++ stores the bits in `unsigned long` words. It finds the word count with the expression `(n + 63) / 64`. For an `n` within 62 of `SIZE_MAX` the addition wraps to a number between 0 and 62, so the word count is zero.
+
+The constructor then allocates zero words and records `n` as the size. Jonathan Wakely's [commit message](https://github.com/gcc-mirror/gcc/commit/2fd8866591b5aea7098835f80ab7e176382175ae) names the cause. "If the size is close to SIZE_MAX the addition wraps to zero and the number of words needed is incorrect." The result is a vector whose `size()` is far larger than its storage.
+
+I derived the window of 63 sizes from the formula and checked both edges on Compiler Explorer. `SIZE_MAX - 62` wraps, and `SIZE_MAX - 63` does not.
+
+## The same program on GCC 16.2 and trunk
+
+I ran the example on Compiler Explorer on 6 November 2026 with `-std=c++23 -O2`. Trunk was `17.0.0 20261106`, built from a commit that contains the fix. The program builds a `std::vector<bool>` for three sizes and prints what happens. GCC 16.2 prints these three size lines:
+
+```
+n = SIZE_MAX - 0: constructed, size() = 18446744073709551615, capacity() = 0
+n = SIZE_MAX - 62: constructed, size() = 18446744073709551553, capacity() = 0
+n = SIZE_MAX - 63: std::bad_alloc
+```
+
+Trunk throws `std::length_error` for all three sizes:
+
+```
+n = SIZE_MAX - 0: std::length_error: Cannot create std::vector<bool> larger than max_size()
+n = SIZE_MAX - 62: std::length_error: Cannot create std::vector<bool> larger than max_size()
+n = SIZE_MAX - 63: std::length_error: Cannot create std::vector<bool> larger than max_size()
+```
+
+Both compilers then print two more lines, the same on each. The all-ones count is rejected above `max_size()`, and a count of 1000 is accepted.
+
+<GodboltEmbed id="4PhW19ezd" compilerLabel="GCC 16.2, GCC trunk" gcc_subtitle="-std=c++23 -O2 · panes 3 and 4 add -O1 -fsanitize=address -DTOUCH_ELEMENT · runs live" title="The same sizes on GCC 16.2 and GCC trunk" />
+
+GCC 14.4, 15.3 and 16.1 print the same three lines as 16.2. On 16.2 and trunk the output was identical in C++23 and C++26 at the levels `-O0` and `-O2`. The default build reads no element and exits 0.
+
+## Where the failure shows
+
+Nothing fails while the vector is built or destroyed. The first symptom is an access, and only one of the builds I tried reports it. I added a macro that reads element 0 of the vector GCC 16.2 accepted:
+
+| GCC 16.2 build | reading element 0 |
+| --- | --- |
+| plain `-O2` | prints 0, exit 0 |
+| `-fsanitize=undefined` | prints 0, exit 0 |
+| `-D_GLIBCXX_ASSERTIONS` | prints 0, exit 0 |
+| `-D_GLIBCXX_DEBUG` | prints 0, exit 0 |
+| `-fhardened` | prints 0, exit 0 |
+| `-fsanitize=address` | heap-buffer-overflow |
+
+The assertions miss it for a reason I read in the header. The subscript check compares the index with `size()`, which here is the wrapped value, so index 0 passes. The check is `__glibcxx_requires_subscript` in `debug/assertions.h`. AddressSanitizer reports an 8-byte read that starts at the single byte of a 1-byte region and runs past its end. The constructor allocated that region as the vector's storage:
+
+```
+==2==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x79f5e39e0010 at pc 0x0000004031bd bp 0x7ffd715df350 sp 0x7ffd715df348
+READ of size 8 at 0x79f5e39e0010 thread T0
+    #0 0x0000004031bc in std::_Bit_reference::operator bool() const .../16.2.0/bits/stl_bvector.h:106
+    #1 0x0000004031bc in std::vector<bool, std::allocator<bool> >::operator[](unsigned long) const .../16.2.0/bits/stl_bvector.h:1169
+    #2 0x0000004031bc in touch_first_element /app/example.cpp:39
+
+0x79f5e39e0011 is located 0 bytes after 1-byte region [0x79f5e39e0010,0x79f5e39e0011)
+```
+
+That run used `-O1 -fsanitize=address -DTOUCH_ELEMENT` on GCC 16.2. A `...` marks a trimmed path. The frames below frame 2 and the allocation stack are left out. The demo asks AddressSanitizer for exit code 0 so that Compiler Explorer shows the report. Trunk never reaches the read, because the constructor throws first.
+
+The range constructors that the commit also changed fail earlier. They copy into the zero-word buffer while constructing, and every build I tried on 16.2 crashed there. I do not show them.
+
+## Two commits, six backports
+
+Both commits are by Jonathan Wakely. The dates are the author date and the date the commit reached master. The branch columns show the backport commits I found on each release branch.
+
+| CVE | master commit | written | on master | gcc-16 | gcc-15 | gcc-14 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 114691 | [2fd8866591](https://github.com/gcc-mirror/gcc/commit/2fd8866591b5aea7098835f80ab7e176382175ae) | 26 Oct | 29 Oct | 2ab9ded76e | dfc15010ed | 08f9fae91b |
+| 114690 | [c1f32b6751](https://github.com/gcc-mirror/gcc/commit/c1f32b67510f6f9998deadaef5090b6663adb979) | 21 Oct | 29 Oct | f5808934bc | b346c34121 | 272e2eb081 |
+
+The first commit adds a function that checks the size before the word count is computed. It rejects negative values too. An invalid range, with the last iterator before the first, could give a very large negative distance. That value converts to a `size_t` below `max_size()`. The commit message says this catches some invalid inputs at minimal cost.
+
+```cpp
+if (__n > max_size() || __n < 0)
+  __throw_length_error(
+    __N("Cannot create std::vector<bool> larger than max_size()"));
+```
+
+The second commit is a different bug. The parallel mode of libstdc++, enabled by `_GLIBCXX_PARALLEL`, declares an array of N elements for the Knuth-Morris-Pratt borders where it needs N+1. That is an out-of-bounds write in the parallel `std::search`. I did not run it.
+
+## No point release has the fix yet
+
+The latest releases in the three series are 14.4 (26 June), 15.3 (12 June) and 16.2 (7 August). On 6 November the GCC releases page lists nothing newer. Each fix commit is ahead of the matching release tag, so none of the three contains it. I found no fix commit on the `releases/gcc-13` branch.
+
+## What the trackers say
+
+The trackers I read agree on the effect and disagree on the score.
+
+- **Red Hat** bug 2478508 was filed on 18 May 2026. Its first line is `AI_ONLY_REPORT`, I found no definition of that label, and the text says "Upstream coordination: Not notified". It scores CVSS 3.1 at 6.2, with a local vector and low complexity. The report for CVE-2026-114690, bug 2478652, starts with the same label.
+- **OSV** carries the Debian record, published on 30 October. It gives only a vector, with a network attack vector and high complexity. By the CVSS 3.1 formula that vector scores 5.9, which is my arithmetic.
+- **Debian** lists the gcc-11 to gcc-16 source packages as vulnerable and unfixed on 6 November.
+
+The Red Hat text describes inconsistent storage and size, then undefined behavior on a later access. That matches my runs. The conditions it lists need an attacker to control a very large element count. A size that comes from outside the program is where this matters.
+
+## The practice: check the count first
+
+Compare an untrusted count with the largest size the type supports before it reaches the constructor. A default-constructed vector reports that limit without allocating.
+
+```cpp
+if (untrusted_count > std::vector<bool>{}.max_size()) {
+  return std::nullopt;  // reject before the constructor sees it
+}
+```
+
+This is the check the fix adds inside the library, and `std::vector<int>(SIZE_MAX)` already throws `std::length_error` on both compilers. A limit tied to what your program can use is tighter still.
+
+The allocation stack of the AddressSanitizer report, left out above, lists the constructor frames at addresses in the program itself. The wrapping code is compiled from the headers into your binary, so I read it as a reason to rebuild against fixed headers. A newer shared `libstdc++` alone does not change it. I did not test swapping libraries.
+
+## The same class in libc++
+
+A libc++ commit by Nikolas Klauser, [8e196cd486b1](https://github.com/llvm/llvm-project/commit/8e196cd486b1e532ca7f30abf6eb0fe0fe0f8564), landed again on 28 October after a revert. It fixes `std::string` growth: the `max_size()` check ran on the sum of the old capacity and the extra characters, and that sum could wrap. The new code compares the extra characters with `max_size()` minus the old capacity. The class is the same: arithmetic on a size wraps, and the limit check never sees the true value. I did not run libc++.
+
+For the checks that stop the access itself, see <PostLink slug="hardened-stdlib-turn-it-on">the hardened standard library post</PostLink>. A libstdc++ change from the same weeks is in <PostLink slug="libstdcxx-dangling-pair-tuple">the dangling pair and tuple post</PostLink>.
+
+## What I did not run
+
+I ran only x86-64 Linux on Compiler Explorer, with `std::allocator`. I did not try Clang with libc++, MSVC, 32-bit targets or the 14, 15 and 16 branch snapshots. GCC 14.4 and 15.3 got the default program and one ASan run each. GCC 16.1 got the default program only. I did not run the parallel mode or the libc++ fix. The 63-size window comes from the formula and two edge runs.
+
+---
+
+**Sources**, all read on 6 November 2026:
+
+- gcc-mirror commits [2fd8866591](https://github.com/gcc-mirror/gcc/commit/2fd8866591b5aea7098835f80ab7e176382175ae) and [c1f32b6751](https://github.com/gcc-mirror/gcc/commit/c1f32b67510f6f9998deadaef5090b6663adb979) (messages and diffs)
+- The libstdc++ headers stl_bvector.h and debug/assertions.h at the parent commit
+- The backport commits on the GCC 14, 15 and 16 release branches
+- [GCC releases](https://gcc.gnu.org/releases.html) page and the GCC 14, 15 and 16 series pages
+- [Red Hat Bugzilla 2478508](https://bugzilla.redhat.com/show_bug.cgi?id=2478508) and 2478652, [OSV record DEBIAN-CVE-2026-114691](https://api.osv.dev/v1/vulns/DEBIAN-CVE-2026-114691) and [Debian security tracker](https://security-tracker.debian.org/tracker/CVE-2026-114691)
+- llvm-project commit [8e196cd486b1](https://github.com/llvm/llvm-project/commit/8e196cd486b1e532ca7f30abf6eb0fe0fe0f8564)
+- Example: [posts/112-vector-bool-size-wrap](https://github.com/wrocpp/cpp26-reflection-examples/tree/9696ac3256cc866867a23db73f0630461d7a2b34/posts/112-vector-bool-size-wrap)

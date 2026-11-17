@@ -424,6 +424,7 @@ a:hover { color: var(--orange); }
 .prose > .article-lede,
 .prose > pre,
 .prose > table,
+.prose > .table-wrap,
 .prose > figure,
 .prose > .ce-cta {
   max-width: none;
@@ -580,6 +581,30 @@ a:hover { color: var(--orange); }
   border-bottom: 2px solid var(--ink);
 }
 
+/* Every table sits in a .table-wrap (astro.config.mjs wraps Markdown tables;
+ * hand-written tables carry the class). A table that is wider than the column at
+ * its narrowest layout scrolls sideways like a code block; body overflow-x: clip
+ * would otherwise cut it off. The table keeps width: 100%, so a table that fits
+ * still wraps its cells as before. */
+.prose .table-wrap {
+  overflow-x: auto;
+  margin: 1.5rem 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
+  -webkit-overflow-scrolling: touch;
+}
+.prose .table-wrap > table { margin: 0; }
+.prose .table-wrap:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+.prose .table-wrap::-webkit-scrollbar { height: 10px; }
+.prose .table-wrap::-webkit-scrollbar-track { background: transparent; }
+.prose .table-wrap::-webkit-scrollbar-thumb {
+  background: var(--rule);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 8px;
+}
+.prose .table-wrap::-webkit-scrollbar-thumb:hover { background: var(--orange); background-clip: padding-box; }
+
 /* Wrap any wide table in <div class="table-scroll">...</div> in MDX to
  * make it horizontally scrollable instead of overflowing the page.
  * Use sparingly -- prefer .table-fit below, which keeps the table on
@@ -603,17 +628,16 @@ a:hover { color: var(--orange); }
  * .table-fit-3col gives proportional widths for a Mechanism / How to
  * enable / Catches three-column shape. Add more sibling modifiers
  * (.table-fit-2col, .table-fit-4col) as patterns repeat. */
-.prose .table-fit > table {
+.prose .table-fit table {
   table-layout: fixed;
   width: 100%;
-  margin: 1.5rem 0;
 }
-.prose .table-fit-3col > table th:nth-child(1),
-.prose .table-fit-3col > table td:nth-child(1) { width: 18%; }
-.prose .table-fit-3col > table th:nth-child(2),
-.prose .table-fit-3col > table td:nth-child(2) { width: 50%; }
-.prose .table-fit-3col > table th:nth-child(3),
-.prose .table-fit-3col > table td:nth-child(3) { width: 32%; }
+.prose .table-fit-3col table th:nth-child(1),
+.prose .table-fit-3col table td:nth-child(1) { width: 18%; }
+.prose .table-fit-3col table th:nth-child(2),
+.prose .table-fit-3col table td:nth-child(2) { width: 50%; }
+.prose .table-fit-3col table th:nth-child(3),
+.prose .table-fit-3col table td:nth-child(3) { width: 32%; }
 
 .prose hr {
   border: none;

@@ -1,0 +1,120 @@
+---
+title: "A reflection check that the thread member goes last"
+slug: "reflection-lint-thread-member-last"
+pubDate: 2026-12-18
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp26, reflection, jthread, threads, lifetime, gcc]
+summary: "A consteval check of about 25 lines turns the rule that a std::jthread member is declared last into a static_assert per class. On GCC 16.2 and GCC trunk the failing build prints our own message, which names the thread and the member declared after it. The check sees declaration order only."
+draft: false
+relatedPosts: [thread-member-declared-before-its-counter, reflection-dangling-signature]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+
+No compiler checks the rule that a `std::jthread` member is declared last. The [11 November post](/posts/thread-member-declared-before-its-counter/) shows what breaks when it is not: a thread that starts before the counter it reads. On GCC 16.2 and GCC trunk, about 25 lines of C++26 reflection turn the rule into a `static_assert` that names the offending member.
+
+## In short
+
+- The check reflects a class's non-static data members and finds the first thread member and the first non-thread member declared after it.
+- The failing build prints a message we wrote: `thread member 'worker' is declared before 'ticks'; declare the thread last`.
+- It recognises `std::jthread` and `std::thread` members of the class itself.
+- It sees declaration order only, which is the rule and not the bug. A thread that reads nothing is flagged too.
+
+## The check
+
+```cpp
+consteval bool is_thread(std::meta::info type) {
+    auto plain = std::meta::dealias(std::meta::remove_cv(type));
+    return plain == ^^std::jthread || plain == ^^std::thread;
+}
+```
+
+The two calls strip qualifiers and aliases first, for the reason in the [dangling signature post](/posts/reflection-dangling-signature/). A `const` type or an alias is a different type until they run, so a `const std::jthread` member is recognised too.
+
+The walk keeps the name of the first thread member. A later member that is not a thread ends it with a message:
+
+```cpp
+consteval std::string_view thread_last_message(std::meta::info cls) {
+    std::string_view thread_name;
+    for (auto member : std::meta::nonstatic_data_members_of(
+             cls, std::meta::access_context::unchecked())) {
+        if (is_thread(std::meta::type_of(member))) {
+            if (thread_name.empty()) thread_name = std::meta::identifier_of(member);
+            continue;
+        }
+        if (!thread_name.empty()) {
+            std::string text = "thread member '";
+            text += thread_name;
+            text += "' is declared before '";
+            text += std::meta::identifier_of(member);
+            text += "'; declare the thread last";
+            return std::string_view{std::define_static_string(text), text.size()};
+        }
+    }
+    return {};
+}
+```
+
+`access_context::unchecked()` lets the check see private members, which is where thread members usually live. `define_static_string` copies the text into storage that outlives the constant evaluation. A variable template wraps it, so one `static_assert` per class carries the condition and the message:
+
+```cpp
+template <class T>
+inline constexpr std::string_view thread_last = thread_last_message(^^T);
+
+static_assert(lint::thread_last<Meter>.empty(), lint::thread_last<Meter>);
+```
+
+The second argument of `static_assert` can be a constant string view since C++26, per [cppreference](https://en.cppreference.com/w/cpp/language/static_assert), which marks the feature with `__cpp_static_assert` 202306L. The proposal is [P2741R3](https://wg21.link/p2741r3). GCC 16.2 accepts it.
+
+## The passing build
+
+The default embed checks three classes. `Meter` has its thread last, as in the previous post. `Sampler` has a vector and the thread last. `PlainFirst` puts a plain thread before a counter. The first two are asserted and pass, and the third is only reported:
+
+```text
+Meter: ''
+Sampler: ''
+PlainFirst: 'thread member 'worker' is declared before 'count'; declare the thread last'
+```
+
+<GodboltEmbed id="s3f5181zW" gccOnly gccLabel="GCC 16.2" title="The check passes when the thread is last" gcc_subtitle="x86-64 gcc 16.2 · -std=c++26 -freflection -O1 -pthread · runs live" />
+
+## The failing build
+
+With `-DSHOW_ERROR`, `Meter` declares the thread before the counter, as in the bug of the previous post. GCC 16.2 stops with:
+
+```text
+<source>:62:45: error: static assertion failed: thread member 'worker' is declared before 'ticks'; declare the thread last
+   62 | static_assert(lint::thread_last<Meter>.empty(), lint::thread_last<Meter>);
+```
+
+GCC trunk, built on 2026-11-02, prints the same message. That text is ours, so it says what to do. I make no claim that it beats a compiler's own diagnostics in general. It is the only diagnostic that this bug gets, since GCC 16.2 `-Wall -Wextra -Weffc++` is silent on both orders.
+
+<GodboltEmbed id="EcW84eona" gccOnly gccLabel="GCC 16.2" title="The static_assert names the member" gcc_subtitle="x86-64 gcc 16.2 · -std=c++26 -freflection -O1 -pthread -DSHOW_ERROR · the compile error is shown" />
+
+## What the check cannot see
+
+I ran each of these on GCC 16.2 with the same function:
+
+| Class | Result |
+|---|---|
+| A ready flag, then a `std::jthread`, then a `std::vector<int>` | flagged, names `samples` |
+| A `std::jthread` first with a lambda that reads nothing, then an `int` | flagged, although nothing is read: a false positive |
+| A struct holding a thread, then a member of the outer class | not flagged: the thread is inside another type |
+| A base class that holds a thread, and a derived class with a member | not flagged: base classes are not walked |
+| A `std::vector<std::jthread>` followed by an `int` | not flagged: the type is not a thread |
+| Two thread members and nothing after them | not flagged, as intended |
+
+So the check misses types that start a thread internally, and it cannot tell which members a thread body reads. The flagged false positive costs a rename or a reorder. The missed cases cost a bug that still compiles.
+
+A real project would add its own thread-owning types to `is_thread`, and might skip the check for a class whose thread never touches the class.
+
+## What I did not run
+
+- Only Compiler Explorer on x86-64 Linux with GCC 16.2 and GCC trunk. I did not build with clang-p2996 or any MSVC.
+- I did not measure compile time.
+- I did not run the table cases through the sanitizers. The previous post does that for its two classes.
+
+The code is in the [examples repository](https://github.com/wrocpp/cpp26-reflection-examples/tree/627c2fec6a3b3bb479b02d6705703aa03830fb07/posts/106-jthread-last-lint).

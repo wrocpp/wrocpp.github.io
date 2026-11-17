@@ -1,0 +1,133 @@
+---
+title: "A by-value structured binding copies the element but not the iterator"
+slug: "structured-binding-copies-in-range-for"
+pubDate: 2026-12-10
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [structured-bindings, range-for, iterator-invalidation, sanitizers, cpp23, gcc]
+summary: "A range-for with auto [id, payload] copies every map element, and const auto& removes the copy. The copy can look like protection when the loop body changes the container. Run on GCC 16.2 and libc++ with three containers, it keeps the payload alive and leaves the iterator invalid. Eight strategies for a loop that changes its container are compared by what they visit, what they allocate and what the tools say."
+draft: false
+relatedPosts: [spec-addendum-nested-changes, hardened-stdlib-turn-it-on, match-each-ub-case-to-a-checking-tool, memory-safety-what-to-point-at]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+```cpp
+for (auto [id, payload] : registry) process(payload);   // registry is a std::map<int, Payload>
+```
+
+This loop copies every element of the map. Adam Bienkunski [showed it in a LinkedIn post](https://lnkd.in/p/dP7pN88j) on 7 November 2026, and `const auto&` removes the copy. I read the article his post links as well; it explains the hidden object behind a structured binding and mentions container mutation only in passing. The question I wanted answered is a different one. If `process` calls back into code that changes `registry`, does the copy protect the loop? I ran it on three containers and the answer is no. The copy keeps `payload` valid and leaves the iterator broken.
+
+## In short
+
+- Four loop forms copy every element: 3 copies for 3 elements, on `std::map`, `std::unordered_map` and a vector of pairs. The reference forms copy 0.
+- `const auto [count] = std::tie(errors); ++count;` compiles and changes `errors`. The `const` applies to the hidden tuple of references.
+- When the body erases the element being visited, every by-value and by-reference loop is undefined on all three containers. The copy saved the payload and nothing else.
+- `auto&&` copies nothing either. It is a sound generic default, but on a non-const range it can modify the elements, and it protects no better than `const auto&`.
+- The tools split. `-Wrange-loop-construct` and clang-tidy look at the copy, and neither says anything about the mutation. ASan, UBSan and `_GLIBCXX_DEBUG` each catch some cells and miss others.
+- A shared pointer, a snapshot of the container, a key list, a deferred queue and `std::erase_if` each fix a different part. None is right for every loop.
+
+## What copies, counted
+
+A `Payload` with a counting copy constructor, three elements, `-std=c++23`:
+
+| loop form | copies |
+|---|---|
+| `auto [id, p] : c` | 3 |
+| `const auto [id, p] : c` | 3 |
+| `auto entry : c` | 3 |
+| `auto p : c \| std::views::values` | 3 |
+| `const auto& [id, p] : c` | 0 |
+| `auto&& [id, p] : c` | 0 |
+| `auto& entry`, `auto&& entry` | 0 |
+| `const auto& p : c \| std::views::values` | 0 |
+
+The counts are the same on GCC 16.2, Clang trunk with libstdc++ and MSVC (`vcpp_v19_latest_x64`). A payload that cannot be copied turns the first row into a compile error. GCC 16.2 says `use of deleted function 'constexpr std::pair<_T1, _T2>::pair(const std::pair<_T1, _T2>&) [with _T1 = const int; _T2 = MoveOnlyPayload]'`, and Clang trunk says `call to implicitly-deleted copy constructor of 'std::pair<const int, MoveOnlyPayload>'`.
+
+The `std::tie` case from the same post is worth reproducing. Start from `int errors = 3;`. The line `const auto [count] = std::tie(errors); ++count;` compiles and leaves `errors` at 4. There `decltype(count)` is `int&`. With `std::make_tuple(errors)` the type is `const int` and the increment would not compile. The `const` is on the hidden tuple, not on what it refers to.
+
+## What `auto&&` does
+
+`auto&& [id, p]` over a const map copied 0 elements, and `p` was const. Over a non-const map it also copied 0, and `p.tag += 1` changed the map: key 1 went from 1 to 2. Over a `std::views::transform` that returns pairs by value, `auto&& [id, p]` and plain `auto [id, p]` both made 3 copies, all inside the lambda; the binding added none. A `std::vector<bool>` loop, `for (auto&& f : flags) f = true;`, set all 3 flags through the proxy. These ran on GCC 16.2 and on Clang trunk.
+
+My verdict: `auto&&` is a good default for generic code, because it never copies. The cost is that on a non-const range it can write, so a read-only loop should still say `const auto&`. In the loops below that change their container, `auto&&` matched `const auto&` in 35 of 36 runs. The other run differed only in a garbage checksum. Neither `-Wrange-loop-construct` nor clang-tidy said anything about it, so there is no false positive.
+
+## What the tools say about the copy
+
+| tool | `auto [id, p]` | `const auto [id, p]` | `auto entry` |
+|---|---|---|---|
+| GCC 16.2 and trunk, `-Wall -Wextra` | silent | `-Wrange-loop-construct` | silent |
+| Clang 23.1 and trunk, `-Wall -Wextra` | silent | silent in templates, warns in a plain function over a const container | silent |
+| clang-tidy trunk, `performance-for-range-copy` | flagged | flagged | flagged |
+| MSVC `/W4 /analyze` | silent | silent | silent |
+
+The GCC warning fires for `const auto [..]` and not for the plain form that copies just the same. Clang's version needs a non-template function and a const container before it speaks. The MSVC `/analyze:plugin EspXEngine.dll` run printed nothing, and I could not tell whether the plugin loaded. No C++23 or C++26 facility rejects a by-value binding on its own. Reflection does not help either. The queries in the current P2996 draft (`members_of`, `parameters_of` and the like) describe declarations, and none lists the statements of a function body.
+
+## When the body changes the container
+
+The harness keeps the callback deterministic. On key 2 it erases the current element. On key 1 it erases the next one (key 2) or inserts 64 keys. The loop applies the change and then uses the element. Cells are `by-value` runs, outcome by toolchain; `v` is the count of elements visited out of 3.
+
+| container, mode | g162 -O0 | g162 -O2 | g162 ASan+UBSan | g162 _GLIBCXX_DEBUG | libc++ -O1 | libc++ ASan | libc++ hardening |
+|---|---|---|---|---|---|---|---|
+| map, erase current | ran, 4 visited | ran, 4 visited | ran, 4 visited | debug: iterator check abort | SIGSEGV | ASan UAF | SIGSEGV |
+| map, erase next | ran, 2 visited | ran, 2 visited | ran, 2 visited | ran, 2 visited | ran, 2 visited | ran, 2 visited | ran, 2 visited |
+| map, insert 64 | ran, 67 visited | ran, 67 visited | ran, 67 visited | ran, 67 visited | ran, 67 visited | ran, 67 visited | ran, 67 visited |
+| unordered_map, erase current | SIGSEGV | SIGSEGV | ASan UAF | debug: iterator check abort | SIGSEGV | ASan UAF | SIGSEGV |
+| unordered_map, erase next | ran, 3 visited | ran, 3 visited | ran, 3 visited | ran, 3 visited | ran, 3 visited | ran, 3 visited | ran, 3 visited |
+| unordered_map, insert 64 | ran, 33 visited | ran, 33 visited | ran, 33 visited | debug: iterator check abort | ran, 11 visited | ran, 11 visited | ran, 11 visited |
+| `vector<pair>`, erase current | assert: front() empty | SIGSEGV | UBSan null ref | debug: iterator check abort | SIGSEGV | ASan container-overflow | hardening: front() empty |
+| `vector<pair>`, erase next | assert: front() empty | SIGSEGV | UBSan null ref | debug: iterator check abort | SIGSEGV | ASan container-overflow | hardening: front() empty |
+| `vector<pair>`, insert 64 | assert: front() empty | ran, 3 visited | ASan UAF | debug: iterator check abort | SIGSEGV | ASan UAF | hardening: front() empty |
+
+Three things stand out in the table:
+
+- Erasing the current element is undefined on all three containers. The copy did not help: the `payload` was fine and the loop's next step was not. On libstdc++ the `std::map` run finished with 4 visited out of 3, and ASan said nothing.
+- Erasing the next element is harmless on the two node-based containers. It breaks the vector, whose loop caches `end()`.
+- Inserting 64 keys makes the hash map rehash (`bucket_count` 13 to 127 on libstdc++). The loop then walked part of the elements: 33 of 67 on libstdc++, 11 on libc++. Only `_GLIBCXX_DEBUG` flagged it.
+
+The `-O0` column is not a build without checks. GCC 16.2 turns the library assertions on when the code is not optimised, as in <PostLink slug="match-each-ub-case-to-a-checking-tool">the matrix post</PostLink>. So the vector aborts at `-O0` are `front()` assertions in the loop body, reading an element that is gone. The libc++ hardening aborts are the same check. Hardening has no iterator-invalidation check, and `_GLIBCXX_DEBUG` is the only mode here that checks iterators.
+
+The reference loop gives the same classes of result, with one difference. ASan sees the freed map node on libstdc++, where the by-value loop ran silently. A form that looks up each key and keeps a pointer across the callback fails at the erase. `_GLIBCXX_DEBUG` is silent on it because there is no iterator to check, and it printed a checksum read from a destroyed `Payload`.
+
+## Nine ways to deal with it
+
+The verdicts are my judgement. The other columns are runs on GCC 16.2, `std::map`, with the container changed by the callback.
+
+| strategy | loop step safe | payload safe | erase next: visited of 3 | cost, 3 elements | verdict |
+|---|---|---|---|---|---|
+| `auto [id, p]` as protection | no | yes | n/a (undefined) | 3 payload copies | bad |
+| `const auto&`, body cannot reach the container | yes | yes | 3 | 0 copies | good |
+| `auto&&`, same | yes | yes | 3 | 0 copies | good, but writable on a non-const range |
+| keys first, then look up and hold a pointer | yes | no, dangles after an erase | 2 | 1 allocation | bad |
+| keys first, look up, copy the payload | yes | yes | 2, only live elements | 1 allocation, 12 B, plus the payload copies | depends |
+| snapshot of the container | yes | yes | 3, includes the erased one | 6 allocations, 264 B | depends |
+| deferred queue, applied after the loop | yes | yes | 3, changes land later | one vector of operations | good |
+| `std::erase_if` | yes | yes | n/a | 0 extra | good, erasing only |
+| `std::shared_ptr<const Payload>` elements | no | yes | 3 | 0 copies, 0 allocations | depends |
+
+The key list costs 12 bytes on libstdc++ with GCC 16.2 and 16 on trunk. Copying a `std::unordered_map` took 7 allocations and 296 bytes, a vector of pairs 4 and 168. The shared-pointer loop copied no payload and allocated nothing, and `use_count` was 2 inside the loop and 1 outside.
+
+The shared pointer deserves the explanation, because it is the tempting fix. The copy of the pointer keeps the payload alive, and the cursor still points at an erased node. Take erase-current on a map of those pointers. libc++ ASan reported a heap-use-after-free, `_GLIBCXX_DEBUG` aborted, and libstdc++ ASan finished silently with 4 visited. A move-only payload is the opposite case. It forces the choice at compile time and says nothing about mutation.
+
+The deferred queue is the one used in <PostLink slug="spec-addendum-nested-changes">the nested-changes addendum</PostLink>: record the change, apply it when the pass is over. It gave 3 visited here because the erase landed after the loop. `std::erase_if` is the one-pass answer when the loop's only job is deciding what to erase. I did not run `extract`.
+
+## Which tool sees which
+
+| tool | copy in the loop | erase the current element | held pointer after an erase |
+|---|---|---|---|
+| `-Wrange-loop-construct`, clang-tidy | reports it (see above) | silent | silent |
+| ASan | no | libstdc++: `unordered_map` and `map` by reference. libc++: `map`, `unordered_map` and vector | libstdc++ and libc++: `map` and `unordered_map`. A vector reads the wrong element, silently |
+| UBSan | no | GCC vector, as a null reference | no |
+| `_GLIBCXX_DEBUG` | no | aborts: "attempt to increment a singular iterator" | silent |
+| libc++ hardening | no | only through `front()` on a gone element | no |
+
+clang-tidy did not flag the by-value loop whose body passes the container to a function taking it by non-const reference. It flagged the same loop shape in the counting helpers. It also left the deliberate snapshot alone while the loop mutated its source, and flagged a snapshot elsewhere where nothing did. Where it does fire, its fix is `const auto&`. In a loop that mutates, that turns the copy into the undefined loop of the tables above.
+
+The default build of the example runs only the loops that stay defined, prints the copy counts and the allocation counts, and exits 0. The undefined ones sit behind `-DMATRIX_CASE`.
+
+<GodboltEmbed id="MPoEE7n8j" gccOnly gccLabel="GCC 16.2" title="Copy counts and the loops that stay defined when the body changes the container" gcc_subtitle="x86-64 GCC 16.2 · -std=c++23 -O2 · runs live" />
+
+Examples and the full tables are in [`posts/114-structured-binding-copies`](https://github.com/wrocpp/cpp26-reflection-examples/tree/36fe5d42aa1299be2ee92f5044f7f1717c7ca830/posts/114-structured-binding-copies). Everything here ran on Compiler Explorer on 7 November 2026, once per cell. A table cell is one run, not a rate. I did not run MSVC for the mutation cases, and I did not measure time.
