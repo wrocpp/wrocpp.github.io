@@ -1,0 +1,113 @@
+---
+title: "Reading a signal-to-slot wiring table from annotations on the slots"
+slug: "wiring-table-on-the-slots"
+pubDate: 2026-12-24
+author: filip-sajdak
+language: en
+kind: flagship
+audience: working-cpp
+tags: [cpp, cpp26, reflection, annotations, signals, qt, gcc]
+summary: "A class can list its signal-to-slot connections once, as a tuple of member pointers, or as annotations on the slots that reflection reads back. On GCC 16.2 a table of 3 connections is built, checked by static_assert and connected and disconnected, with one source that also builds on GCC trunk and the Bloomberg clang fork. The tuple is 17 lines and needs no checks. This is not Qt."
+draft: false
+relatedPosts: [annotations, template-for-expansion-statements, qt-metaobject-from-reflection, annotate-a-class-get-a-generator]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+Leonardo Rossi {/* LINK: Leonardo Rossi LinkedIn post, URL from the user */} wrote a LinkedIn post on wiring signals to slots in a Qt code base. The class lists its connections once, and one function connects or disconnects all of them. Can the list sit on the slots themselves? On GCC 16.2 it can: 3 annotations replace a tuple of 3 pairs. A `static_assert` over the generated table adds a check the tuple does not need. The signal type is a small one of my own. This is not Qt, and I did not run Qt's `connect`.
+
+## In short
+
+- The outside design keeps a `static constexpr auto wiring()` that returns a tuple of pairs of member pointers. A `toggleWiring<bool Enable>` walks it with `std::apply` and a comma fold. In my file that is 17 lines, and it works in C++17.
+- The alternative puts `[[=on{^^Step::failed}]]` on each slot. Reflection collects the annotated slots into a table of edges, and `template for` connects or disconnects each one.
+- The reusable part of the annotated form is 59 lines, 24 of them checks. A new slot costs one line in the tuple and no extra line with annotations.
+- The checks catch a slot with other argument types than the signal, a name that is not a signal of `Step`, and a repeated edge. One signal on two slots is two connections.
+- One source ran on GCC 16.2, GCC trunk and the Bloomberg clang fork. An annotation is checked only when something walks it.
+
+## The tuple version, credited and kept
+
+The outside post lists the connections once, as pairs of a signal and a slot. A `toggleWiring` function applies one function to every pair. Here is my version of it, over the signal type of the example:
+
+```cpp
+static constexpr auto wiring() {
+  return std::make_tuple(std::pair{&Step::failed, &ProcedureTuple::onStepFailed},
+                         std::pair{&Step::timedOut, &ProcedureTuple::onStepTimedOut},
+                         std::pair{&Step::succeeded, &ProcedureTuple::onStepSucceeded});
+}
+```
+
+One table serves two directions, because the same list connects and disconnects. Every pointer is typed, so a slot with the wrong arguments or a misspelled name is an error where the pair is written. It needs no library beyond C++17, and it works with Qt today. Nothing below makes it wrong.
+
+The cost sits in the maintenance. The slot and its row are two places. Rename a slot and the compiler finds the row. Add a slot and nothing tells you to add one.
+
+## The same table, on the slots
+
+With reflection the row moves onto the function it describes:
+
+```cpp
+struct Procedure {
+  [[=on{^^Step::failed}]]    void onStepFailed(int)   { ++failures; }
+  [[=on{^^Step::timedOut}]]  void onStepTimedOut(int) { ++timeouts; }
+  [[=on{^^Step::succeeded}]] void onStepSucceeded()   { ++successes; }
+  void helper() {}   // no annotation: not wired
+};
+```
+
+The annotation type `on` holds one reflection value. A consteval function walks the members of the class and collects an edge for each annotation of type `on`. <PostLink slug="annotations">The annotations post</PostLink> introduces the feature, and <PostLink slug="template-for-expansion-statements">the `template for` post</PostLink> the loop used below. A slot can carry several annotations, and each one is an edge.
+
+```cpp
+template <bool Enable, class Owner>
+void toggleWiring(Step& step, Owner& owner) {
+  static_assert(table_is_valid<Owner>(), "a wiring annotation names something that is not a signal of Step, ...");
+  template for (constexpr Edge edge : table_of<Owner>) {
+    if constexpr (Enable) step.[:edge.signal:].connect(&owner, &[:edge.slot:]);
+    else                  step.[:edge.signal:].disconnect(&owner, &[:edge.slot:]);
+  }
+}
+```
+
+The signals in the file are data members of type `Signal<Args...>`, a vector of connections that I wrote for the example. Qt's signals are member functions, so a real version splices a member function pointer instead. The program fires every signal before the connect, after it and after the disconnect:
+
+```text
+before connect: tuple=0 annotated=0
+after connect: tuple=1/1/1 annotated=1/1/1 fanout=3
+after disconnect: connections=0 tuple=1/1/1 annotated=1/1/1 fanout=3
+```
+
+Nothing is called before the connect and nothing after the disconnect. Both forms run in the same program, 2026-11-17, `-std=c++26 -freflection -Wall -Wextra`, with no warnings.
+
+<GodboltEmbed id="1ffczz9z1" gccOnly gccLabel="GCC 16.2" title="One wiring table as a tuple and as annotations, with a signal that connects and disconnects" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -Wall -Wextra · runs live" />
+
+## What each form costs
+
+| | tuple | annotations |
+|---|---|---|
+| lines for the table and its toggle | 17 | 59, once per project |
+| lines that check the table | 0, the types do it | 24 |
+| extra lines per slot | 1 | 0 |
+| a wrong slot signature | error where the pair is written | `static_assert` at the first toggle |
+| a slot that is never listed | silent | silent, if it has no annotation |
+
+The annotated form is longer, and most of the length is the checks that the typed tuple gets for free. It pays when a class has many slots, or when the table must be read by other code. The same annotations can drive a generator, a logger or a test, as in <PostLink slug="annotate-a-class-get-a-generator">the generator post</PostLink>.
+
+## What the compiler says about the mistakes
+
+Three small consteval functions do the checks. The annotation must name a non-static data member of `Step`, the slot must take exactly the signal's argument types, and no edge may repeat. I broke `Procedure` five ways and compiled each on GCC 16.2 and the fork.
+
+- Three mistakes give the assertion message. A slot may take `double` for an `int` signal. An annotation may name the type `Step`, or a member of another class. GCC prints `error: static assertion failed: a wiring annotation names something that is not a signal of Step, repeats an edge, ...`, and the fork prints the same text. The message does not say which slot.
+- Without the check, the `double` slot gives this on GCC 16.2: `no matching function for call to 'wiring::Signal<int>::connect(wiring::Procedure*, void (wiring::Procedure::*)(double))'`. It names the types and not the annotation.
+- A typo such as `^^Step::failled` is an ordinary lookup error at once: `'wiring::Step::failled' has not been declared`.
+- The same edge twice on one slot fails the size assertion (`the comparison reduces to '(4 == 3)'`) and the validity check.
+
+One signal on two slots is not an error. The `Fanout` class in the file has `failed` on two slots, and the table has 3 edges, asserted. That is two connections, as in the tuple.
+
+## One source on two implementations
+
+The fork has no `std::meta::annotations_of_with_type`, and GCC 16.2 does. A loop over `annotations_of` works on both. It compares the annotation's type, with `remove_const` applied, to `^^on`. Without the `remove_const`, GCC 16.2 found no annotations and the table had size 0, while the fork found them. I did not print the type, so the `const` is my inference. The built file, with the options `-std=c++26 -freflection-latest -stdlib=libc++` on the fork, printed the same four lines.
+
+## Limits
+
+An annotation is checked only when something walks it. A program with `[[=on{^^Step}]]` and no walk compiled and ran on both compilers. The `static_assert` runs at the first `toggleWiring`, so a class that is never toggled is never checked. The example puts a `static_assert` on the table right after each class.
+
+The file wires one class in one translation unit. A slot in a base class, a signal in another class than `Step`, compile time and Qt's `connect` were not tried. For a real `QMetaObject` built by reflection, see <PostLink slug="qt-metaobject-from-reflection">a QMetaObject that stock Qt accepts</PostLink>. The examples are in [the examples repository](https://github.com/wrocpp/cpp26-reflection-examples/tree/5d48fde/posts/134-wiring-table-by-reflection). The post before this one, on folds, pack indexing and `template for`, covers the other half of the outside post.
