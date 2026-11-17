@@ -1,0 +1,151 @@
+---
+title: "Owning FFmpeg's libav objects, and what a missed free costs"
+slug: "raii-ffmpeg-libav"
+pubDate: 2026-12-13
+author: filip-sajdak
+language: en
+kind: flagship
+audience: working-cpp
+tags: [cpp, raii, ffmpeg, memory, c-api]
+summary: "FFmpeg's free functions take a pointer to the pointer, so a plain unique_ptr deleter does not fit without a small adaptor. With one, AVPacket, AVFrame and AVCodecContext become std::unique_ptr wrappers that cost exactly one pointer each. On FFmpeg 9.0.2, an early-exit pipeline with manual cleanup leaked on all three exits, the largest 64,720 bytes in 33 allocations. The wrapped version leaked nothing on any path."
+draft: false
+relatedPosts: [raii-scope-guards, reflect-tracing]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+A `std::unique_ptr` with a small stateless deleter owns an FFmpeg packet, frame or codec context at the cost of one pointer.
+On FFmpeg 9.0.2 an early-exit pipeline with manual cleanup leaked on all three exits, and the wrapped version leaked on none.
+
+## In short
+
+- Piotr Borys wrote on LinkedIn about RAII wrappers for FFmpeg contexts, frames and packets, so early returns and exceptions leak nothing. I measured that claim.
+- FFmpeg's free functions take `T**` and null the pointer. A `unique_ptr` needs a three-line deleter that calls them with `&p`.
+- Each wrapper is `sizeof(T*)`, checked with a `static_assert`.
+- Manual cleanup leaked at all three early exits: 112 bytes, 448 bytes, and 33 allocations of 64,720 bytes. The wrappers leaked nothing.
+- A leak checker can miss the largest one. `leaks` reported zero for it until I overwrote the dead stack.
+
+## Why a plain unique_ptr does not fit
+
+Each FFmpeg object has an allocator and a matching free:
+
+| object | allocate | free |
+|---|---|---|
+| packet | `av_packet_alloc` | `av_packet_free` |
+| frame | `av_frame_alloc` | `av_frame_free` |
+| codec context | `avcodec_alloc_context3` | `avcodec_free_context` |
+
+Each free takes a pointer to the pointer and sets the caller's pointer to null.
+
+`std::unique_ptr` calls its deleter with the pointer value, not its address.
+So the deleter has to take a local copy and pass `&p`:
+
+```cpp
+struct PacketDeleter  { void operator()(AVPacket* p)       const noexcept { av_packet_free(&p); } };
+struct FrameDeleter   { void operator()(AVFrame* f)        const noexcept { av_frame_free(&f); } };
+struct ContextDeleter { void operator()(AVCodecContext* c) const noexcept { avcodec_free_context(&c); } };
+
+using Packet  = std::unique_ptr<AVPacket,       PacketDeleter>;
+using Frame   = std::unique_ptr<AVFrame,        FrameDeleter>;
+using Context = std::unique_ptr<AVCodecContext, ContextDeleter>;
+```
+
+The deleters hold no state, so the wrappers add no storage:
+
+```cpp
+static_assert(sizeof(Packet)  == sizeof(AVPacket*));
+static_assert(sizeof(Frame)   == sizeof(AVFrame*));
+static_assert(sizeof(Context) == sizeof(AVCodecContext*));
+```
+
+That is the zero overhead in the claim, and the compiler checks it.
+
+## The same pipeline, twice
+
+The test pipeline allocates a packet, a frame and an MPEG-4 encoder context, and opens the codec.
+A parameter picks where it stops early: after the packet, after the frame, or after the codec opened.
+The manual version is the kind of code that grows by one `if` per allocation, and each `if` has to remember every free above it.
+Mine forgets one on each exit:
+
+```cpp
+AVPacket* pkt = av_packet_alloc();
+if (fail_at == 1) return 1;                       // leaks pkt
+
+AVFrame* frame = av_frame_alloc();
+if (fail_at == 2) { av_packet_free(&pkt); return 2; }  // leaks frame
+```
+
+The wrapped version has no free on any return path:
+
+```cpp
+Packet pkt{av_packet_alloc()};
+if (fail_at == 1) return 1;
+
+Frame frame{av_frame_alloc()};
+if (fail_at == 2) return 2;
+```
+
+I ran every path under `leaks` on macOS against FFmpeg 9.0.2:
+
+| where it stops | manual cleanup | wrappers |
+|---|---|---|
+| runs to the end | 0 leaks | 0 leaks |
+| after the packet | 1 leak, 112 bytes | 0 leaks |
+| after the frame | 1 leak, 448 bytes | 0 leaks |
+| after the codec opened | 33 leaks, 64,720 bytes | 0 leaks |
+
+The last row is the expensive one.
+An open codec context owns many allocations of its own, so forgetting its free costs 33 of them.
+
+## The leak the tool did not see
+
+My first run reported zero leaks for the last manual row.
+That is wrong, because the code returns without freeing the context.
+`leaks` scans the stack conservatively, and a stale copy of the pointer left in a dead stack frame kept the context "reachable".
+
+I overwrote the dead stack just before exit.
+The same code then reported 33 leaks.
+So a clean result from a leak checker means no leak that it can prove, not no leak.
+The example scrubs the stack and says why, so the numbers above do not depend on luck.
+
+## One-off cleanups
+
+Not everything FFmpeg hands back is an object worth a type.
+`avcodec_open2` takes an options dictionary that the caller frees.
+A guard from the <PostLink slug="raii-scope-guards">previous post</PostLink> covers it without a wrapper of its own:
+
+```cpp
+AVDictionary* opts = nullptr;
+av_dict_set(&opts, "b", "200k", 0);
+auto free_opts = sx::scope_exit([&opts] { av_dict_free(&opts); });
+if (avcodec_open2(ctx.get(), codec, &opts) < 0) return -1;
+```
+
+`scope_exit` has a noexcept destructor, and `av_dict_free` does not throw, so the pairing is safe.
+
+## What the embed runs
+
+Compiler Explorer has no FFmpeg library, so the embed below does not run FFmpeg.
+It runs a stand-in with the same shape: an alloc, and a free that takes `T**` and nulls it.
+Live counters print how many objects each early exit leaves behind:
+
+```
+manual fail_at=1 -> 1, live: packets=1 frames=0 contexts=0
+manual fail_at=2 -> 2, live: packets=0 frames=1 contexts=0
+manual fail_at=3 -> 3, live: packets=0 frames=0 contexts=1
+raii   fail_at=3 -> 3, live: packets=0 frames=0 contexts=0
+```
+
+<GodboltEmbed id="z5d7j8n1f" gccOnly gccLabel="GCC 16.2" title="Early exits, with and without the wrappers" gcc_subtitle="x86-64 GCC 16.2 · -std=c++23 · stand-in for libav, runs live" />
+
+The measurements in the table come from the real FFmpeg file, built with `g++-16` against FFmpeg 9.0.2 on macOS.
+Other platforms and FFmpeg versions will give other byte counts, and the leak is the same.
+
+## Limits
+
+This post covers allocation and free.
+It does not cover reference counting: `AVPacket` and `AVFrame` carry reference-counted buffers, and unref, move and clone semantics are a separate design.
+I also have not read Piotr Borys's article, so none of this is a review of it.
+
+The runnable files are [in the examples repo](https://github.com/wrocpp/cpp26-reflection-examples/tree/a0e2e304edc7354a47a96b65f8fb78eb959a1e8b/posts/97-raii-ffmpeg).
