@@ -185,13 +185,6 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # accepted by GCC 16.2 and rejected by trunk. It runs beside the Boost decimal post of the day.
     "2026-11-09": {"slug": "vector-bool-size-wraps-to-zero", "hour": 16,
                    "why": "libstdc++ CVE-2026-114691 news short, GCC 16.2 against trunk, beside the Boost decimal post"},
-    # A 64-byte compare written five ways and built on five compilers, from an r/cpp thread of
-    # 2 November. It runs beside the co_yield in template for post of the day.
-    "2026-11-25": {"slug": "five-spellings-of-a-64-byte-compare", "hour": 16,
-                   "why": "64-byte compare codegen on GCC, Clang and MSVC, from the r/cpp thread, beside the co_yield in template for post"},
-    # Part two of the 64-byte compare: why the early exit stops the vectorizer and what to write instead.
-    "2026-11-29": {"slug": "early-exit-loop-vectorization", "hour": 16,
-                   "why": "chunked early-exit compare and std::simd on a 64-byte block, second part of the r/cpp compare thread"},
     # A flagship on the three profile papers dated 22 October (P3704R1, P4222R3, P4418R0).
     # It runs beside the reflection series post of the day and lands before the Buzios meeting.
     "2026-11-10": {"slug": "what-the-three-profile-papers-say", "hour": 16,
@@ -213,10 +206,6 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # the day on matching UB cases to checking tools.
     "2026-11-08": {"slug": "generator-enumerate-by-value", "hour": 16,
                    "why": "allocation cost of a by-value std::generator enumerate, beside the UB checking-tool post"},
-    # G2 of the generator arc: where a const& coroutine argument dies, by compiler. It runs beside the
-    # Meeting C++ program post of the day.
-    "2026-11-24": {"slug": "generator-const-reference-lifetime", "hour": 16,
-                   "why": "const& generator argument lifetime by compiler, beside the Meeting C++ program post"},
     # Lead post from the October LinkedIn batch. It rides the live wave and lands in
     # the first open second slot instead of evicting a queued post.
     "2026-11-07": {"slug": "qt-clate-qml-mcp", "hour": 16,

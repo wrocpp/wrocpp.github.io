@@ -18,5 +18,5 @@ https://wrocpp.github.io/posts/generator-const-reference-lifetime/
 wro.cpp card with the magnet logo. Headline reads "A generator's const& can dangle" with a subtitle about the range-for result on GCC, Clang and MSVC. Citation footer: wro.cpp, 2026-11-24.
 
 ## Suggested post time
-Tuesday 2026-11-24, 16:00 UTC
+Saturday 2026-11-21, 08:00 UTC
 Reason: the second slot of the day, beside the Meeting C++ program post.

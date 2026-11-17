@@ -16,5 +16,5 @@ https://wrocpp.github.io/posts/read-meeting-cpp-program-and-wg21-2027-dates/
 Cream wro.cpp card with the magnet logo. Headline reads "WG21 meets in Sofia in June 2027" with a subtitle giving the Sofia dates, the hotel booking deadline and the Meeting C++ talk count. Citation footer: wro.cpp, 2026-11-24.
 
 ## Suggested post time
-Tuesday 2026-11-24, 08:00 UTC
+Friday 2026-11-20, 08:00 UTC
 Reason: two days before Meeting C++ opens in Berlin.

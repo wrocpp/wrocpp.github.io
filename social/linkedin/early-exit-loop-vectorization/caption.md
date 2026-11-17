@@ -16,5 +16,5 @@ https://wrocpp.github.io/posts/early-exit-loop-vectorization/
 wro.cpp card with the magnet logo. Headline reads "Chunks keep the early exit and vectorize" with a subtitle about instruction counts on GCC and Clang. Citation footer: wro.cpp, 2026-11-29.
 
 ## Suggested post time
-Sunday 2026-11-29, 16:00 UTC
+Sunday 2026-11-29, 08:00 UTC
 Reason: the second slot of the day, beside the annotations post.

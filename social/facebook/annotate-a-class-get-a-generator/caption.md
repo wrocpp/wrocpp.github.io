@@ -12,5 +12,5 @@ https://wrocpp.github.io/posts/annotate-a-class-get-a-generator/
 wro.cpp card with the magnet logo. Headline reads "Reflection cannot write your coroutine" with a subtitle about the 1000 against 7 elements built. Citation footer: wro.cpp, 2026-11-29.
 
 ## Suggested post time
-Sunday 2026-11-29, 08:00 UTC
+Friday 2026-11-27, 08:00 UTC
 Reason: the morning slot, after the template for post it builds on.
