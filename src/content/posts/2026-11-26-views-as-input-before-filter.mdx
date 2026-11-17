@@ -92,4 +92,4 @@ On libstdc++ 15, `as_input` is unknown and the compiler suggests `to_input`. On 
 - **You need the filter to be reversible or multi-pass.** Leave `as_input` out and accept the filter's caching and its undefined behavior when an element changes under it.
 - **The library has neither name.** Use the plain filter and keep the move-out step out of a reversed pipeline.
 
-The example file has no macro. It needs a library with `views::as_input` and `<generator>`, and libc++ trunk fails it. The sources and all outputs are in [`posts/121-views-as-input`](https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/121-views-as-input). Everything here ran on Compiler Explorer on 2026-11-17.
+The example file has no macro. It needs a library with `views::as_input` and `<generator>`, and libc++ trunk fails it. The sources and all outputs are in [`posts/121-views-as-input`](https://github.com/wrocpp/cpp26-reflection-examples/tree/cea610e34c6df9a8f8710ed9bf24be439757277c/posts/121-views-as-input). Everything here ran on Compiler Explorer on 2026-11-17.
