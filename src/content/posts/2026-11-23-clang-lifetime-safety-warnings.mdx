@@ -28,7 +28,7 @@ I wrote seven small programs that dangle and compiled each with Clang 23.1, Clan
 
 ## The seven cases
 
-Each case is a small file in the <a href="https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/119-clang-lifetime-safety">examples repository</a>. Run without an argument, a file prints one line and exits 0. All seven are views and references: a returned `string_view`, a field, a lambda capture, a reference into a vector.
+Each case is a small file in the <a href="https://github.com/wrocpp/cpp26-reflection-examples/tree/1ec7a5ec864d8b0e0c7a77f8254c703eaa86a4c1/posts/119-clang-lifetime-safety">examples repository</a>. Run without an argument, a file prints one line and exits 0. All seven are views and references: a returned `string_view`, a field, a lambda capture, a reference into a vector.
 
 | case | what dangles |
 |---|---|
@@ -89,4 +89,4 @@ The suggestion warnings are a different kind of noise. A function that returns o
 
 The analysis is intra-procedural and treats unannotated calls optimistically, so it will miss bugs that cross functions. For a stronger check, see the reflection lint in <PostLink slug="reflection-dangling-signature">this earlier post</PostLink> and the attribute in <PostLink slug="clang-lifetimebound-condition">the lifetimebound post</PostLink>. The <a href="/toolset/lifetime-safety-2026/">lifetime safety toolset page</a> compares Clang, GCC and MSVC on one sample.
 
-Sources: the [Clang 23.1.0 release notes](https://releases.llvm.org/23.1.0/tools/clang/docs/ReleaseNotes.html) and the [Clang lifetime safety page](https://clang.llvm.org/docs/LifetimeSafety.html), both read on 2026-11-17. The sources and all outputs are in [`posts/119-clang-lifetime-safety`](https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/119-clang-lifetime-safety). Everything else ran on Compiler Explorer on 2026-11-17. I did not run MSVC.
+Sources: the [Clang 23.1.0 release notes](https://releases.llvm.org/23.1.0/tools/clang/docs/ReleaseNotes.html) and the [Clang lifetime safety page](https://clang.llvm.org/docs/LifetimeSafety.html), both read on 2026-11-17. The sources and all outputs are in [`posts/119-clang-lifetime-safety`](https://github.com/wrocpp/cpp26-reflection-examples/tree/1ec7a5ec864d8b0e0c7a77f8254c703eaa86a4c1/posts/119-clang-lifetime-safety). Everything else ran on Compiler Explorer on 2026-11-17. I did not run MSVC.
