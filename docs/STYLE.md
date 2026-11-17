@@ -132,12 +132,18 @@ rewrites:
 
 ## Headlines and hooks
 
-Our best-performing post so far, the C++26 erroneous-behavior short, reached about 125x our usual
-impressions and 100x our usual clicks. A reader summed up why in the comments: "Looks like a
-clickbait, but it's actually true." That tension, curiosity on the surface and a real payoff
-underneath, is the effect to aim for. It is not achieved by overstating. It is achieved by finding
-the true claim that also happens to be surprising, and letting the card promise exactly what the
-post delivers.
+The hook toolkit below was written from one post, the C++26 erroneous-behavior short of 5 July, which
+reached about 125x our usual impressions and 100x our usual clicks. A reader summed up why in the comments:
+"Looks like a clickbait, but it's actually true." That tension, curiosity on the surface and a real payoff
+underneath, is the effect to aim for. It is not achieved by overstating. It is achieved by finding the true
+claim that also happens to be surprising, and letting the card promise exactly what the post delivers.
+
+The toolkit has not been shown to repeat that result. In the 96 comparable posts from 30 July to 22 October
+2026, cards with a checkable number or a reframed habit had a median impressions index of 0.91 against 1.04
+for the rest (23 against 73 posts, ratio 0.88; the index is a post's impressions over the median of its
+neighbours within 7 days). Without the ten largest outliers the ratio is 0.94. The data say "no lift", not
+"harm". Treat the toolkit as a way to write a clear, true card, not as a way to raise reach. The method and
+the numbers are in `docs/analytics.md`, "Monthly social review".
 
 ### Two tiers: card headline vs blog title
 
@@ -155,7 +161,8 @@ overreached, so rewrite it down to what the post actually proves.
 
 ### The hook toolkit
 
-The techniques that made the footgun post land, reusable on any topic:
+Techniques taken from the footgun post. They help a card read clearly and honestly, and the review above did
+not find that they raise reach:
 
 - **A specific number, not a vague quantifier.** "40 years," not "long-standing." "Never calls
   `new`," not "fewer allocations." A number is checkable, and checkable reads as true.

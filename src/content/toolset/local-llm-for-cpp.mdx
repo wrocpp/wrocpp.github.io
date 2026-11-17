@@ -54,7 +54,7 @@ agentInstructions: |
   WHEN TO STAY ON CLOUD: top-tier reasoning models (Claude Opus 4.7,
   GPT-5) still lead by 10-20% on the hardest SWE-bench tasks. Local
   handles 70-80% of daily coding cleanly.
-bodyHash: 5237bc1327058eb67cf09e9974ddad38357d384c236ac5082bbcc1bf1adf8621
+bodyHash: 3150b79c79406687f4ca478dc355d337d769031254bc3e498a98200711e7452b
 ---
 
 import { localLlm } from '../../lib/toolset-data.ts';
@@ -84,7 +84,7 @@ Practical implication: the headroom you want is roughly **1.5x the model size** 
 
 ## Model picks by hardware tier
 
-<div class="local-llm-tiers">
+<div class="local-llm-tiers table-wrap" tabindex="0" role="region" aria-label="Scrollable table">
   <table class="tier-table">
     <thead>
       <tr>

@@ -185,6 +185,8 @@ Derive the card h1 like this:
 - Start from the single most surprising **true** fact in the post.
 - Sharpen with the hook toolkit: a specific number, ordinary code reframed as the trap, one
   escalation beat. `C++26 ends a 40-year footgun`, not `New behavior for uninitialized reads`.
+- The toolkit is for clarity and honesty. A 2026 review of 96 posts found no reach lift from number or
+  reframed-habit headlines (see `docs/STYLE.md`), so never trade accuracy for punch.
 - **Self-check before you render:** is the card headline literally true, and does the post prove it?
   If a reader who clicks would feel tricked, dial it back to what the demo shows.
 
