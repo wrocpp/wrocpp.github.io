@@ -16,5 +16,5 @@ https://wrocpp.github.io/posts/cpponline-2027-call-for-speakers/
 wro.cpp card with the magnet logo. Headline reads "C++Online speaker call closes this Friday" with a subtitle giving the conference dates, 10 to 12 March 2027, online, and noting that the workshop call shows two different deadlines. Citation footer: wro.cpp, 2026-11-19.
 
 ## Suggested post time
-Thursday 2026-11-19, 16:00 UTC
-Reason: the second post of the day, after the 08:00 UTC post, with one day left before the deadline.
+Wednesday 2026-11-18, 16:00 UTC
+Reason: the second post of the day, after the 08:00 UTC post, with two days left before the deadline.

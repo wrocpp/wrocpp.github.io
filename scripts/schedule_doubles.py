@@ -213,10 +213,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # A short on accidental copies in a structured-binding range-for and what a copy does and does not
     # protect, after Adam Bienkunski's LinkedIn post of 7 November. It takes the second slot of 10 December.
     # The C++Online 2027 call for speakers closes on Friday 20 November, and the organisers asked
-    # community partners to pass the reminder on. It runs beside the p0963 post of the day, in the
-    # 16:00Z slot, so a reader still has a day to submit.
-    "2026-11-19": {"slug": "cpponline-2027-call-for-speakers", "hour": 16,
-                   "why": "C++Online 2027 call for speakers closes 20 November, beside the p0963 post"},
+    # community partners to pass the reminder on. It runs today beside the api-contract-guard post,
+    # in the 16:00Z slot, so a reader still has two days to submit.
+    "2026-11-18": {"slug": "cpponline-2027-call-for-speakers", "hour": 16,
+                   "why": "C++Online 2027 call for speakers closes 20 November, beside the api-contract-guard post"},
     "2026-12-10": {"slug": "structured-binding-copies-in-range-for", "hour": 16,
                    "why": "structured-binding copies and reentrancy, from Adam Bienkunski's post, beside the first debugger post"},
 }
