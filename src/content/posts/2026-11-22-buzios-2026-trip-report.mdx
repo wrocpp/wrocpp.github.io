@@ -1,0 +1,114 @@
+---
+title: "At Búzios, five motions changed C++26 and 14 more went into C++29"
+slug: "buzios-2026-trip-report"
+pubDate: 2026-11-22
+author: filip-sajdak
+language: en
+tags: [news, wg21, buzios, cpp26, cpp29, contracts, iso]
+kind: short
+audience: working-cpp
+summary: "Per Herb Sutter's trip report, the Búzios meeting reheard the C++26 ballot comments and voted 111 to 9 to re-ship C++26. The project editor lists 19 motions: five change C++26 and 14 go into C++29. A second ballot is planned and has no date."
+draft: false
+relatedPosts: [brno-2026-trip-report, c26-dis-ballot-result, brno-profiles-contracts, wg21-2026-10-pre-buzios-mailing]
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+The ISO C++ committee met in Búzios, Brazil, from 16 to 21 November. Per Herb Sutter's trip report, it adopted four papers that change the C++26 draft and kept contracts. It then voted 111 to 9, with 8 abstaining, to re-ship C++26. The project editor opened 19 motion issues on 21 November. This post is the overview, and three posts that follow take the papers one at a time.
+
+## In short
+
+- The first DIS ballot did not pass. Sutter writes that five national bodies (NBs) raised contracts concerns for the first time and voted Disapprove.
+- The committee did not remove contracts. It adopted P4451R2, a label that marks a contract as always enforced.
+- The editor's list has 19 motions: five change C++26, and 14 go into C++29 (7 core, 7 library).
+- A second DIS ballot is planned. No date for it, or for ISO publication, has been published.
+- Not reported yet: any outcome on the undefined-behaviour framework or on profiles.
+
+## What the meeting was
+
+Sutter's report is a personal blog, and his bio says it speaks for no organisation. It is the only account of the meeting I found on 21 November, and I found no other trip report, minutes or new working draft.
+
+He gives about 220 attendees from 27 nations, roughly 35% in person and 65% on Zoom. The committee spent most of the week rehearing the NB comments on the DIS, which were mostly about contracts. The next full meeting is in Istanbul, 15 to 20 March 2027.
+
+## The votes
+
+Sutter lists three plenary polls, each labelled "in favor:opposed".
+
+| poll | in favour | opposed | abstaining | in favour of those voting |
+|---|---|---|---|---|
+| February 2025, merge contracts into the C++26 draft | 100 | 14 | 12 | 87.7% |
+| March 2026, finish and ship C++26 | 114 | 12 | 3 | 90.5% |
+| November 2026, re-ship C++26 | 111 | 9 | 8 | 92.5% |
+
+The percentages leave abstentions out. With the 8 abstentions in the denominator, the November poll is 111 of 128, or 86.7%.
+
+## What the sources say about the ballot
+
+The sources describe the failed ballot in different terms. I list them side by side and do not reconcile them.
+
+| source | what it says | status |
+|---|---|---|
+| Sutter, 21 November | the first DIS "did not pass unanimously" and was sent back, and five NBs voted Disapprove over contracts for the first time | personal blog, no tally |
+| Seacord and Pusz, reported in <PostLink slug="c26-dis-ballot-result">the ballot post</PostLink> | 12 of 20 P-members in favour, 9 of 22 votes negative | reported, no official record |
+| Sutter's P4454R0, 31 October, section 2.3 | five people lobbied other NBs, and over half of the Disapprove NBs had never taken part in WG21 | a paper, so the author's account |
+
+No document I found names the NBs, and their comments are not public. The straw-poll document that each motion issue links to is open to members only.
+
+## Five motions changed C++26
+
+Four papers answer ballot comments, and all four are also in the C++29 draft. Per Sutter, the committee discussed and revoted on requests to remove contracts and reaffirmed that it wants to keep them.
+
+| motion | issue | what it is |
+|---|---|---|
+| CWG 1 | [#9397](https://github.com/cplusplus/draft/issues/9397) | core issues 3241 and 3242 |
+| CWG 2 | [#9398](https://github.com/cplusplus/draft/issues/9398) | P4466R2, using-declarators and reflection, a response to comment FI-067 |
+| CWG 3 | [#9399](https://github.com/cplusplus/draft/issues/9399) | P4451R2, the always-enforced contract label |
+| LWG 1 | [#9400](https://github.com/cplusplus/draft/issues/9400) | P4453R1, allocators for senders and receivers, a response to IE-133 |
+| LWG 2 | [#9401](https://github.com/cplusplus/draft/issues/9401) | P3861R1, standard structural types such as `string_view` |
+
+Sutter calls P4451R2 the primary change to contracts and says several NBs named it as their main request. <PostLink slug="buzios-always-enforced-contract-label">The next post</PostLink> runs it on the Compiler Explorer builds that implement it. <PostLink slug="buzios-cpp26-fixes">The post after it</PostLink> covers the other three papers.
+
+P3861R1 is not public. Every URL I tried returned 404, and Sutter's link points to R0, so I describe R0 and say so.
+
+## 14 motions went into C++29
+
+Sutter counts five core papers and seven library papers, and names two and three of them. The issue titles name all of the core papers. Counting the issue lists as motions gives 7 core and 7 library.
+
+| motion | issue | paper or list |
+|---|---|---|
+| CWG 4 | [#9402](https://github.com/cplusplus/draft/issues/9402) | ready core issues except 3232, 3233, 3241 and 3242 |
+| CWG 5 | [#9403](https://github.com/cplusplus/draft/issues/9403) | core issues 3232 and 3233 |
+| CWG 6 | [#9404](https://github.com/cplusplus/draft/issues/9404) | P0085R5, the `0o` octal prefix |
+| CWG 7 | [#9405](https://github.com/cplusplus/draft/issues/9405) | P2952R5, deduced return types for defaulted operators |
+| CWG 8 | [#9406](https://github.com/cplusplus/draft/issues/9406) | P4176R2, grammar non-terminals for postfix-expressions |
+| CWG 9 | [#9407](https://github.com/cplusplus/draft/issues/9407) | P4284R2, addenda to the undefined-behaviour and IFNDR annexes |
+| CWG 10 | [#9408](https://github.com/cplusplus/draft/issues/9408) | P3568R4, `break label;` and `continue label;` |
+| LWG 3 | [#9409](https://github.com/cplusplus/draft/issues/9409) | P4485R0, the library issues list |
+| LWG 4 | [#9410](https://github.com/cplusplus/draft/issues/9410) | P3427R9, hazard pointer synchronous reclamation |
+| LWG 5 | [#9411](https://github.com/cplusplus/draft/issues/9411) | P3411R7, `any_view` |
+| LWG 6 | [#9412](https://github.com/cplusplus/draft/issues/9412) | P4354R0, no more `transform_sender` workarounds |
+| LWG 7 | [#9413](https://github.com/cplusplus/draft/issues/9413) | P3216R6, `views::slice` |
+| LWG 8 | [#9414](https://github.com/cplusplus/draft/issues/9414) | P4189R0, getting the pointer from an `optional` |
+| LWG 9 | [#9415](https://github.com/cplusplus/draft/issues/9415) | P3642R8, `std::clmul` |
+
+Sutter's "seven library papers" matches only if the library issues list counts, which is my inference. <PostLink slug="buzios-cpp29-papers">The C++29 post</PostLink> runs what can run today. No compiler status page I checked lists any of these papers yet. The GCC page was last modified on 3 October, and neither the Clang page nor the libc++ C++29 table shows them.
+
+## What is not known
+
+- Whether the undefined-behaviour framework (P3100) or the profiles papers were discussed. No report covers them. P4284R2 is the only related paper in the motion list.
+- The date of the second DIS ballot and of ISO publication. Sutter writes that the updated document is "anticipated" for a second ballot.
+- The full text of P3861R1, the adopted name in P4189, and what the 19 motions look like in a new working draft.
+
+## Dates
+
+The post-Búzios mailing deadline is 15 December, according to N5058. The Sofia meeting is 14 to 19 June 2027. The <PostLink slug="read-meeting-cpp-program-and-wg21-2027-dates">dates post</PostLink> lists the meetings after it. isocpp.org also lists a virtual plenary on 18 December, with no purpose stated.
+
+## Sources
+
+All read on 21 November 2026.
+
+- [Sutter's trip report](https://herbsutter.com/2026/11/21/c26-is-done-again-trip-report-november-2026-iso-c-standards-meeting-buzios-brazil/), a personal blog.
+- The 19 motion issues #9397 to #9415 in [cplusplus/draft](https://github.com/cplusplus/draft/issues), milestone `post-2026-11`, opened on 21 November between 15:04 and 15:19 UTC.
+- [P4454R0](https://isocpp.org/files/papers/P4454R0.pdf), section 2.3 only.
+- [N5058](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/n5058.html), the Búzios agenda, and the [isocpp.org meeting list](https://isocpp.org/std/meetings-and-participation/upcoming-meetings).
+- I opened P4451R2, P4466R2, P4453R1, P0085R5, P3568R4, P3411R7, P3216R6, P4189R0 and P3861R0. The other motion papers I know by title only.
