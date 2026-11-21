@@ -12,6 +12,8 @@ draft: false
 relatedPosts: [cpp26-contracts, wg21-2026-08-mailing]
 ---
 
+import PostLink from '../../components/PostLink.astro';
+
 C++26 contracts are not a proposal. They are text in the working draft, voted in, implemented in GCC 16.1, and [demonstrable today](/posts/cpp26-contracts/). The August 2026 mailing contains a paper by the designer of C++ arguing they should come out anyway.
 
 That is unusual enough to be worth understanding properly, and it is not a story about contracts being broken. It is a story about what "consensus" means when a feature is nearly shipped.
@@ -61,6 +63,8 @@ Contracts are in the working draft. GCC implements them. The syntax works, the e
 The reason to follow it is not the feature. It is that this is the clearest recent case of a question every technical body eventually faces: whether a decision is legitimate because the procedure was followed, or whether the people who have to implement the thing get a say the procedure does not capture. C++ is unusually public about it. The papers are all readable, both sides are named, and the votes are on the record.
 
 Búzios decides.
+
+Update on 21 November: the meeting has happened. Per Herb Sutter's trip report, the committee did not remove contracts, adopted an always-enforced label (P4451R2) and voted 111 to 9 to re-ship C++26. The <PostLink slug="buzios-2026-trip-report">Búzios overview</PostLink> lists the sources, including the ones that describe the ballot differently.
 
 ---
 

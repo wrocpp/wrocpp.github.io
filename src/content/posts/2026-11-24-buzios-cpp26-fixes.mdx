@@ -1,0 +1,217 @@
+---
+title: "import std; breaks ^^std::basic_string on GCC 16.2, and Búzios changed the rule"
+slug: "buzios-cpp26-fixes"
+pubDate: 2026-11-24
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, wg21, buzios, cpp26, reflection, modules, structural-types, stdexec]
+summary: "On GCC 16.2, ^^std::basic_string compiles after #include and fails after import std;. Buzios adopted P4466R2 for the C++26 draft, and only a GCC fork I ran accepts the module form. Six compilers reject a string_view template parameter, which P3861 targets. stdexec lacks the new allocator query."
+draft: false
+relatedPosts: [annotate-a-class-get-a-generator, task-next-to-a-generator, annotations]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+The same reflection line behaves differently on GCC 16.2 depending on how the standard library arrives.
+It compiles after an include and fails after `import std;`, with `'^^' cannot be applied to a using-declaration`.
+The Buzios meeting adopted a paper for the C++26 draft that makes the module form well-formed.
+GCC 16.2 and a GCC trunk build of 21 November still reject it, and a GCC fork that the paper credits accepts it.
+All runs were on Compiler Explorer on 21 November 2026.
+
+## In short
+
+- `^^std::basic_string` is rejected after `import std;` on GCC 16.2 and GCC trunk (17.0.0 20261121). It is accepted after `#include <string>`. P4466R2 changes the rule.
+- None of six compilers accepts a `std::string_view` template parameter. P3861 targets that limit. I could read only R0 of the paper, because R1 was not public on 21 November.
+- `std::define_static_string` returns a pointer that works as a `const char*` template argument on three compilers.
+- P4453R1 adds the allocator query `get_scheduler_allocator`. Neither NVIDIA's stdexec nor the Beman execution library had it on 21 November.
+- Core issues 3241 and 3242 reword two sentences of the standard.
+
+## The five motions
+
+Per [Sutter's trip report](https://herbsutter.com/2026/11/21/c26-is-done-again-trip-report-november-2026-iso-c-standards-meeting-buzios-brazil/), a personal account of the meeting, the committee adopted four main papers for C++26 and fixed some editorial issues.
+All of these changes were also adopted for draft C++29.
+The motions are public as issues in the `cplusplus/draft` repository, and all five carry the label `ballot-comment`.
+This post covers four of the five motions. The contracts label has its own post in this series.
+
+| Issue | Paper or issues | What it changes |
+|---|---|---|
+| [#9397](https://github.com/cplusplus/draft/issues/9397) | core issues 3241, 3242 | rewords the paragraph on eliminating static variables and a sentence on overlapping assignment |
+| [#9398](https://github.com/cplusplus/draft/issues/9398) | P4466R2 | reflection can name some using-declarators |
+| [#9399](https://github.com/cplusplus/draft/issues/9399) | P4451R2 | an always-enforced label for contracts, covered in its own post |
+| [#9400](https://github.com/cplusplus/draft/issues/9400) | P4453R1 | a query for the allocator of a task's scheduler |
+| [#9401](https://github.com/cplusplus/draft/issues/9401) | P3861R1 | standard types such as string_view become structural |
+
+The committee adopted these changes for the C++26 draft. On 21 November the editors' merge pull requests were not open yet, so the draft text has not changed. A second DIS ballot is planned and has no date.
+
+## Reflection through a using-declaration
+
+libstdc++'s `std` module exports each entity with a using-declaration, as the paper shows for `basic_string`.
+Before Buzios, the draft made the reflection operator ill-formed on any name that a using-declarator introduces.
+The same line therefore worked where the include was textual, and broke after `import std;`.
+Ballot comment FI-067 reported this, and P4466R2 by Dan Katz and Tomasz Kamiński answers it.
+
+The line is the same in both forms:
+
+```cpp
+constexpr std::meta::info string_template = ^^std::basic_string;
+```
+
+| form | GCC 16.2 | GCC trunk 20261121 | GCC fork, 20261102 |
+|---|---|---|---|
+| `#include <string>` | compiles | compiles | compiles |
+| `import std;` | error | error | compiles |
+
+The error on GCC 16.2 and trunk is the one quoted at the top, and it points at this line.
+Reflecting `std::vector` after `import std;` was accepted on GCC 16.2. The paper's sample explains it: vector is declared directly in `std`.
+The fork is the Compiler Explorer entry "x86-64 gcc (P4324 contracts, and profiles)" from the paper's own links, built with `-fmodules` and `-fsearch-include-path bits/std.cc`.
+
+<GodboltEmbed id="zTos79n66" gccOnly gccLabel="GCC 16.2" title="Reflecting two library templates after an include" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection · runs live" />
+
+<GodboltEmbed id="PjrK851ME" gccOnly compilerLabel="GCC P4324 fork" title="The same two reflections after import std;" gcc_subtitle="x86-64 GCC 17.0.0 20261102 fork · -std=c++26 -freflection -fmodules -fsearch-include-path bits/std.cc · runs live" />
+
+## What the new rule allows
+
+The paper calls a using-declarator reflection-transparent when it sits at namespace scope.
+Only inline or unnamed namespaces may lie between it and the declaration it names.
+The reflection then denotes the underlying entity.
+The module case reduces to a few lines without modules, because `basic_string` lives in an inline namespace:
+
+```cpp
+namespace NS {
+inline namespace Inline {
+void f();
+}
+using Inline::f;
+}
+constexpr std::meta::info reflected = ^^NS::f;   // from the paper: the function, not the using-declarator
+```
+
+<GodboltEmbed id="d4e5e138s" gccOnly compilerLabel="GCC P4324 fork" title="A using-declarator across an inline namespace" gcc_subtitle="x86-64 GCC 17.0.0 20261102 fork · -std=c++26 -freflection · runs live" />
+
+The paper keeps three forms ill-formed: a using-declaration in a class, one across a named namespace, and an enumerator brought in by one.
+I ran all five cases on four compilers:
+
+| case | paper | GCC 16.2 and trunk | GCC fork | Bloomberg Clang fork |
+|---|---|---|---|---|
+| using-declarator in its own namespace | allowed | compiles | compiles | compiles |
+| across an inline namespace | allowed | error | compiles | compiles |
+| across a named namespace | ill-formed | compiles | error | error |
+| in a class | ill-formed | compiles | error | error |
+| enumerator | ill-formed | compiles | compiles | compiles |
+
+GCC 16.2 and trunk compile all three forms that the paper keeps ill-formed.
+For the namespace and class forms, a further run showed that they reflect the underlying function.
+I did not look for the rule GCC applies.
+The sample source in the paper's links is labelled R0, so I cannot say the fork matches R2 everywhere.
+Both forks compiled the enumerator case that R2 keeps ill-formed.
+The paper credits Ville Voutilainen with an implementation of its rule in the GCC fork.
+
+## A string_view as a template argument
+
+Sutter's link for P3861R1 points at the R0 text.
+R1 was not public on 21 November, and the isocpp.org and wg21.link addresses returned 404.
+Everything below about the paper is R0 of 6 October 2025 by Corentin Jabot, and the adopted text may differ.
+Per Sutter's trip report, the adopted paper allows more use of string views, spans and tuples as template parameters.
+
+R0 makes these three types structural by compiler support.
+Two string views are equivalent when their `data()` and `size()` results are equivalent, so the rule compares pointers, not contents.
+A tuple is structural when all its element types are, and R0 leaves out `optional` and `variant`.
+A string literal is still not a valid argument.
+
+Today every compiler I ran rejects the direct form of the parameter:
+
+| compiler | end of the error text |
+|---|---|
+| GCC 16.2, GCC trunk | `is not a valid type for a template non-type parameter because it is not structural` |
+| Clang 23.1, Clang trunk, Bloomberg Clang fork | `of non-type template parameter is not a structural type` |
+| MSVC 19.51 | `error C2993: ... is not a valid type for non-type template parameter` |
+
+One program asks each compiler which types it accepts. It prints the same table on all six:
+
+| type | accepted as a parameter |
+|---|---|
+| `int`, `const char*`, a struct with a public `char` array | yes |
+| `std::string_view`, `std::span<const int>` | no |
+| `std::tuple<int, char>`, `std::optional<int>`, `std::variant<int>` | no |
+
+The program also shows pointer identity as it works today.
+Two arrays that both hold "Hello" give two different template arguments, so two different types.
+
+<GodboltEmbed id="8z4h7n7G3" gccOnly gccLabel="GCC 16.2" title="Which types are accepted as a template parameter" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 · runs live" />
+
+## What works today
+
+A class with a `char` array member, filled by a consteval constructor, carries a text in the argument.
+The <PostLink slug="annotate-a-class-get-a-generator">annotate post</PostLink> uses that for an annotation label.
+Equal texts give the same type, because the characters are compared.
+
+The second route is a pointer. `std::define_static_string` returns one, and two calls with the same text returned the same pointer:
+
+```cpp
+constexpr const char* abc = std::define_static_string("abc");
+template <const char* Address> struct ByAddress {};
+ByAddress<abc> argument;
+```
+
+The pointer was accepted as a `const char*` template argument on GCC 16.2, GCC trunk and the Bloomberg Clang fork.
+A `string_view` built from such a pointer is the shape that R0's equivalence rule could accept.
+That is my reading of R0, and I could not compile it.
+The <PostLink slug="annotations">annotations post</PostLink> and the annotate post hit this limit with a `string_view` annotation payload.
+R0 does not mention annotations, and I did not check whether the adopted paper changes that case.
+
+<GodboltEmbed id="59h47bxnb" gccOnly gccLabel="GCC 16.2" title="A text as a template argument, by value and by address" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection · runs live" />
+
+## An allocator for the start scheduler
+
+P4453R1 by Dietmar Kühl and Lucian Radu Teodorescu answers ballot comment IE-133 about memory allocation in senders and receivers.
+The paper is dated 18 November.
+It adds a forwarding query, `std::execution::get_scheduler_allocator`.
+The query asks the environment for an allocator, and falls back to `get_allocator`.
+
+It also changes how `task` builds its start scheduler. The paper's wording tries five constructions in order:
+
+| order | the start scheduler is built from |
+|---|---|
+| 1 | the receiver's start scheduler, when it already has the right type |
+| 2 | that scheduler and the scheduler allocator |
+| 3 | that scheduler alone |
+| 4 | the scheduler allocator alone |
+| 5 | default construction |
+
+The program is ill-formed when none of them is valid.
+In the paper's design, the allocator given to `task` still serves the coroutine frame, and the scheduler's allocator comes from the environment.
+The paper proposes no change to the parallel scheduler, and argues that allocator support can come in C++29 or later.
+
+I grepped two implementations on 21 November.
+The pattern `scheduler_allocator` appears nowhere in stdexec main, at commit f27cd13.
+It is also absent from the Beman execution library, at commit 3489ed3.
+stdexec [pull request 2462](https://github.com/NVIDIA/stdexec/pull/2462), "partial implementation of P4453", was merged on 17 November.
+It builds the start scheduler from the task's own allocator, where the paper's wording uses the environment's.
+Its code comments call two of the steps not to spec.
+I did not build either library.
+
+The stdexec task post of 30 November, <PostLink slug="task-next-to-a-generator">a stdexec task next to a generator</PostLink>, counted allocations for a task on 2 November.
+That is before this change in stdexec, and I did not rerun its numbers.
+
+## Two core issues
+
+Core issue 3241 is about the paragraph on eliminating static variables whose initialization or destructor has side effects.
+The approved resolution wraps the paragraph in a note, and turns "shall not" into "cannot" and "may" into "can".
+Core issue 3242 rewrites a sentence in the assignment expression section, about a stored value read through an overlapping object.
+It states the condition for undefined behavior without "shall".
+Both come from comments on the C++26 DIS, and CWG approved the resolutions on 19 November.
+The issue texts give phrasing reasons. They do not describe a change of behavior.
+
+## What I did not run or read
+
+- R1 of P3861. R0 is the only revision I read.
+- Vote counts for these motions. The motion issues link only to straw-poll pages on wiki.isocpp.org, which asked for a login.
+- The module form on Clang, and any compiler other than the ones named above.
+- A build of stdexec or of Beman's execution library. I only searched their source.
+
+This is post 3 of 4 on the Búzios meeting. The <PostLink slug="buzios-2026-trip-report">overview</PostLink> comes first, then <PostLink slug="buzios-always-enforced-contract-label">the contract label</PostLink>, and <PostLink slug="buzios-cpp29-papers">the C++29 papers</PostLink> follow.
+
+The sources and all outputs are in [`posts/140-cpp26-buzios-fixes`](https://github.com/wrocpp/cpp26-reflection-examples/tree/5e7be7fc9ba6e55fb25199b2d5cf2dfa98796519/posts/140-cpp26-buzios-fixes).
