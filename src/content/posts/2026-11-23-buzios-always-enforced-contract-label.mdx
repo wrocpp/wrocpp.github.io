@@ -1,0 +1,166 @@
+---
+title: "A contract assertion labelled enforced still terminates under ignore"
+slug: "buzios-always-enforced-contract-label"
+pubDate: 2026-11-23
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, wg21, buzios, cpp26, contracts, gcc, clang]
+summary: "P4451R2, adopted at Búzios, adds a label that makes one contract assertion terminate whatever the build asks. On GCC and Clang branch builds a labelled assertion kept running under ignore, and a violated one ended the program in 12 of 12 runs. GCC 16.2 rejects the syntax."
+draft: false
+relatedPosts: [ndebug-does-not-disable-contracts, cpp26-contracts, c26-dis-ballot-result, contracts-dispute]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+P4451R2 adds a label that makes one contract assertion terminate whatever the build asks for.
+I put six assertions in one function, three of them labelled, and built it on two experimental branch compilers.
+In the default call, `observe` ran six predicates and `ignore` ran three, the labelled ones.
+Each violated labelled assertion ended the program, in 12 of 12 runs.
+
+## In short
+
+- A label, `std::contracts::controls::enforced`, goes after the contract introducer. The wording requires every evaluation of such an assertion to use a terminating semantic.
+- On the GCC and Clang branch builds, labelled predicates ran under `ignore`, and a violated label terminated in all 12 runs. Unlabelled predicates ran 0 times under `ignore`.
+- GCC 16.2 and GCC trunk reject the label at the `<`. The same program without labels, built with `ignore`, evaluates no predicate and exits 0 for all four calls.
+- The EDG branch built the file with `--contracts_p3400` and enforced nothing. With `--contracts_p4451` it rejected the name.
+- The name is not settled across papers. P3400R5, aimed at C++29, spells the same label `terminating`.
+
+## Where the label comes from
+
+The paper is P4451R2, "Early Adoption of an Always-Enforced Label" by Joshua Berne, dated 2026-11-19 ([PDF](http://isocpp.org/files/papers/P4451R2.pdf)).
+It is motion CWG3 of the Búzios meeting, listed as [issue 9399](https://github.com/cplusplus/draft/issues/9399) in the C++ draft repository.
+[Sutter's trip report](https://herbsutter.com/2026/11/21/c26-is-done-again-trip-report-november-2026-iso-c-standards-meeting-buzios-brazil/) calls it the primary change to contracts, adopted for C++26 and for draft C++29.
+Per the same report, several national bodies named this as their primary request.
+None of the released compilers I ran has it: GCC 16.2, Clang 23.1 and MSVC 19.51.
+The label itself ran only on branch builds hosted by Compiler Explorer on 2026-11-21.
+
+## What the label is
+
+The label follows the introducer and comes before any attribute (paper, section 3 and its grammar changes).
+All three forms take it:
+
+```cpp
+pre<std::contracts::controls::enforced>(x > 0)
+post<std::contracts::controls::enforced>(r : r > 0)
+contract_assert<std::contracts::controls::enforced>(x != 7);
+```
+
+The rules, with the paper's section for each:
+
+- The name must not be type-dependent or value-dependent (section 3). Including `<contracts>`, or importing `std`, makes it visible (section 2.4).
+- Lookup is ordinary (section 2.5). A namespace alias, a using-directive and a using-declaration all worked on both branch compilers. The bare name did not: both reported that the specifier must name the label.
+- Every evaluation uses `enforce` or `quick_enforce`, and the implementation picks (6.11.2, paragraph 2). The wording exempts one notional evaluation, the one that decides whether a variable is constant-initializable.
+- The build option that ignores assertions is recommended to leave labelled ones alone (6.11.2, paragraph 3, "recommended practice"). Both branch builds did.
+- A redeclaration must carry the label on both declarations or on neither (9.4.1, paragraph 5). I did not run that rule.
+- The wording moves `__cpp_contracts` and `__cpp_lib_contracts` from 202502L to 202611L. Both branch builds reported 202611, and GCC 16.2 and GCC trunk reported 202502.
+
+## Six assertions, two semantics
+
+The function has three unlabelled assertions and three labelled ones.
+A helper named `check` prints `evaluated <name>` and returns its argument, so the output lists every predicate that ran.
+
+```cpp
+int f(const int x)
+    pre(check("pre even", x % kParity == 0))
+    pre<std::contracts::controls::enforced>(check("pre positive", x > 0))
+    post(r : check("post below limit", r < kLimit))
+    post<std::contracts::controls::enforced>(r : check("post not forbidden", r != kForbiddenResult)) {
+  contract_assert(check("assert small", x < kSmall));
+  contract_assert<std::contracts::controls::enforced>(check("assert not forbidden", x != kForbiddenInput));
+  return kScale * x;
+}
+```
+
+The default call, `f(51)`, breaks the three unlabelled assertions and none of the labelled ones.
+Each program argument breaks one labelled assertion instead.
+The table counts the predicates that ran before the program ended, with `-std=c++26 -fcontracts-p4451`.
+GCC and Clang branch builds gave the same counts.
+Three calls, two semantics and two compilers make 12 runs that ended the program, and all 12 exited with code 134.
+
+| argument | call | what it breaks | `observe` | `ignore` | exit code, both |
+|---|---|---|---|---|---|
+| none | `f(51)` | the 3 unlabelled assertions | 6 | 3 | 0 |
+| `pre` | `f(-2)` | the labelled precondition | 2 | 1 | 134 |
+| `assert` | `f(7)` | the labelled `contract_assert` | 4 | 2 | 134 |
+| `post` | `f(21)` | the labelled postcondition | 6 | 3 | 134 |
+
+Under `observe` the three unlabelled violations are reported and the program continues.
+Under `ignore` those three predicates never run.
+The GCC branch reports a violated labelled assertion as `semantic: enforce` in every run, whichever semantic the build asked for.
+The Clang branch prints one line per violation and no semantic.
+This is the GCC report for the `pre` call under `ignore`:
+
+```text
+evaluated pre positive
+contract violation in function int {anonymous}::f(int) at /app/example.cpp:43: check("pre positive", x > 0)
+[assertion_kind: pre, semantic: enforce, mode: predicate_false, terminating: yes]
+```
+
+The embed runs the no-argument call under `ignore`.
+It exits 0, and the three lines it prints are the labelled predicates.
+The arguments field takes the argument names from the table.
+
+<GodboltEmbed id="TW817e44P" gccOnly gccLabel="GCC P3850 branch" title="Three labelled assertions still run under ignore" gcc_subtitle="gcc_notadragon_contracts_p3850 · -std=c++26 -fcontracts-p4451 · ignore · runs live" />
+
+## The same program on GCC 16.2
+
+Remove the labels and the file builds on GCC 16.2 with `-fcontracts`.
+That is today's behaviour on a released compiler, and the build alone decides what runs:
+
+| semantic | none | `pre` | `assert` | `post` |
+|---|---|---|---|---|
+| `enforce` (default) | exit 134, 1 predicate | 134, 2 | 134, 1 | 134, 1 |
+| `observe` | exit 0, 6 | 0, 6 | 0, 6 | 0, 6 |
+| `ignore` | exit 0, 0 | 0, 0 | 0, 0 | 0, 0 |
+
+Under `ignore`, `f(-2)` returns -4 and nothing checks it.
+That is the setting measured in <PostLink slug="ndebug-does-not-disable-contracts">the NDEBUG post</PostLink>, and <PostLink slug="contracts-check-that-acts">a second post</PostLink> takes up whether to use it in a release build.
+The label lets the author of one assertion opt out of that setting.
+It does not say who should own the setting.
+I take no side in the dispute that <PostLink slug="contracts-dispute">an earlier post</PostLink> sets out from the papers.
+The unlabelled forms themselves are introduced in <PostLink slug="cpp26-contracts">the first contracts post</PostLink>.
+
+<GodboltEmbed id="jbYdP48Er" gccOnly gccLabel="GCC 16.2" title="The same program without labels: ignore evaluates nothing" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -fcontracts · ignore · runs live" />
+
+## Which compilers accept it
+
+I ran the labelled file on these builds with these options:
+
+| compiler id | options | result |
+|---|---|---|
+| `gcc_notadragon_contracts_p3850` | `-std=c++26 -fcontracts-p4451` | accepted |
+| `clang_notadragon_contracts_p3850` | `-std=c++26 -fcontracts-p4451` | accepted |
+| `g162` and `gsnapshot` | `-std=c++26 -fcontracts` | `expected '(' before '<' token` |
+| `clang_trunk` | `-std=c++26` | `expected function body after function declarator` at the first `pre` |
+| `clang_trunk` | `-std=c++26 -fcontracts-p4451` | `unknown argument: '-fcontracts-p4451'` |
+| `clang2310` | `-std=c++26` | `'contracts' file not found` |
+| `vcpp_v19_51_VS18_6_x64` | `/std:c++latest /EHsc /Zc:__cplusplus` | `Cannot open include file: 'contracts'` |
+| `edg-notadragon-contracts-p3850-gcc` | `--c++26 --contracts_p4451 --contract_evaluation_semantic=ignore` | error: must name `std::contracts::labels::terminating` |
+| `edg-notadragon-contracts-p3850-gcc` | `--c++26 --contracts_p3400 --contract_evaluation_semantic=ignore` | builds, nothing enforced |
+
+As of 2026-11-21, none of the builds below the first two rows enforces the label with these options.
+All of them reject the file except the EDG build with `--contracts_p3400`, which accepts it and enforces nothing.
+
+The EDG rows are the odd ones.
+The paper's own EDG link for its implementation section uses these two flag sets in two panes.
+I ran its source through the API as published.
+The first pane gave the error above.
+The second printed `checked(-2) returned -4`, where the comment in the link expects a trap.
+I do not know why, and I did not find out whether the build lags the paper's second revision.
+
+## Names, and what I did not test
+
+- **Name.** Revision 2 uses `enforced`, chosen by LEWG on 19 November (section 2.2). [P3400R5](https://isocpp.org/files/papers/P3400R5.pdf) spells it `terminating`, in `std::contracts::labels` (its section 3.4.1).
+- **Other spellings.** The paper rejects `pre!(x)` from P3911R2 (section 2.1). Its first reason is that `pre!(x)` and `pre(!x)` differ by one transposed character and mean opposite things.
+- **Across translation units.** Section 2.3 says a compiler that knows a precondition always terminates may skip the caller's own check. The paper recommends accepting optimisation barriers for C++26. That is the paper's text, not something I ran.
+- **The paper on itself.** Section 2.9 says EWG did not have consensus that this was the right feature. That refers to the discussions between the Kona and Croydon meetings, before March 2026. The paper was written so that adoption is possible if the committee chooses it.
+- **What comes next.** Per Sutter's trip report, a second DIS ballot is planned. It has no date. The reported result of the first one is in <PostLink slug="c26-dis-ballot-result">an earlier post</PostLink>.
+
+I did not test caller-side checking, run-time cost, the redeclaration rule or the compilers beyond the table.
+This is post 2 of 4 on the Búzios meeting. The <PostLink slug="buzios-2026-trip-report">overview</PostLink> comes first, then <PostLink slug="buzios-cpp26-fixes">the other C++26 changes</PostLink> and <PostLink slug="buzios-cpp29-papers">the C++29 papers</PostLink>.
+
+The sources and all outputs are in [`posts/139-always-enforced-contract-label`](https://github.com/wrocpp/cpp26-reflection-examples/tree/332b2303348f15104b019c0322ad68e26d788c6c/posts/139-always-enforced-contract-label).
+Everything here ran on Compiler Explorer on 2026-11-21.
