@@ -12,6 +12,8 @@ draft: false
 relatedPosts: [cpp26-contracts, brno-profiles-contracts]
 ---
 
+import PostLink from '../../components/PostLink.astro';
+
 The pre-Búzios mailing is out: [48 papers](https://wg21.org/mailing/2026-08/), and roughly a dozen of them are the same argument. If you read one thing from this batch, read the contracts dispute, because it is about whether a feature already in the C++26 working draft stays there.
 
 ## The case against P2900
@@ -39,6 +41,8 @@ Worth keeping straight, because the papers blur it: P2900 contracts are in the C
 The ranges crop continues: `views::slice`, `views::scan`, `views::take_last` and `views::drop_last`, range-based searchers, and `clear()` for container adaptors. Two revisions touch things covered here before, [bitmask enums](/posts/bitmask-enums/) reaching R1 and an [mdspan](/posts/mdspan/) paper on const-qualifying an accessor.
 
 The through-line is that C++26 is not as finished as "C++26 is done" suggests. The draft has not had its final ballot, and a group including the language's designer is using that window to argue a headline feature is not ready. Búzios decides.
+
+Update on 21 November: the meeting has happened. Per Herb Sutter's trip report, the committee kept contracts in C++26, adopted an always-enforced label (P4451R2) and voted 111 to 9 to re-ship C++26. The <PostLink slug="buzios-2026-trip-report">Búzios overview</PostLink> has the details.
 
 ---
 
