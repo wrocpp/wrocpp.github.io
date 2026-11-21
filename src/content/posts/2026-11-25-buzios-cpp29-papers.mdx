@@ -1,0 +1,204 @@
+---
+title: "Of the 14 C++29 motions from Búzios, two already run on a compiler"
+slug: "buzios-cpp29-papers"
+pubDate: 2026-11-25
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, wg21, buzios, cpp29, ranges, octal, labels, clmul]
+summary: "Búzios adopted 14 motions for C++29: 11 papers and 3 lists of issues. On 2026-11-21 two papers already ran on Compiler Explorer: the 0o octal prefix on Clang, and std::clmul on GCC trunk in its C++29 mode. Loop labels run on Clang behind an internal flag. Four more have nothing to run yet."
+draft: false
+relatedPosts: [brno-quality-of-life, brno-undefined-behavior, optional-ref, cpp29-mode-is-open]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+The Búzios meeting adopted 14 motions for the C++29 draft: 11 papers and 3 lists of issues. I ran the code of seven of the papers on Compiler Explorer on 21 November 2026. Two already run: the `0o` octal prefix on Clang, and `std::clmul` in the GCC trunk library. A third, loop labels, runs on Clang behind an internal flag. The other four have no implementation in any build I tried.
+
+## In short
+
+- The C++ draft repository lists the motions as issues [#9402](https://github.com/cplusplus/draft/issues/9402) to [#9415](https://github.com/cplusplus/draft/issues/9415): 7 core and 7 library. Eleven are papers and three are issue lists.
+- Per Sutter's trip report, five core and seven library papers were adopted. The draft issues show five core papers, six library papers and a list of library issues. His seven matches only if that list counts as a paper, which is my inference.
+- Two papers run today: the octal prefix on Clang 23.1 and trunk, and `std::clmul` on libstdc++ in GCC trunk at `-std=c++2d`. Loop labels also run on Clang with `-Xclang -fnamed-loops`, and in C with every compiler I tried.
+- Four papers have nothing to run: the slice adaptor, `any_view`, the pointer accessor on optional, and placeholder return types on defaulted operators. A hand-written equivalent of each runs.
+- I read four papers and did not run them: P4176R2, P4284R2, P3427R9 and P4354R0.
+
+## Naming a loop to break or continue it
+
+P3568R4 by Jan Schultke is motion CWG10 ([#9408](https://github.com/cplusplus/draft/issues/9408)). A label goes in front of a loop, and `break` or `continue` can name it from any depth. The syntax is the one C2y took from N3355. Per section 1.2 of the [paper](https://isocpp.org/files/papers/P3568R4.html), EWG forwarded R2 to CWG at <PostLink slug="brno-2026-trip-report">Brno</PostLink>. The poll was 10 strongly in favor, 21 in favor, 6 neutral, 6 against and 1 strongly against.
+
+The rules are short. A label sits on the statement it names. A `break` needs an enclosing loop, switch or expansion statement with that label, and `continue` needs an enclosing loop or expansion statement. The old rule that no two labels in a function share a name is deleted. A `goto` now needs exactly one labelled statement of that name.
+
+Clang 23.1 and trunk accept the syntax in C++ mode behind `-Xclang -fnamed-loops`, the flag that section 6 of the paper names. The example also runs in constant evaluation. This is its search loop:
+
+```cpp
+search: for (int row = 0; row < kRows; ++row) {
+  ++result.rows_visited;
+  for (int col = 0; col < kCols; ++col) {
+    if (value_at(row, col) == kTarget) {
+      result.row = row;
+      result.col = col;
+      break search;
+    }
+  }
+}
+```
+
+<GodboltEmbed id="86qsdbW7r" compilerLabel="Clang 23.1" title="break and continue by loop name in C++, behind a Clang flag" gcc_subtitle="x86-64 Clang 23.1 · -std=c++26 -Xclang -fnamed-loops -O1 · runs live" />
+
+The same program in C needs no flag at `-std=c2y`. The [C version](https://godbolt.org/z/Gb11Ton9M) prints the same two lines on GCC 16.2, GCC trunk, Clang 23.1 and Clang trunk. In C++ without the flag every compiler I tried fails:
+
+| compiler | message |
+|---|---|
+| GCC 16.2, GCC trunk | `expected ';' before 'search'` |
+| Clang 23.1, Clang trunk | `named 'break' is only supported in C2y` |
+| MSVC | `C2146: syntax error: missing ';' before identifier 'search'` |
+
+The flag implements the C2y syntax only. The adopted paper also lets a function reuse a label, and Clang with the flag rejects a second `search:` with "redefinition of label".
+
+## What a reader writes until then
+
+The paper lists three workarounds: a `goto`, an immediately invoked lambda, and a flag variable. The program below counts the rows of a 3 by 3 grid that lack a value, in all three ways. It prints `goto: 2, lambda: 2, flag: 2` on GCC 16.2, GCC trunk, Clang 23.1 and Clang trunk.
+
+<GodboltEmbed id="dTvbcf6cP" gccOnly gccLabel="GCC 16.2" title="Skip to the next row three ways: goto, lambda and flag" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O1 · runs live" />
+
+The paper argues that a `goto` cannot be used in a constant expression. A function with a `goto` fails a `static_assert` on GCC 16.2 and trunk with "'goto' is not a constant expression". Clang 23.1 says "subexpression not valid in a constant expression". The lambda and the flag pass.
+
+## The 0o prefix for octal literals
+
+P0085R5 by Jolly Chen, Axel Naumann and Michael Jonker is motion CWG6 ([#9404](https://github.com/cplusplus/draft/issues/9404)). Per Sutter's trip report, the first revision dates from 2015. It adds the prefixes `0o` and `0O`, and deprecates every unprefixed octal literal except zero.
+
+The paper's motivating table pads numbers with a leading zero. The author of `{100, 042}` meant 42, and the literal is 34:
+
+```text
+100 34
+107 0
+```
+
+<GodboltEmbed id="9GYe9MTPv" gccOnly gccLabel="GCC 16.2" title="A padded 042 is the number 34, and nothing warns" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O1 -Wall -Wextra -pedantic · runs live" />
+
+No compiler I tried warns about this in C++ mode. The flags are in the table near the end. In C mode at `-std=c2y`, Clang 23.1 and trunk warn "octal literals without a '0o' prefix are deprecated". GCC does not.
+
+Clang accepts the new prefix in C++ mode without a flag, and `0o17` is 15. With `-pedantic` it calls the prefix an extension. GCC and MSVC reject it. The paper rewrites the `std::filesystem::perms` table in the new spelling. A check in the example compares `0o755` with the named permissions.
+
+<GodboltEmbed id="e4x7df9jY" compilerLabel="Clang 23.1" title="0o17 and 0o755 in C++ mode on Clang" gcc_subtitle="x86-64 Clang 23.1 · -std=c++26 -O1 · runs live" />
+
+The paper changes no library function. Parsing with `from_chars` and the streams gets the prefix when C++ rebases on C2y, per section "Effects on standard library". The paper also reports an SG22 poll on R3 against inclusion without those library changes: 3 neutral, 10 against, 3 strongly against. Implementations may skip the deprecation warning on `01` to `07`, which mean the same in decimal.
+
+## Carry-less multiplication in the library
+
+P3642R8 by Jan Schultke is motion LWG9 ([#9415](https://github.com/cplusplus/draft/issues/9415)). Carry-less multiplication multiplies like integers but combines the shifted partial products with xor. The paper adds `std::clmul` and a widening form with a low and a high half. Its uses include CRC, AES-GCM and bit tricks. The parity of a 32-bit value is `std::clmul(x, -1u) >> 31`, from section 3.1 of the [paper](https://isocpp.org/files/papers/P3642R8.html).
+
+libstdc++ on GCC trunk already has both functions, but only in the C++29 mode that the <PostLink slug="cpp29-mode-is-open">September post</PostLink> described. The example compares `std::clmul` with a hand-written loop for 65536 inputs and checks the parity trick against `std::popcount`:
+
+```text
+widening_clmul(0x80000001, 0x80000001): low 00000001, high 40000000
+clmul equals the loop for 65536 inputs: yes; parity equals popcount parity: yes
+```
+
+<GodboltEmbed id="3fq7ro59b" gccOnly gccLabel="GCC trunk" title="std::clmul and std::widening_clmul on GCC trunk in the C++29 mode" gcc_subtitle="x86-64 GCC trunk · -std=c++2d -O1 · runs live" />
+
+At `-std=c++26` on GCC trunk the name is missing. It is also missing on GCC 16.2, on Clang with libc++ and on MSVC. The paper says Clang 23 has `__builtin_elementwise_clmul`, and I did not run that. Section 4 of the paper has a plain loop. Rewritten for any unsigned type, it is in the [examples](https://godbolt.org/z/M9z7Yaa79) and runs on GCC 16.2 and Clang 23.1.
+
+## views::slice, any_view and get_ptr
+
+Three library papers have no implementation in any build I tried. The table near the end lists the compilers and flags.
+
+P3216R6 by Hewill Kang is motion LWG7 ([#9413](https://github.com/cplusplus/draft/issues/9413)). The wording defines the call `slice(E, F, G)` as dropping F elements and taking the next G - F, with F evaluated once. Per its revision history, R4 dropped a separate view class. Sutter calls it the first adaptor with two parameters. By hand it is a few lines, and the example runs the paper's cases:
+
+```cpp
+constexpr auto slice(std::ptrdiff_t first, std::ptrdiff_t last) {
+  return std::views::drop(first) | std::views::take(last - first);
+}
+```
+
+<GodboltEmbed id="a95KvraaG" gccOnly gccLabel="GCC 16.2" title="views::slice as drop then take, with the paper's examples" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O1 · runs live" />
+
+P3411R7 by Hui Xie, Louis Dionne, S. Levent Yilmaz and Patrick Roberts is motion LWG5 ([#9411](https://github.com/cplusplus/draft/issues/9411)). Its `std::ranges::any_view` erases the type of a view. The signature, from section 5 of the [paper](https://isocpp.org/files/papers/P3411R7.html) and not compiled:
+
+```cpp
+template <class Element,
+          any_view_options Opts = any_view_options::input,  // input ... contiguous, sized, borrowed, copyable
+          class Ref = Element&,
+          class RValueRef = rvalue-ref-t<Ref>,
+          class Diff = IOTA-DIFF-T(ptrdiff_t)>
+class any_view;
+```
+
+By default it is an input range and move-only (section 7.4 of the paper). It is never a common range (7.8) and never const-iterable (7.7). A 35-line class with those defaults reproduces the paper's example of returning a filtered map without naming the pipeline. It is not an implementation of the paper. The paper points to one in the [Beman project](https://github.com/bemanproject/any_view), which I did not build.
+
+<GodboltEmbed id="7fhEcjhYe" gccOnly gccLabel="GCC 16.2" title="A 35-line sketch with the defaults of any_view" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O1 · runs live" />
+
+P4189R0 by Nevin Liber is motion LWG8 ([#9414](https://github.com/cplusplus/draft/issues/9414)). R0, dated 2026-05-12, is the revision I could open. It adds a member that returns a pointer to the contained object, or a null pointer when the optional is empty. Sutter writes the name as `get_ptr()`, and I could not confirm the adopted name. It also covers `optional<T&>`, the case of the <PostLink slug="optional-ref">earlier post</PostLink>. For an `optional<int&>` named `reference`, the paper's own spelling of today's equivalent is the one-liner below. [Free functions](https://godbolt.org/z/96GEfae3s) with the paper's effect run in the examples:
+
+```cpp
+reference.transform([](auto& r) { return std::addressof(r); }).value_or(nullptr);
+```
+
+## Placeholder return types on defaulted operators
+
+P2952R5 by Arthur O'Dwyer and Matthew Taylor is motion CWG7 ([#9405](https://github.com/cplusplus/draft/issues/9405)). A defaulted function may have a placeholder return type when the deduced type is the one the function must have. Today only the defaulted three-way comparison may. The forms below are from section 3 of the [paper](https://isocpp.org/files/papers/P2952R5.html), not compiled:
+
+| declaration | verdict in the paper |
+|---|---|
+| `auto& operator=(const X&) = default;` | well-formed, deduces `X&` |
+| `auto operator==(const X&) const = default;` | well-formed, deduces `bool` |
+| `auto operator<=>(const X&) const = default;` | well-formed today |
+| `const auto& operator=(const X&) = default;` | still ill-formed |
+| `auto operator=(const X&) = default;` | still ill-formed |
+
+Section 4 of the paper says "None yet" about implementations. Every compiler in the table below rejects the first two forms. GCC says `defaulted 'auto X::operator==(const X&) const' must return 'bool'`. Clang says `return type for defaulted equality comparison operator must be 'bool', not 'auto'`. The one form that works today deduces the comparison category from the members. The [example](https://godbolt.org/z/7Wcb5G7nn) shows `std::strong_ordering` for two ints and `std::partial_ordering` for a double.
+
+## What I tried
+
+For every "no compiler does this" sentence above, this is the list. Each probe is one or two lines, and the README of the examples gives the sources and the messages.
+
+| paper | probe | compilers and flags | result |
+|---|---|---|---|
+| P3216R6 | `std::views::slice` | A | missing |
+| P3411R7 | `std::ranges::any_view<int>` | A | missing |
+| P4189R0 | `get_ptr()` on `optional<int>` and, where it exists, `optional<int&>` | A | missing |
+| P3642R8 | `std::clmul(3u, 3u)` | A | present only on GCC trunk at `-std=c++2d` and `-std=c++29` |
+| P2952R5 | `auto&` copy assignment and `auto` equality, defaulted | B | rejected |
+| P0085R5 | `int a = 0o17;` | B and `-std=c++2d` on Clang | accepted by Clang 23.1 and trunk, rejected by GCC and MSVC |
+| P0085R5 | `017` with warnings on, C++ | `-Wall -Wextra -pedantic -Wdeprecated` on GCC 16.2 and trunk; `-Weverything` on Clang 23.1 and trunk | no warning |
+| P0085R5 | `017` with warnings on, C | `-std=c2y -Wall -Wextra -pedantic` on GCC 16.2 and trunk, Clang 23.1 and trunk | Clang warns, GCC does not |
+| P3568R4 | `break outer;` | B | rejected except Clang behind `-Xclang -fnamed-loops` |
+
+| name in the table | Compiler Explorer id |
+|---|---|
+| GCC 16.2 | `g162` |
+| GCC trunk | `gsnapshot` |
+| Clang 23.1 | `clang2310` |
+| Clang trunk | `clang_trunk` |
+| MSVC 19.51 | `vcpp_v19_51_VS18_6_x64` |
+
+- **A:** GCC 16.2 at `-std=c++26`. GCC trunk at `-std=c++26` and `-std=c++2d`. Clang 23.1 and trunk with libc++ at `-std=c++26` and `-std=c++2d`. MSVC 19.51 with `/std:c++latest`. Not tried: Clang with libstdc++ at `-std=c++2d`.
+- **B:** GCC 16.2, GCC trunk, Clang 23.1 and Clang trunk at `-std=c++26`. GCC trunk and Clang trunk also at `-std=c++2d`. MSVC 19.51 with `/std:c++latest`.
+
+## All 14 motions
+
+Each paper below is adopted per the motion issue in the C++ draft repository. The last column says what I did with it. The <PostLink slug="brno-quality-of-life">small papers from the Brno meeting</PostLink> also target C++29.
+
+| motion | issue | paper or list | effect | what I did |
+|---|---|---|---|---|
+| CWG4 | [#9402](https://github.com/cplusplus/draft/issues/9402) | ready core issues except 3232, 3233, 3241, 3242 | resolves core language issues | title only |
+| CWG5 | [#9403](https://github.com/cplusplus/draft/issues/9403) | core issues 3232 and 3233 | resolves two core language issues | title only |
+| CWG6 | [#9404](https://github.com/cplusplus/draft/issues/9404) | P0085R5 | `0o` octal prefix, unprefixed octal deprecated | read, ran |
+| CWG7 | [#9405](https://github.com/cplusplus/draft/issues/9405) | P2952R5 | placeholder return types on defaulted operators | read, ran |
+| CWG8 | [#9406](https://github.com/cplusplus/draft/issues/9406) | [P4176R2](https://isocpp.org/files/papers/P4176R2.html) | gives the grammar of postfix expressions named non-terminals, with the rules in the subclauses | read the abstract |
+| CWG9 | [#9407](https://github.com/cplusplus/draft/issues/9407) | [P4284R2](https://isocpp.org/files/papers/P4284R2.pdf) | revises the undefined-behavior and ill-formed-no-diagnostic annexes that the <PostLink slug="brno-undefined-behavior">Brno post</PostLink> described; R1 added 1 and 12 entries. Sutter's trip report does not mention profiles or P3100 | read the abstract |
+| CWG10 | [#9408](https://github.com/cplusplus/draft/issues/9408) | P3568R4 | loop labels for `break` and `continue` | read, ran |
+| LWG3 | [#9409](https://github.com/cplusplus/draft/issues/9409) | [P4485R0](https://isocpp.org/files/papers/P4485R0.html) | 54 library issues: 50 Ready and 4 Tentatively Ready | counted |
+| LWG4 | [#9410](https://github.com/cplusplus/draft/issues/9410) | [P3427R9](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3427r9.pdf) | hazard pointers: object cohorts for synchronous reclamation | read the abstract |
+| LWG5 | [#9411](https://github.com/cplusplus/draft/issues/9411) | P3411R7 | `std::ranges::any_view`, a type-erased view | read, sketched |
+| LWG6 | [#9412](https://github.com/cplusplus/draft/issues/9412) | [P4354R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4354r0.pdf) | wording-only simplification of three `std::execution` algorithms | read the abstract |
+| LWG7 | [#9413](https://github.com/cplusplus/draft/issues/9413) | P3216R6 | `views::slice` | read, ran |
+| LWG8 | [#9414](https://github.com/cplusplus/draft/issues/9414) | [P4189R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4189r0.html) | `get_ptr()` on `optional` | read, ran |
+| LWG9 | [#9415](https://github.com/cplusplus/draft/issues/9415) | P3642R8 | `std::clmul` and `std::widening_clmul` | read, ran |
+
+This is post 4 of 4 on the Búzios meeting. It follows the <PostLink slug="buzios-2026-trip-report">overview</PostLink>, <PostLink slug="buzios-always-enforced-contract-label">the contract label</PostLink> and <PostLink slug="buzios-cpp26-fixes">the other C++26 changes</PostLink>.
+
+The sources and all outputs are in [`posts/141-cpp29-buzios-papers`](https://github.com/wrocpp/cpp26-reflection-examples/tree/5c791055dea0cd8ae948e5948964721ee5619985/posts/141-cpp29-buzios-papers). Everything ran on Compiler Explorer on 21 November 2026. The meeting facts come from the motion issues and from [Sutter's trip report](https://herbsutter.com/2026/11/21/c26-is-done-again-trip-report-november-2026-iso-c-standards-meeting-buzios-brazil/), a personal blog.
