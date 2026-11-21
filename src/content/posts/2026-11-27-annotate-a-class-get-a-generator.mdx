@@ -12,6 +12,8 @@ draft: false
 relatedPosts: [annotations, co-yield-inside-template-for, generator-const-reference-lifetime, reflection-dangling-signature]
 ---
 
+import PostLink from '../../components/PostLink.astro';
+
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
 
 A reader asked whether reflection can build a `co_yield` version of an ordinary class when you annotate its functions or members.
@@ -77,6 +79,10 @@ error: annotation does not have structural type
 I only tried `std::string_view`.
 The working `label` holds a `char text[24]` filled by a `consteval` constructor, and the generator returns it through `std::define_static_string`.
 The 24-character limit is a number I chose, named `kLabelCapacity` in the example.
+
+After I ran this, the Búzios meeting adopted P3861R1 for C++26 on 21 November. Per Sutter's trip report it allows `std::string_view`, and also span and tuple, as template parameters. R1 is not public, so this follows R0. In R0 a view of a string literal is still not a valid template argument, and I did not test an annotation against that rule.
+
+No compiler I tried on 21 November implements P3861. They were GCC 16.2 and trunk, Clang 23.1 and trunk, the Bloomberg reflection build and MSVC 19.51. The `define_static_string` route above is unchanged. <PostLink slug="buzios-cpp26-fixes">The Búzios C++26 post</PostLink> has the details.
 
 ## Annotated functions, run lazily
 
