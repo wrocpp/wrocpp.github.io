@@ -219,6 +219,22 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
                    "why": "C++Online 2027 call for speakers closes 20 November, beside the api-contract-guard post"},
     "2026-12-10": {"slug": "structured-binding-copies-in-range-for", "hour": 16,
                    "why": "structured-binding copies and reentrancy, from Adam Bienkunski's post, beside the first debugger post"},
+    # The Buzios meeting ended on 21 November. Its coverage is four posts on
+    # consecutive days, advertised at 16:00Z beside the daily 08:00Z posts.
+    "2026-11-22": {"slug": "buzios-2026-trip-report", "hour": 16,
+                   "why": "Buzios series post 1, the overview, beside the co-yield post"},
+    "2026-11-23": {"slug": "buzios-always-enforced-contract-label", "hour": 16,
+                   "why": "Buzios series post 2, beside the Clang lifetime-safety post"},
+    "2026-11-24": {"slug": "buzios-cpp26-fixes", "hour": 16,
+                   "why": "Buzios series post 3, beside the default-or-braces post"},
+    # Series post 4 (buzios-cpp29-papers) goes out at 08:00Z on 25 November, so
+    # the entry names the existing post, which is already queued at 16:00Z.
+    "2026-11-25": {"slug": "five-spellings-of-a-64-byte-compare", "hour": 16,
+                   "why": "queued at 16:00Z before the Buzios series; series post 4 takes 08:00Z"},
+    # Held for the safety roundup (sequel to the 25 May essay). Remove this
+    # entry if the roundup is not merged by 29 November 20:00Z.
+    "2026-11-30": {"slug": "cpp-safety-state-of-the-union-november-2026", "hour": 16,
+                   "why": "safety roundup after Buzios, beside the stdexec task post"},
 }
 
 
