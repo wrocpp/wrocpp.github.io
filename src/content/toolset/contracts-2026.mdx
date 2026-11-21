@@ -22,8 +22,15 @@ agentInstructions: |
     reported disapproved (Seacord, Pusz). No WG21 or ISO document states
     the tally as of 2026-11-06. Do not write "shipped in C++26" or
     "ratified". Say "in the C++26 draft" and name the ballot. WG21
-    meets in Buzios on 16-21 November 2026; its recommendation is not
-    known.
+    met in Buzios on 16-21 November 2026. Per Sutter's trip report of
+    21 November (a personal blog, not an official record) the committee
+    kept contracts, adopted P4451R2 (an always-enforced label written
+    pre<std::contracts::controls::enforced>(...)) and voted 111 to 9
+    with 8 abstaining to re-ship C++26. A second DIS ballot is planned
+    and has no date. No released compiler implements P4451R2 as of
+    2026-11-21; prototype branches on Compiler Explorer do, behind
+    -fcontracts-p4451. The flag and compiler facts below were re-run on
+    2026-11-06 and not since.
   - Three assertion kinds: pre(condition), post(r: condition),
     contract_assert(condition).
   - Four evaluation semantics chosen per TU at compile time:
@@ -63,7 +70,7 @@ agentInstructions: |
   - Cross-reference /toolset/hardened-stdlib/ for the library side
   - Cross-reference /toolset/sanitizers-2026/ and
     /toolset/testing-for-safety-2026/
-bodyHash: 3a1cb5b0a9d9562d9ea46dbbbd0aaf7de8e70623e81e5d1c72ddc1b7535be75c
+bodyHash: cd28d92ebc4d80c536ee91436ff8caa4d6af5f2935e5a347b33c566bdd9477fc
 ---
 
 import GodboltEmbed from '../../components/GodboltEmbed.astro';
@@ -73,7 +80,7 @@ Contracts are the most disputed feature of C++26. WG21 approved the draft at Cro
 
 ## In short
 
-- As of 2026-11-06, contracts are in the C++26 working draft, not in a ratified standard. The ballot closed on 22 October and was reported disapproved, with no WG21 or ISO document stating the tally. See <PostLink slug="c26-dis-ballot-result">the ballot post</PostLink> and <PostLink slug="contracts-dispute">the dispute post</PostLink>. WG21 meets in Búzios on 16 to 21 November.
+- As of 2026-11-06, contracts are in the C++26 working draft, not in a ratified standard. The ballot closed on 22 October and was reported disapproved, with no WG21 or ISO document stating the tally. See <PostLink slug="c26-dis-ballot-result">the ballot post</PostLink> and <PostLink slug="contracts-dispute">the dispute post</PostLink>. WG21 met in Búzios on 16 to 21 November. Update on 22 November: per Herb Sutter's trip report, the committee kept contracts, adopted an always-enforced label (P4451R2) and voted 111 to 9 to re-ship C++26. A second ballot is planned and has no date. See <PostLink slug="buzios-2026-trip-report">the Búzios overview</PostLink> and <PostLink slug="buzios-always-enforced-contract-label">the label post</PostLink>.
 - GCC 16.2 (7 August) accepts four semantic spellings: `ignore`, `observe`, `enforce` and `quick_enforce`. It rejects `ignored` and `observed`, which the 16.2.0 manual still lists.
 - Clang 23.1.0 and trunk reject `-fcontracts`, and MSVC 19.51 rejects the syntax. Prototype Clang builds exist on Compiler Explorer.
 - Two samples on the earlier version of this page did not compile: a by-value parameter named in a `post` must be `const`. A third, `save_user`, compiles only if `is_connected()` is a `const` member, because a predicate sees its names as `const`.
