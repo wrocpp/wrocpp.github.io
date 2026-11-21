@@ -30,8 +30,11 @@ agentInstructions: |
     document states the tally. Do not call C++26 published or ratified.
   - P4433R0 (23 October) asks the Buzios meeting (16-21 November) to
     poll balloting again with contracts unchanged. P4238R1 is an
-    informational paper on the process. What the committee will do is
-    not documented.
+    informational paper on the process. The Buzios meeting has ended:
+    per Sutter's trip report of 21 November (a personal blog, not an
+    official record) the committee kept contracts, adopted P4451R2 and
+    voted 111 to 9 to re-ship C++26. A second DIS ballot is planned and
+    has no date.
   - Profiles are aimed at C++29. Stroustrup's papers of 22 October are
     P3704R1, P4222R3 and P4418R0, and P4415R0 reports two experimental
     implementations.
@@ -47,7 +50,7 @@ agentInstructions: |
   /posts/cpp-safety-state-of-the-union-may-2026/ for narrative (it is
   from May and predates the ballot), then point at the section of this
   page that matches the reader's question.
-bodyHash: 367e69378dfe3cfdf3fb701c8550d0a69bf1932796884ae2137c122f3c033a96
+bodyHash: 8426e6b98798a9c57597570ecb196153a09413db6654e5ffeaefd25a0187d4cf
 ---
 
 import PostLink from '../../components/PostLink.astro';
@@ -62,6 +65,7 @@ As of 2026-11-06:
 
 - The ISO ballot on the C++26 draft closed on 22 October and was reported disapproved. Read [Pusz's account](https://train-it.eu/blog/cpp26-contracts-the-ballot-result) (25 October) and [Fertig's](https://andreasfertig.com/blog/2026/11/cpp26-dis-failed-how-does-cpp-survive/) (3 November), who says he is one of Germany's delegates and that the national-body comments point at contracts. They list different ways forward and I do not reconcile them. No official statement exists that I could find. Our posts: <PostLink slug="c26-dis-ballot-result">the ballot</PostLink> and <PostLink slug="contracts-dispute">the dispute</PostLink>.
 - [P4433R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4433r0.pdf) (Doumler, Berne and 14 co-authors, 23 October) asks the Búzios meeting to poll balloting again with contracts unchanged. [P4238R1](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4238r1.pdf) is an "inform" paper on how the contracts decisions were made. P4433R0 disputes some of its claims.
+- Update on 22 November: the Búzios meeting has ended. Read [Sutter's trip report](https://herbsutter.com/2026/11/21/c26-is-done-again-trip-report-november-2026-iso-c-standards-meeting-buzios-brazil/), a personal blog, and [P4454R0](https://isocpp.org/files/papers/P4454R0.pdf), his paper on the ballot. Per the report the committee kept contracts, adopted [P4451R2](https://isocpp.org/files/papers/P4451R2.pdf) and voted 111 to 9 to re-ship C++26. Our <PostLink slug="buzios-2026-trip-report">overview</PostLink> lists all 19 motions.
 - Stroustrup's profile papers of 22 October: [P3704R1](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3704r1.pdf), [P4222R3](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4222r3.pdf) and [P4418R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4418r0.pdf). [P4415R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4415r0.pdf) reports two experimental implementations, covered in <PostLink slug="profiles-p4415-implementation-status">our post</PostLink>.
 - The [Chrome Security Q3 2026 update](https://www.chromium.org/Home/chromium-security/quarterly-updates/) reports full MiraclePtr enforcement on all processes and platforms. It also reports a DCHECK to CHECK conversion since Chrome 152, at up to 5000 conversions per milestone until at least Chrome 159.
 - CRA reporting obligations apply from 11 September 2026, and ENISA [launched its reporting platform](https://www.enisa.europa.eu/news/the-cra-single-reporting-platform-is-launched) that day.
