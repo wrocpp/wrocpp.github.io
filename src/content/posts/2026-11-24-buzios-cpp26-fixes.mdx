@@ -7,6 +7,7 @@ language: en
 kind: short
 audience: working-cpp
 tags: [news, wg21, buzios, cpp26, reflection, modules, structural-types, stdexec]
+updatedDate: 2026-11-28
 summary: "On GCC 16.2, ^^std::basic_string compiles after #include and fails after import std;. Buzios adopted P4466R2 for the C++26 draft, and only a GCC fork I ran accepts the module form. Six compilers reject a string_view template parameter, which P3861 targets. stdexec lacks the new allocator query."
 draft: false
 relatedPosts: [annotate-a-class-get-a-generator, task-next-to-a-generator, annotations]
@@ -120,6 +121,8 @@ R0 makes these three types structural by compiler support.
 Two string views are equivalent when their `data()` and `size()` results are equivalent, so the rule compares pointers, not contents.
 A tuple is structural when all its element types are, and R0 leaves out `optional` and `variant`.
 A string literal is still not a valid argument.
+
+Update, 28 November: per [Mateusz Pusz's report](https://mpusz.github.io/mp-units/HEAD/blog/2026/11/24/report-from-the-b%C3%BAzios-2026-iso-c-committee-meeting/), R1 also makes `std::optional` and `std::variant` structural, with variant added during the meeting. R1 itself was still not public on 28 November. <PostLink slug="pusz-buzios-report-contracts-poll">A post of 30 November</PostLink> covers his report and reruns the check on GCC trunk and Clang trunk.
 
 Today every compiler I ran rejects the direct form of the parameter:
 
