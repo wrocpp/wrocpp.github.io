@@ -1,0 +1,106 @@
+---
+title: "C++ safety settings to switch on today"
+slug: "safety-switch-on-today"
+summary: "A printable checklist of the C++ safety settings that ship in today's compilers and libraries: library hardening, lifetime warnings, initialisation, contracts in release builds, sanitizers in CI and the library fixes still waiting for a release. Each line links the page or post where we ran it. Reviewed 2026-11-27."
+kind: curated
+cluster: safety
+tags: [safety, checklist, hardened-stdlib, lifetime-safety, contracts, sanitizers, erroneous-behavior, libstdcxx, libcxx, msvc, gcc, clang]
+launchDate: 2026-11-30
+lastReviewed: 2026-11-27
+nextReviewBy: 2027-02-28
+relatedPosts: [hardened-stdlib-turn-it-on, clang-lifetime-safety-warnings, ndebug-does-not-disable-contracts, buzios-always-enforced-contract-label, default-or-braces-constructor-initialisation, vector-bool-size-wraps-to-zero]
+agentInstructions: |
+  You are a coding agent helping a C++ team decide which safety
+  settings to turn on in an existing build. Each item below was run on
+  the linked page or post; this page re-ran nothing itself.
+
+  ESTABLISHED FACTS (reviewed 2026-11-27):
+  - libstdc++: -D_GLIBCXX_ASSERTIONS in optimised builds; the library
+    defines it by default only without optimisation. Or -fhardened
+    (GCC 14+, GNU/Linux only), which also sets -D_FORTIFY_SOURCE=3 and
+    -ftrivial-auto-var-init=zero and must reach the link step.
+  - libc++: -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST. The
+    library default is none unless the vendor sets one; hardening has
+    no ABI impact. The modes (none, fast, extensive, debug) were
+    unchanged on the libc++ Hardening page on 2026-11-27.
+  - MSVC STL: /D_MSVC_STL_HARDENING=1, effective from MSVC 19.44
+    (VS 2022 17.14), still off by default on 19.51.
+  - Warnings: keep -Wall -Wextra. Clang 23.1 -Wlifetime-safety warned
+    on 6 of 7 dangling cases and on one correct program. Start with
+    -Wlifetime-safety-permissive (the Clang docs advise it), keep
+    -Wlifetime-safety-all in a separate job. Clang trunk renamed
+    -Wlifetime-safety-invalidation to
+    -Wlifetime-safety-experimental-invalidation.
+  - Initialisation: give every member a default member initialiser and
+    write an empty constructor as = default in the class. C++26 makes
+    reading an uninitialised automatic variable erroneous behaviour
+    (P2795R5, GCC 16 lists it as implemented); heap objects stay
+    indeterminate. -ftrivial-auto-var-init=zero for release,
+    =pattern for test builds. Clang trunk release notes say it now
+    also covers variables a goto or switch jumps over.
+  - Contracts: -DNDEBUG does not turn off contract_assert on GCC 16.2;
+    only -fcontract-evaluation-semantic=ignore stops evaluation. GCC
+    16.2 accepts ignore, observe, enforce and quick_enforce.
+  - The enforced label (P4451R2, std::contracts::controls::enforced)
+    was adopted for C++26 at Buzios in November 2026. No released
+    compiler implements it and GCC 16.2 rejects it. Its editors' PR
+    was not merged into the draft as of 2026-11-27.
+  - CI: ASan and UBSan in one build on every PR
+    (-fsanitize=undefined -fno-sanitize-recover=all); TSan in a
+    separate nightly build; MSan needs an instrumented libc++.
+  - libstdc++ CVE-2026-114691 (vector<bool> size wraps): fixed on the
+    GCC 14, 15 and 16 branches since 29 October 2026; no point release
+    contains it as of 2026-11-27 (newest 16.x is 16.2, 2026-08-07).
+    Check untrusted sizes against max_size() and build against fixed
+    headers.
+
+  When recommending: quote the review date and link the page or post
+  the item comes from. Do not say contracts or hardening are in a
+  ratified standard.
+bodyHash: a42ab2381d25322b695f974a468ff296ea56572854d648532b9dc40d749ae48e
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+Each line below is a safety setting that ships in a compiler or library today, with a link to where we ran it. The list prints on two A4 sheets; for the reasoning behind the list, see [memory safety in C++26 and beyond](/toolset/memory-safety-cpp26-and-beyond/).
+
+## Library hardening
+
+- [ ] libstdc++: add `-D_GLIBCXX_ASSERTIONS` to the optimised build. Without it, GCC stops checking `vector::operator[]` in optimised builds (<PostLink slug="hardened-stdlib-turn-it-on">the out-of-bounds post</PostLink>).
+- [ ] On GNU/Linux with GCC 14 or later, consider `-fhardened` instead. It also sets `-D_FORTIFY_SOURCE=3` and needs to reach the link step ([hardened standard library](/toolset/hardened-stdlib/)).
+- [ ] libc++: add `-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST`. The library default is none, and hardening has no ABI impact ([hardened standard library](/toolset/hardened-stdlib/), [libc++ Hardening](https://libcxx.llvm.org/Hardening.html)).
+- [ ] MSVC STL: add `/D_MSVC_STL_HARDENING=1`. It works from MSVC 19.44 (VS 2022 17.14) and is still off by default on 19.51 ([hardened standard library](/toolset/hardened-stdlib/)).
+
+## Warnings
+
+- [ ] Keep `-Wall -Wextra` on. GCC 16.2 with dangling warnings added reported one of seven dangling cases correctly (<PostLink slug="clang-lifetime-safety-warnings">the lifetime warnings post</PostLink>).
+- [ ] Clang: start with `-Wlifetime-safety-permissive`, as the Clang documentation advises, and fix what it reports (<PostLink slug="clang-lifetime-safety-warnings">the lifetime warnings post</PostLink>).
+- [ ] Then try `-Wlifetime-safety`. Clang 23.1 warned on six of seven cases with it, and on one correct program (<PostLink slug="clang-lifetime-safety-warnings">the lifetime warnings post</PostLink>).
+- [ ] Run `-Wlifetime-safety-all` in a separate job. Its suggestions are correct but noisy (<PostLink slug="clang-lifetime-safety-warnings">the lifetime warnings post</PostLink>).
+- [ ] On Clang trunk, the invalidation check is now `-Wlifetime-safety-experimental-invalidation`. Clang 23.1 flags do not carry it over ([lifetime safety](/toolset/lifetime-safety-2026/)).
+
+## Initialisation
+
+- [ ] Give every member a default member initialiser, and write an empty constructor as `= default` in the class (<PostLink slug="default-or-braces-constructor-initialisation">the constructor post</PostLink>).
+- [ ] Read C++26 erroneous behaviour as a floor, not a fix. It covers automatic variables only, and heap objects stay indeterminate (<PostLink slug="default-or-braces-constructor-initialisation">the constructor post</PostLink>).
+- [ ] Build releases with `-ftrivial-auto-var-init=zero` and test builds with `=pattern`, which makes a stray read stand out (<PostLink slug="default-or-braces-constructor-initialisation">the constructor post</PostLink>).
+- [ ] On Clang trunk the option also covers variables that a `goto` or `switch` jumps over ([Clang release notes](https://clang.llvm.org/docs/ReleaseNotes.html), in progress, read 2026-11-27).
+
+## Contracts in release builds
+
+- [ ] Do not expect `-DNDEBUG` to turn off `contract_assert`. On GCC 16.2 only `-fcontract-evaluation-semantic=ignore` stops the evaluation (<PostLink slug="ndebug-does-not-disable-contracts">the NDEBUG post</PostLink>).
+- [ ] Pick the semantic per build on purpose, from the four GCC 16.2 accepts. `enforce` calls the violation handler and `quick_enforce` skips it ([contracts](/toolset/contracts-2026/)).
+- [ ] Use `observe` in staging to see which contracts fire before you enforce them in production ([contracts](/toolset/contracts-2026/)).
+- [ ] Do not plan on the `enforced` label yet. It was adopted for C++26 at Búzios, but no released compiler implements it and GCC 16.2 rejects it (<PostLink slug="buzios-always-enforced-contract-label">the label post</PostLink>).
+
+## Sanitizers in CI
+
+- [ ] Run ASan and UBSan together in one build on every pull request. Add `-fno-sanitize-recover=all` so UBSan fails the job ([sanitizers](/toolset/sanitizers-2026/)).
+- [ ] Run TSan in a separate nightly build, because it cannot share a build with ASan or MSan ([sanitizers](/toolset/sanitizers-2026/)).
+- [ ] Run MSan only where you can build an instrumented libc++. Clang 22.1 MSan reported reads that GCC 16.2 printed as zero (<PostLink slug="default-or-braces-constructor-initialisation">the constructor post</PostLink>).
+- [ ] Keep ASan in the matrix even with hardening on. It was the only build that reported the bad `vector<bool>` access (<PostLink slug="vector-bool-size-wraps-to-zero">the vector&lt;bool&gt; post</PostLink>).
+
+## Library updates
+
+- [ ] libstdc++ CVE-2026-114691: the fix is on the GCC 14, 15 and 16 branches since 29 October. As of 27 November no point release contains it (<PostLink slug="vector-bool-size-wraps-to-zero">the vector&lt;bool&gt; post</PostLink>, [GCC releases](https://gcc.gnu.org/releases.html)).
+- [ ] Until your toolchain carries the fix, check an untrusted count against `max_size()` before you build a `vector<bool>` from it. Then rebuild against fixed headers (<PostLink slug="vector-bool-size-wraps-to-zero">the vector&lt;bool&gt; post</PostLink>).
