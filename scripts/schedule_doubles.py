@@ -231,10 +231,8 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # the entry names the existing post, which is already queued at 16:00Z.
     "2026-11-25": {"slug": "five-spellings-of-a-64-byte-compare", "hour": 16,
                    "why": "queued at 16:00Z before the Buzios series; series post 4 takes 08:00Z"},
-    # Held for the safety roundup (sequel to the 25 May essay). Remove this
-    # entry if the roundup is not merged by 29 November 20:00Z.
-    "2026-11-30": {"slug": "cpp-safety-state-of-the-union-november-2026", "hour": 16,
-                   "why": "safety roundup after Buzios, beside the stdexec task post"},
+    "2026-11-30": {"slug": "pusz-buzios-report-contracts-poll", "hour": 16,
+                   "why": "Pusz's Buzios report, in the held roundup slot"},
 }
 
 
