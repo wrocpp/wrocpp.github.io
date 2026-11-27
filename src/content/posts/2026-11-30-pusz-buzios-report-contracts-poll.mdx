@@ -1,0 +1,93 @@
+---
+title: "At Búzios, a poll to remove contracts from C++26 failed 41 to 90"
+slug: "pusz-buzios-report-contracts-poll"
+pubDate: 2026-11-30
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, wg21, buzios, cpp26, contracts]
+summary: "Mateusz Pusz reports that a poll to remove contracts from C++26 failed 41 for, 90 against, 20 abstaining, and that the new DIS ballot takes eight weeks. He says P3861R1 makes optional, variant, string_view, span and tuple structural. Three compilers still reject them."
+draft: false
+relatedPosts: [buzios-2026-trip-report, buzios-always-enforced-contract-label, buzios-cpp26-fixes, buzios-cpp29-papers, c26-dis-ballot-result]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+At the Búzios meeting, a poll to remove contracts from C++26 got 41 votes for, 90 against and 20 abstentions. It did not reach consensus. The numbers come from Mateusz Pusz's report of 24 November, the second account of the meeting I have read. Sutter's report, which our <PostLink slug="buzios-2026-trip-report">Búzios overview</PostLink> followed, says the committee revoted and gives no tally.
+
+## In short
+
+- Per Pusz, the poll to remove contracts was 41 for, 90 against, 20 abstaining. Contracts stay in the revised DIS.
+- The revised DIS was approved for a new ballot, 111 for, 9 against, 8 abstaining. Pusz writes that the ballot "takes eight weeks". No start date is given.
+- Per Pusz, P3861R1 makes five standard types structural, including `std::optional` and `std::variant`. He disagrees with the approach.
+- GCC 16.2, GCC trunk and Clang trunk still reject optional, string_view and span as template parameter types. A small struct of your own works today.
+- P3861R1 was still not public on 28 November.
+
+## Two reports, one with numbers
+
+[Pusz's report](https://mpusz.github.io/mp-units/HEAD/blog/2026/11/24/report-from-the-b%C3%BAzios-2026-iso-c-committee-meeting/) is a post on the mp-units blog. He writes that the plenary "spent Monday and Tuesday" on the failed ballot. He does not say which room took the removal poll.
+
+| poll | for | against | abstaining | source |
+|---|---|---|---|---|
+| remove contracts | 41 | 90 | 20 | Pusz |
+| approve the revised DIS for a new ballot | 111 | 9 | 8 | Pusz and Sutter |
+
+Of the 131 who voted for or against, 41 voted to remove, or 31.3%. [Sutter's report](https://herbsutter.com/2026/11/21/c26-is-done-again-trip-report-november-2026-iso-c-standards-meeting-buzios-brazil/) says the committee "discussed, revoted, and reaffirmed" that it keeps contracts, without numbers. Both reports give 111, 9 and 8 for the second poll.
+
+Pusz is the first source I found that gives the length of the new ballot, eight weeks. If it passes, he writes, "C++26 ships with contracts". I found no date for its start, so I give no end date.
+
+## Five standard types become structural
+
+Per Pusz, P3861R1, "Pragmatic approach to standard structural types", covers five standard types:
+
+```cpp
+std::string_view  std::span  std::tuple  std::optional  std::variant
+```
+
+He writes that `variant` "was added to the paper during this meeting". Sutter's report named string views, spans and tuples. R0 of the paper, the only revision I could read, leaves out `optional` and `variant`.
+
+Pusz describes the mechanism as "compiler magic". The library wording names these types as structural, a status no user type with private members can get. His objection, quoted: "Special-casing a few standard types isn't a generic solution." He adds that library authors still have no easier way to make their own types structural. In mp-units, `quantity` keeps its value in a public data member for that reason.
+
+P3861R1 itself was still missing on 28 November. The isocpp.org and open-std.org addresses for R1 returned 404, the open-std 2026 index lists no P3861, and `wg21.link/p3861` leads to R0.
+
+## What compilers accept today
+
+I wrote three class templates whose template parameter is an optional, a string view or a span:
+
+```cpp
+template <std::optional<int> Limit> struct Bounded {};
+template <std::string_view Name> struct Named {};
+template <std::span<const int> Table> struct Lookup {};
+```
+
+On 28 November all three were rejected on GCC 16.2, GCC trunk 20261127 and Clang trunk, each at `-std=c++26`:
+
+| compiler | error for `std::optional<int>` |
+|---|---|
+| GCC 16.2 and GCC trunk | `'std::optional<int>' is not a valid type for a template non-type parameter because it is not structural` |
+| Clang trunk | `type 'std::optional<int>' of non-type template parameter is not a structural type` |
+
+The other two types get the same messages. The example below compiles today. Each template takes a struct with public members instead: a flag and an `int`, a `char` array, or an address and a length. A requires-expression then asks the compiler whether it accepts the three standard types. All three compilers print "no", also Clang trunk with libc++.
+
+<GodboltEmbed id="EhYMKfTEq" gccOnly gccLabel="GCC 16.2" title="Structural wrappers for optional, string_view and span" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 · runs live" />
+
+The two sequence wrappers compare differently. The text wrapper stores characters, so equal texts give one type. The span wrapper stores an address, so equal contents in two arrays give two types. R0 gives `string_view` and `span` the address rule, as <PostLink slug="buzios-cpp26-fixes">the Búzios C++26 post</PostLink> shows. I could not check R1.
+
+## The rest of Pusz's report
+
+- P4284R2 extends the catalog of undefined behaviour and IFNDR adopted in Brno. Pusz lists it among the polls for the C++29 working draft, not the DIS.
+- The report does not mention profiles, SG23 or P3100.
+- SG6 (numerics) saw three units papers, and none was forwarded. On P4408R1, a poll for value-preserving implicit conversions got 6 strongly in favour, 2 in favour and none neutral or against.
+
+## What to do
+
+- **Write `pre` and `post` on new interfaces now.** Both reports say contracts stay in the C++26 draft. The plain syntax builds on GCC 16.2 with `-fcontracts`, as <PostLink slug="buzios-always-enforced-contract-label">the label post</PostLink> ran.
+- **Leave out the always-enforced label for now.** GCC 16.2 and GCC trunk reject it at the `<`, per the same post's runs.
+- **Keep a structural wrapper** where you want an optional, a string view or a span as a template argument. Three compilers rejected the direct form on 28 November.
+- **Decide whether "the same argument" means contents or address**, and wrap the text to match. R0 compares addresses, and R1 is not public.
+
+## Sources and what I did not check
+
+Read on 28 November 2026: Pusz's report and Sutter's report, linked above, the [open-std 2026 index](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/), and the R1 addresses that returned 404. I did not read P3861R1, P4284R2 or the SG6 papers. The example and every output are in [`posts/142-structural-standard-types`](https://github.com/wrocpp/cpp26-reflection-examples/tree/6a5c26d614dcee6492d1dabd698fd3bf9b58870a/posts/142-structural-standard-types).
