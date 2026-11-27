@@ -25,6 +25,17 @@
   --code-muted: #A8A39B;
   --shadow: 0 1px 2px rgba(27, 27, 29, 0.04),
             0 4px 24px -8px rgba(27, 27, 29, 0.06);
+  /* Print (toolset pages): body size that fits a checklist on one or two
+   * A4 sheets, and the smaller size for a printed link target. */
+  --print-font-size: 10pt;
+  --print-line-height: 1.4;
+  --print-url-size: 0.8em;
+  --print-site-origin: "https://wrocpp.github.io";
+  --print-section-gap: 1.2em;
+  --print-block-gap: 0.5em;
+  --print-h2-size: 1.3rem;
+  /* Gap between a task-list checkbox and its text. */
+  --task-checkbox-gap: 0.5em;
 }
 
 /* Reset + base */
@@ -1018,4 +1029,43 @@ a:hover { color: var(--orange); }
   .site-nav a::after { transition: none; }
   .btn { transition: none; }
   .post-card { transition: none; }
+}
+
+/* Task lists (GFM `- [ ]`): the checkbox is the marker, so drop the bullet. */
+.prose .contains-task-list { list-style: none; padding-left: 0; }
+.prose .task-list-item::before { content: none; }
+.prose .task-list-item input[type="checkbox"] { margin-right: var(--task-checkbox-gap); }
+
+/* Print: toolset pages only (the wrapper carries .toolset-page). Hide the
+ * site chrome, drop the paper texture and animations, and print the path
+ * of on-site links after the link, with the site origin stated once at the
+ * top. Off-site URLs are long, so they are not printed. */
+@media print {
+  html:has(.toolset-page) { font-size: var(--print-font-size); line-height: var(--print-line-height); background: none; }
+  body:has(.toolset-page) { background: none; }
+  body:has(.toolset-page) .site-header,
+  body:has(.toolset-page) .site-footer,
+  body:has(.toolset-page) .cookie-consent,
+  .toolset-page .toolset-footer,
+  .toolset-page .page-head__eyebrow,
+  .toolset-page .page-head__sub { display: none; }
+  .toolset-page .prose h2 { font-size: var(--print-h2-size); }
+  .toolset-page .prose { line-height: var(--print-line-height); }
+  .toolset-page .prose > * + * { margin-top: var(--print-block-gap); }
+  .toolset-page .prose h2 { margin-top: var(--print-section-gap); }
+  .toolset-page .reveal { animation: none; }
+  .toolset-page a { color: var(--ink); }
+  .toolset-page .prose::before {
+    content: "Paths in brackets are on " var(--print-site-origin) ".";
+    display: block;
+    font-size: var(--print-url-size);
+    color: var(--ink-muted);
+  }
+  .toolset-page .prose a[href^="/"]::after {
+    content: " (" attr(href) ")";
+    font-size: var(--print-url-size);
+    color: var(--ink-muted);
+  }
+  .toolset-page h2, .toolset-page h3 { break-after: avoid; }
+  .toolset-page li { break-inside: avoid; }
 }

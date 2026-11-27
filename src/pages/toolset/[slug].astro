@@ -18,7 +18,7 @@ const { Content } = await render(entry);
 const { title, summary, kind, lastReviewed, nextReviewBy, testedOn, tags, licence, cost } = entry.data;
 ---
 <BaseLayout title={`${title} — wro.cpp Toolset`} description={summary}>
-  <div class="wrap">
+  <div class="wrap toolset-page">
     <header class="page-head reveal">
       <div class="page-head__eyebrow">// toolset / {kind}</div>
       <h1 class="page-head__title">{title}</h1>
