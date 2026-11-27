@@ -1,0 +1,116 @@
+---
+title: "MSVC 14.52 is a long-term release, and the 14.53 preview fixes a hardening ticket"
+slug: "msvc-stl-hardening-cold-path-14-53"
+pubDate: 2026-12-01
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, msvc, hardening, safety]
+summary: "Microsoft announced MSVC 14.52 as a long-term support release. The 14.53 preview lists a fixed ticket: MSVC failed to cold-path STL hardening checks. On MSVC 19.51 a hardened out-of-bounds read stops with 0xC0000409, and a hardened gather loop loses the plain build's SSE loop."
+draft: false
+relatedPosts: [hardened-stdlib-turn-it-on, msvc-14-52-rc-cpp23-complete]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+Microsoft announced MSVC Build Tools 14.52 as generally available on 16 November, as a long-term support release. The Visual Studio versions that carry it came out on 10 November. On 13 November, the November preview of 14.53 listed a fixed ticket about the performance of STL hardening checks. Hardening is still off by default. On the newest MSVC that Compiler Explorer has, 19.51, a hardened out-of-bounds read stops the process with exit code 0xC0000409.
+
+## In short
+
+- 14.52 is a long-term support release, which "was not scheduled to be an LTS", according to the announcement.
+- The 14.53 preview fixes a ticket titled "MSVC fails to cold-path _MSVC_STL_HARDENING bounds checks, hurting performance".
+- The STL's hardening macro still defaults to 0 on the main branch of the Microsoft STL.
+- On MSVC 19.51, hardening stopped a read one past the end of a vector and of a span. In a gather loop it also replaced the plain build's SSE loop, four elements per iteration, with a scalar one.
+- I could not run 14.52 or 14.53. Compiler Explorer has neither.
+
+## What the two announcements say
+
+Russell Hadley wrote the [14.52 announcement](https://devblogs.microsoft.com/cppblog/msvc-build-tools-version-14-52-now-generally-available/) of 16 November. Eric Brumer wrote the [November preview post](https://devblogs.microsoft.com/cppblog/msvc-build-tools-preview-updates-november-2026/) of 13 November.
+
+| source | statement |
+|---|---|
+| 14.52 announcement | generally available "as a long-term support (LTS) release" |
+| 14.52 announcement | ships with Visual Studio 2026 18.12 on the Stable channel and the 18.11 LTSC, both released on 10 November |
+| 14.52 announcement | C++23 "is ready for production use" through `/std:c++23`, and the Standard Library is C++23 feature complete |
+| 14.52 announcement | C++ Dynamic Debugging is generally available with 14.52 |
+| November preview | the preview is "currently targeting the v14.53 release" |
+| November preview | fixed: the hardening cold-path ticket above |
+| November preview | fixed: "Address-taken functions are missing from Control Flow Guard metadata" |
+| November preview | new warnings C4878 and C4879 for conversions between HRESULT or SCODE and Boolean-like types, "level 4 and off by default" |
+
+The 14.52 post does not say how long the support lasts. It promises more on the lifecycle "in a future announcement". The release candidate is covered in <PostLink slug="msvc-14-52-rc-cpp23-complete">the October post</PostLink>.
+
+## What a cold path is
+
+A hardened accessor checks the index and stops the program when it is out of range. A cold path is code the compiler expects to run rarely, such as that stop. It can place such code away from the main path, for example after the return. Microsoft's post does not define the term for this ticket.
+
+The preview post gives the ticket title and nothing more. It does not say which code was affected, or by how much. I have no 14.53 to compare, so this post makes no claim about the fix.
+
+## A read one past the end, with and without hardening
+
+The example reads the last element of a vector and of a span. With the argument `vector` or `span`, it reads one past the end of that one. The hardening switch is in the build line, not in the source:
+
+```text
+cl /std:c++latest /EHsc /O2 /D_MSVC_STL_HARDENING=1
+```
+
+| build | argument | exit code | last line printed |
+|---|---|---|---|
+| hardened | none | 0 | `span[3] = 4` |
+| hardened | `vector` | 0xC0000409 | `reading vector[4]` |
+| hardened | `span` | 0xC0000409 | `reading span[4]` |
+| plain | `vector` | 0 | `vector[4] = 0` |
+
+The plain read is undefined behaviour. It printed 0 on this run, and another build may print anything. Microsoft Learn's [page on the fast-fail intrinsic](https://learn.microsoft.com/cpp/intrinsics/fastfail) gives 0xC0000409 as the exception code of a user-mode fast fail. The page adds that no exception handlers run. The [STL changelog](https://github.com/microsoft/STL/wiki/Changelog#msvc-build-tools-1450) for 14.50 says hardening was made faster by using that intrinsic.
+
+<GodboltEmbed id="Px4P18r4z" compilerLabel="MSVC 19.51" title="An out-of-bounds read on a vector and a span stops under hardening" gcc_subtitle="x64 MSVC 19.51 · /std:c++latest /EHsc /O2 /D_MSVC_STL_HARDENING=1 · runs live" />
+
+## What the check looks like in a loop
+
+The second example sums the elements of a span at a list of indices. On MSVC 19.51 with `/O2` and hardening on, the loop is this:
+
+```text
+$LL4@sum_at:
+        mov     rdx, QWORD PTR [rax]
+        cmp     rdx, r10
+        jae     SHORT $LN15@sum_at
+        mov     rcx, QWORD PTR [r9]
+        add     rax, 8
+        add     r8d, DWORD PTR [rcx+rdx*4]
+        cmp     rax, r11
+        jne     SHORT $LL4@sum_at
+$LN3@sum_at:
+        mov     eax, r8d
+        ret     0
+$LN15@sum_at:
+        mov     ecx, 5
+        int     41
+```
+
+Each element gets one compare and one branch. The failure block comes after the return. `int 41` is `int 0x29`, the x64 fast-fail instruction on the Learn page.
+
+Without hardening, the same function is unrolled four elements at a time with SSE registers. The hardened listing has no SSE instruction at all. That is a difference in code, read from one function on one compiler. I did not time it.
+
+<GodboltEmbed id="39q46ns5a" compilerLabel="MSVC 19.51" title="The same gather loop, hardened and plain, side by side" gcc_subtitle="x64 MSVC 19.51 · /std:c++latest /EHsc /O2, with and without /D_MSVC_STL_HARDENING=1 · assembly view" />
+
+## The default is still off
+
+The Microsoft STL sets the macro to 0 unless you define it, in [`yvals_core.h`](https://github.com/microsoft/STL/blob/main/stl/inc/yvals_core.h) on the main branch, read on 28 November. The STL team's [hardening design page](https://github.com/microsoft/STL/wiki/STL-Hardening) was written before hardening first shipped, and says they intend to enable it by default "in a future release". That had not happened by 14.52. The same page lists one macro per class, such as one for vector and one for span, to opt in or out class by class. <PostLink slug="hardened-stdlib-turn-it-on">The hardened standard library post</PostLink> covers the switches of GCC and Clang.
+
+## What to do
+
+1. **Define `_MSVC_STL_HARDENING=1` in release builds.** It is off unless you set it, and the first example shows what it buys: a stop at the bad read instead of a value.
+2. **Read the code of your hottest indexed loops.** On 19.51 the check took away the SSE form of the gather loop above. If a measurement shows a loss, the design page offers a per-class macro to switch one class back off.
+3. **Rebuild those loops when 14.53 ships.** The fixed ticket names the performance of the hardening checks, so the generated code may change.
+4. **Turn on C4878 and C4879 in COM code on 14.53.** They are off by default, and the Learn page on [warnings that are off by default](https://learn.microsoft.com/cpp/preprocessor/compiler-warnings-that-are-off-by-default) enables one with `/wLnnnn`, for example `/w44878`.
+
+## What I did not check
+
+- 14.52 and 14.53 themselves. Compiler Explorer's newest MSVC on 28 November was 19.51, from Visual Studio 18.6.
+- The ticket. The preview post gives its title only, and on my function 19.51 already placed the failure after the return.
+- C4878 and C4879. I did not compile them.
+- Timings. No number in this post is a measurement of speed.
+
+The sources and outputs are in [`posts/143-msvc-stl-hardening`](https://github.com/wrocpp/cpp26-reflection-examples/tree/b355d4b5e01c58c5a8d3632ef23d3500cc395b7e/posts/143-msvc-stl-hardening). Everything ran on Compiler Explorer on 2026-11-28.
