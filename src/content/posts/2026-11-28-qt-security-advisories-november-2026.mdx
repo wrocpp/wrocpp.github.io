@@ -20,7 +20,7 @@ Between 2 and 16 November 2026 the Qt Company published twelve security advisori
 
 - Twelve advisories, 2 to 16 November. Two high, two medium and eight low.
 - Eleven are scored with CVSS 4.0. The FFmpeg one is scored with CVSS 3.1 (8.8), copied from upstream. The two versions are not comparable, so do not rank the 8.8 against the 8.2.
-- Six advisories name Qt 6.12.1 as fixed, and I found no 6.12.1 in the 6.12 directory. Eleven name 6.8.9 or 6.8.10, and the 6.8 archive lists no release after 6.8.5.
+- Six advisories name Qt 6.12.1 as fixed, and I found no 6.12.1 in the 6.12 directory. Qt 6.12.1 was released on 24 November, after these pages were read (see the end). Eleven name 6.8.9 or 6.8.10, and the 6.8 archive lists no release after 6.8.5.
 - Nine pages name Qt 6.11.3 as fixed. It is downloadable, but dated 26 October, and I did not check whether it contains the November fixes.
 - Nine pages give a mitigation or advice. Three say none is available.
 
@@ -72,6 +72,15 @@ Two advisories, on WebSocket handshakes and HTTP responses, name only 6.8.10 and
 3. If you parse XML from outside your process with the Qt 5 compatibility classes, apply the limits from the XML rows. Four of the twelve concern that reader or the DOM parser.
 4. For a branch with no fixed release, apply the diffs linked from the advisory. The 6.8 diffs sit on the archive server.
 5. Before trusting "6.11.3 or later", diff your 6.11.3 sources against the linked patch.
+
+## After 16 November
+
+Update on 27 November: two things changed after I read the pages above.
+
+- [Qt 6.12.1](https://www.qt.io/blog/qt-6.12.1-released) was released on 24 November. The release post calls it the first patch release of Qt 6.12 LTS. I did not check which of the twelve fixes it contains.
+- On 26 November the Qt Company published [CVE-2026-111497](https://www.qt.io/blog/security-advisory-cve-2026-111497-qt-webengine), a buffer overflow in the Brotli decoder bundled with Qt WebEngine. It is rated critical, CVSS 4.0 score 9.2. It affects Qt 6.8.0 to 6.8.9 and 6.9.0 to 6.11.3. The fix is Qt 6.8.10 or Qt WebEngine 6.140.0, and the page advises loading content from trusted sources only until then.
+
+The Qt blog also lists Chromium advisories for WebEngine on 25 and 26 November. I did not read them for this post.
 
 ## What this post does not cover
 
