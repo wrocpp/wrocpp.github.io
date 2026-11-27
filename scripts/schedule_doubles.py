@@ -233,6 +233,8 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
                    "why": "queued at 16:00Z before the Buzios series; series post 4 takes 08:00Z"},
     "2026-11-30": {"slug": "pusz-buzios-report-contracts-poll", "hour": 16,
                    "why": "Pusz's Buzios report, in the held roundup slot"},
+    "2026-12-01": {"slug": "msvc-stl-hardening-cold-path-14-53", "hour": 16,
+                   "why": "MSVC 14.53 hardening news, beside the tidy-agent episode"},
 }
 
 
