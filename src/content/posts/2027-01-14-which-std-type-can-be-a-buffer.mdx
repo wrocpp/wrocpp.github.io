@@ -1,0 +1,103 @@
+---
+title: "std::inplace_vector is not a pimpl buffer, and C++26 trivial unions do not make one"
+slug: "which-std-type-can-be-a-buffer"
+pubDate: 2027-01-14
+author: filip-sajdak
+language: en
+kind: short
+series: pimpl-type-erasure
+series_order: 2
+audience: working-cpp
+tags: [cpp, cpp26, pimpl, inplace-vector, unions, gcc, clang]
+summary: "std::inplace_vector<std::byte, 72> is 73 bytes aligned to 1 in libstdc++ 16.2, so it cannot hold a 72-byte Impl aligned to 8. C++26 trivial unions (P3074R7, which replaced the proposed std::uninitialized) run on GCC trunk only, and a union member must be complete. A pimpl header still uses an aligned byte array."
+draft: false
+relatedPosts: [pimpl-with-a-computed-buffer, inplace-vector, std-indirect-pimpl]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+<PostLink slug="pimpl-with-a-computed-buffer">The previous post</PostLink> kept a pimpl's `Impl` in an aligned byte array. A reader may ask why not a standard type. I tried the candidates on GCC 16.2, GCC trunk and Clang trunk. For a pimpl, none of them replaces the byte array. One has the wrong layout, one is deprecated, and one needs a complete type.
+
+## In short
+
+- `std::inplace_vector<std::byte, 72>` is 73 bytes with alignment 1 in libstdc++ 16.2. It stores a size counter and cannot hold an `Impl` aligned to 8. libc++ trunk has no `<inplace_vector>`.
+- `std::aligned_storage` still compiles, with a deprecation warning by default.
+- C++26 trivial unions let a union hold a non-trivial member without hand-written constructors. Of the compilers on Compiler Explorer, only GCC trunk has them. They replaced the proposed `std::uninitialized<T>`, which is not in C++26.
+- A union member must be a complete type, so a union cannot sit in a header that only declares `Impl`. For a pimpl the answer is still `alignas` bytes plus placement new.
+
+## inplace_vector holds bytes, not an object
+
+`std::inplace_vector` is a vector with fixed capacity and no allocation. The <PostLink slug="inplace-vector">inplace_vector post</PostLink> introduced it. A vector of bytes looks like a buffer. I measured it next to the byte array, against an `Impl` of 72 bytes aligned to 8:
+
+```text
+std::inplace_vector<std::byte, 72>         sizeof 73  alignof 1  can hold Impl: no
+alignas(Impl) std::array<std::byte, 72>    sizeof 72  alignof 8  can hold Impl: yes
+```
+
+The extra byte is the count of elements. The libstdc++ 16.2 header stores it in the smallest unsigned type that can hold 72, an `unsigned char`. The alignment is that of `std::byte`. The standard fixes neither number, so another library could differ. The container is still for bytes you push, not for an object you construct in place.
+
+<GodboltEmbed id="bchGKTYMf" gccOnly gccLabel="GCC 16.2" title="inplace_vector of bytes against an aligned byte array" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O1 · runs live" />
+
+The older candidate, `std::aligned_storage_t<72, 8>`, still builds. C++23 deprecated it, and GCC 16.2 warns without any warning flags:
+
+```text
+warning: 'using std::aligned_storage_t = struct std::aligned_storage<72, 8>::type' is deprecated [-Wdeprecated-declarations]
+```
+
+## Trivial unions, on GCC trunk
+
+A union is the classic storage for one object of a known type. Until C++26 a member with a non-trivial destructor, such as a `std::string`, deletes the union's default constructor and destructor. You write empty ones by hand:
+
+```cpp
+template <class T>
+class slot {
+ public:
+  constexpr slot() {}
+  constexpr ~slot() {}
+  // emplace() with std::construct_at, reset() with std::destroy_at
+ private:
+  union { T value_; };
+};
+```
+
+That slot works today on GCC 16.2 and Clang 22.1. It even works in constant evaluation: the example constructs, reads and destroys an `Impl` with two strings inside a `static_assert`.
+
+[P3074R7](https://wg21.link/p3074) changes the rule. A union now gets a trivial default constructor and destructor even when its member has non-trivial ones. The paper's title records its history: "trivial unions (was `std::uninitialized<T>`)". The library wrapper was dropped for the language change. So the absence of `std::uninitialized` on every compiler is expected.
+
+On GCC trunk the slot without the hand-written members compiles and reports:
+
+```text
+label=w-gizmo sizeof(slot<Impl>)=72 trivially default constructible: union 1, slot 1
+```
+
+GCC 16.2 rejects the same file with `use of deleted function 'slot<Impl>::slot()'`. Clang trunk rejects it with `call to implicitly-deleted default constructor`. A separate probe found the feature macro `__cpp_trivial_union` set to 202603 on GCC trunk only.
+
+<GodboltEmbed id="76oqKz6aj" gccOnly gccLabel="GCC trunk" title="A union slot with no hand-written constructor or destructor" gcc_subtitle="x86-64 GCC trunk · -std=c++26 -O1 · runs live" />
+
+The embed runs GCC trunk, so its result can change as trunk moves.
+
+## Why a union still cannot be the pimpl buffer
+
+Both slots need `T` complete, because a union member must be a complete type. The header of a pimpl sees only `struct Impl;`. This is what it would have to compile:
+
+```cpp
+struct Impl;
+template <class T> class slot { union { T value; }; };
+class W { slot<Impl> s; };
+```
+
+GCC 16.2 and trunk reject it with `'slot<T>::<unnamed union>::value' has incomplete type`. Clang trunk says `field has incomplete type 'Impl'`. Trivial unions remove the boilerplate of a slot for a known type. They do not let a header hold a type it cannot see.
+
+## What to use today
+
+| storage for | use |
+|---|---|
+| a pimpl's hidden `Impl` | `alignas(N) std::array<std::byte, M>`, placement new and `std::launder`, sized as in the previous post |
+| one object of a known type, C++23 | a union with an empty constructor and destructor |
+| one object of a known type, GCC trunk | a trivial union, with no hand-written members |
+| a run of bytes you append to | `std::inplace_vector<std::byte, N>` |
+
+The byte array is the one that works in a pimpl header on every compiler I tried. <PostLink slug="type-erasure-by-hand-cpp26">The next post</PostLink> moves from pimpl to type erasure, where a small buffer holds objects of types the class has never seen.
+
+The sources and outputs are in [`posts/146-which-std-type-can-be-a-buffer`](https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/146-which-std-type-can-be-a-buffer). The runs are from Compiler Explorer on 2026-11-28.
