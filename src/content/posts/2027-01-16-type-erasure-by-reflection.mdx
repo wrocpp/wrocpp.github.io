@@ -1,0 +1,144 @@
+---
+title: "Reflection writes the type-erasure table, and C++26 still makes you write the member names"
+slug: "type-erasure-by-reflection"
+pubDate: 2027-01-16
+author: filip-sajdak
+language: en
+kind: flagship
+series: pimpl-type-erasure
+series_order: 4
+audience: working-cpp
+tags: [cpp, cpp26, reflection, define-aggregate, type-erasure, value-semantics, deducing-this, gcc, clang]
+summary: "erase::value<I> reads the member functions of a plain interface struct, builds its dispatch table with define_aggregate and fills it with thunks, with the same 24-byte buffer and 32-byte size as the hand-written drawable. C++26 cannot inject member functions, so a call reads v.call<^^I::draw>(out) until one forwarding line per member restores the names. Runs on GCC 16.2, GCC trunk and clang-p2996."
+draft: false
+relatedPosts: [type-erasure-by-hand-cpp26, define-aggregate, pimpl-with-a-computed-buffer, std-polymorphic-instead-of-clone]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+The hand-written `drawable` of the <PostLink slug="type-erasure-by-hand-cpp26">previous post</PostLink> names each member three times. Here the interface is a plain struct that declares each member once, and reflection builds the rest. I ran it on GCC 16.2, GCC trunk and the Bloomberg Clang fork. The generated value prints the same shapes and area as the hand-written one. It keeps the circle inline and is the same 32 bytes. The one thing C++26 cannot generate is a member function, so the names come back with one forwarding line each.
+
+## In short
+
+- The interface is a struct with three member declarations and no definitions. The shapes stay plain structs with no base class.
+- Reflection lists the interface's member functions and builds the table type with `define_aggregate`: one function pointer per member, named after it.
+- Each entry is a thunk that splices the member of the stored type with the same name. The table is filled in one braced initialiser.
+- C++26 can define data members but not member functions, so the generated type is called as `v.call<^^I::draw>(out)`. One forwarding line per member gives back `d.draw(out)`.
+- A shape without `scale` does not convert, and a non-const member cannot be called through a const value. Both are checked with `static_assert` in the example.
+
+## The interface is a plain struct
+
+```cpp
+struct drawable_interface {
+  void draw(std::string& out) const;
+  double area() const;
+  void scale(double factor);
+};
+
+using any_drawable = erase::value<drawable_interface>;
+```
+
+The struct is never defined further and never instantiated. It exists so reflection can read three declarations: the names, the return types, the parameter types and whether each member is const.
+
+## Building the table type
+
+Three steps turn the declarations into a type:
+
+```cpp
+// 1. the interface's member functions, in declaration order
+consteval std::vector<std::meta::info> slots_of(std::meta::info iface);
+
+// 2. one entry type per slot: R (*)(void*, A...)
+template <class R, class... A>
+using entry = R (*)(void*, A...);
+
+// 3. a struct with one entry per slot, named after the slot
+template <class I>
+struct table_holder {
+  struct table;
+  consteval {
+    std::vector<std::meta::info> specs;
+    for (std::meta::info slot : slots_of(^^I)) {
+      specs.push_back(std::meta::data_member_spec(entry_type(slot), {.name = std::meta::identifier_of(slot)}));
+    }
+    std::meta::define_aggregate(^^table, specs);
+  }
+};
+```
+
+The second step uses `std::meta::substitute` to put the slot's return and parameter types into `entry`. The third is the <PostLink slug="define-aggregate">define_aggregate</PostLink> pattern. The table is a nested class of a holder, because a class cannot be completed from inside its own definition. GCC 16.2 says so plainly: `first 'define_aggregate' argument is a reflection of a class type 'S' being defined`.
+
+## Filling it with thunks
+
+Each entry points to a static function that casts the address back to the stored type and calls its member of the same name. The member is found by name and spliced:
+
+```cpp
+template <class T, std::meta::info Member>
+static R call(void* self, A... args) {
+  return static_cast<T*>(self)->[:Member:](std::forward<A>(args)...);
+}
+```
+
+The whole table for one stored type is a single braced initialiser over an index sequence:
+
+```cpp
+return table<I>{entry_for<I, T, K>()...};
+```
+
+The table sits in one static `vtable` per stored type, with the copy, move and destroy functions. So a value is a 24-byte buffer and one pointer, like the hand-written one. The buffer holds the object, or a pointer to it when it does not fit. A union of the two would have rounded the buffer up to 32 bytes and the value to 48. I measured that before changing it.
+
+<GodboltEmbed id="Gz3c5Yb91" gccOnly gccLabel="GCC 16.2" title="Type erasure generated by reflection from a plain interface struct" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection -O1 · runs live" />
+
+```text
+circle square circle total area 22.28
+inline: circle 1, square 0; sizeof(drawable) 32
+without the forwarding lines: area 12.57
+```
+
+The first two lines match the hand-written version. The clang-p2996 fork with libc++ prints the same three lines, and GCC 16.2 with AddressSanitizer and UBSan reports nothing.
+
+## The call syntax C++26 leaves you with
+
+Reflection can define a class's data members. It cannot add a member function to a class. So the generated value has no `draw`, and a call names the slot by reflection:
+
+```cpp
+any_drawable plain{Circle{.radius = kRadius}};
+plain.call<^^drawable_interface::scale>(kDouble);
+double a = plain.call<^^drawable_interface::area>();
+```
+
+A call to `plain.draw(out)` fails on GCC 16.2 with `has no member named 'draw'`. Code injection is a separate proposal, [P3294 "Code Injection with Token Sequences"](https://wg21.link/p3294), and the committee's [paper tracker](https://github.com/cplusplus/papers/issues/1946) labels it for C++29.
+
+The workaround is one line per member, in a struct that derives from the generated value:
+
+```cpp
+struct drawable : any_drawable {
+  using any_drawable::any_drawable;
+  void draw(std::string& out) const { call<^^drawable_interface::draw>(out); }
+  double area() const { return call<^^drawable_interface::area>(); }
+  void scale(double factor) { call<^^drawable_interface::scale>(factor); }
+};
+```
+
+That is one place per member instead of three, and each line is checked against the interface when it is compiled.
+
+## What the constraints catch
+
+The example states each rule as a `static_assert` on a concept, and I quoted the errors from copies of the file with the call added:
+
+| code | GCC 16.2 |
+|---|---|
+| `any_drawable label{Label{}}`, where `Label` has no `scale` | `no matching function for call to 'erase::value<drawable_interface>::value(...)'` |
+| `scale` through a `const any_drawable&` | `no matching function for call to '...call<^^drawable_interface::scale>(const double&) const'` |
+| a `scale(int, int)` instead of `scale(double)` | `no matching function for call to 'Bad::scale(double)'`, from inside the thunk |
+
+The constructor checks that every slot has a member of the same name. The `call` member uses deducing this, and its constraint reads `std::meta::is_const(Slot)`: a non-const slot needs a non-const value. A wrong signature is not checked up front. The thunk fails to compile, and the error points there.
+
+## Where it stops
+
+The table names each entry after its slot, so two overloads of one name would collide. Per-slot `noexcept` and reference qualifiers are not carried over. Both are fixable with more reflection, but they are not in the example.
+
+Against the hand-written version, the trade is clear. The table, the thunks and the copy functions are generated, and they follow the interface struct when it changes. The names still have to be written once, until C++ can inject a member function.
+
+The sources and outputs are in [`posts/148-type-erasure-by-reflection`](https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/148-type-erasure-by-reflection). The runs are from Compiler Explorer on 2026-11-28.
