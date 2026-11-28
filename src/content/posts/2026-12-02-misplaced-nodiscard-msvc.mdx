@@ -1,0 +1,88 @@
+---
+title: "MSVC ignores a [[nodiscard]] written after static, and /W4 says nothing"
+slug: "misplaced-nodiscard-msvc"
+pubDate: 2026-12-02
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [news, msvc, attributes, safety]
+summary: "static [[nodiscard]] int f() compiles on MSVC at /W4 with no diagnostic, and a discarded call goes unreported. On Compiler Explorer, four MSVC builds from 19.30 to 19.51 do this for all eight keywords a reader listed. GCC and Clang reject the form. /we5240 turns it into an error."
+draft: false
+relatedPosts: [msvc-14-52-rc-cpp23-complete, cpp26-string-literals]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+Write `static [[nodiscard]] int f()` and MSVC compiles it at warning level 4 without a word. The attribute is dropped, so a call that throws the result away is not reported either. I ran the form on four MSVC builds on Compiler Explorer, from 19.30 to 19.51, and all four stayed silent at `/W4`.
+
+## In short
+
+- Giovanni Dicanio [hit this](https://giodicanio.com/2026/10/12/where-to-put-nodiscard-a-silent-trap-with-msvc/) on Visual Studio 2022 at `/W4`. The compiler, in their words, "gave me a false sense of security".
+- A reader, Jiří Havel, listed eight keywords that do the same. My runs confirm all eight on MSVC.
+- GCC 16.2 and Clang reject the misplaced form, with one exception: GCC only warns for an `explicit` constructor.
+- MSVC has a warning for it, C5240, but it is off at `/W4`. The option `/we5240` makes it an error on every build I tried from 19.28 on.
+
+## The declaration and what each compiler does
+
+The case from Dicanio's post, with the result discarded:
+
+```cpp
+static [[nodiscard]] int get_something() { return 0; }
+
+int main() {
+    get_something();   // no C4834 on MSVC: the attribute never attached
+    return 0;
+}
+```
+
+GCC 16.2 stops at the declaration with `standard attributes in middle of decl-specifiers`. Clang trunk says `an attribute list cannot appear here`, also with `-fms-extensions -fms-compatibility`. MSVC 19.51 at `/std:c++20 /W4` builds it and runs it, with an empty compiler output:
+
+<GodboltEmbed id="5GG1fYzxo" compilerLabel="MSVC 19.51" title="static [[nodiscard]] compiles silently at /W4" gcc_subtitle="x64 msvc v19.51 · /std:c++20 /W4 · runs live" />
+
+Move the attribute to the front, as in `[[nodiscard]] static int`, and every compiler reports the discarded call. MSVC prints warning C4834, "discarding return value of function with [[nodiscard]] attribute".
+
+## Eight keywords, nine declarations
+
+Jiří Havel's [comment](https://giodicanio.com/2026/10/12/where-to-put-nodiscard-a-silent-trap-with-msvc/) on the post says "Any keyword before the nodiscard silences it". They named eight. I wrote one declaration per keyword, plus a static member function, each with one discarded call:
+
+| attribute after | MSVC 19.30 to 19.51, `/W4` | MSVC, `/we5240` | GCC 16.2 | Clang 22.1 and trunk |
+|---|---|---|---|---|
+| `static` (free and member) | silent | error C5240 | error | error |
+| `inline` | silent | error C5240 | error | error |
+| `constexpr` | silent | error C5240 | error | error |
+| `virtual` | silent | error C5240 | error | error |
+| `friend` | silent | error C5240 | error | error |
+| `explicit` (constructor) | silent | error C5240 | warning, builds | error |
+| `__forceinline` | silent | error C5240 | n/a | n/a |
+| `__declspec(noinline)` | silent | error C5240 | n/a | n/a |
+
+"Silent" means exit 0 and no diagnostic, neither for the attribute nor for the discarded call. The MSVC builds were 19.30, 19.44, 19.50 and 19.51. Compiler Explorer's "latest" is the same build as 19.51 and gave the same results. GCC trunk matched GCC 16.2 in every row.
+
+The `explicit` row is the one surprise. GCC 16.2 accepts that constructor with `warning: attribute ignored [-Wattributes]` and the program builds. Clang rejects it with `'nodiscard' attribute cannot be applied to types`.
+
+## The warning exists but is off
+
+With `/Wall` or `/we5240` the same MSVC builds say what happened:
+
+```text
+<source>(9): error C5240: 'nodiscard': attribute is ignored in this syntactic position
+```
+
+C5240 is present in 19.28 and 19.29, which Compiler Explorer labels VS16.9 and VS16.11, and in every later build I ran. In 19.25 even `/we5240` reports nothing.
+
+In a later comment Dicanio writes that VS 2026 at `/W4` now emits C5240. The two VS 2026 compilers on Compiler Explorer, 19.50 and 19.51, did not. They warned only with `/Wall`, `/w45240` or `/we5240`. Their message names `'nodiscard'`, where the author quotes `'[[nodiscard]]'`. Their build may be newer than 19.51, the newest MSVC on Compiler Explorer (<PostLink slug="msvc-14-52-rc-cpp23-complete">the 14.52 post</PostLink> covers what comes next). I could not run it.
+
+## What to do
+
+- **Write attributes first.** Put `[[nodiscard]]` before every keyword of the declaration, `static` included. The example below builds on GCC, Clang and MSVC with a discarded result made an error, and exits 0.
+- **Make C5240 an error on MSVC.** Add `/we5240`. It caught all nine declarations on 19.30 and 19.51, and it works on every build from 19.28 on.
+- **Build the code with GCC or Clang too.** Both reject the misplaced form outright, except GCC for an `explicit` constructor.
+- **Grep the tree once.** The pattern in the examples README matched all nine misplaced declarations and none of the correct ones. It is a heuristic: it misses a declaration split across lines.
+
+I found no clang-tidy check for the attribute position, so I name none.
+
+<GodboltEmbed id="r3GrrT17G" gccOnly gccLabel="GCC 16.2" title="[[nodiscard]] first, for seven declaration forms" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -Wall -Wextra -Werror=unused-result · runs live" />
+
+The sources, the probes and every output are in [`posts/144-nodiscard-position`](https://github.com/wrocpp/cpp26-reflection-examples/tree/b1ec641e3f93bb60433b727f2d2e963f5f0fa253/posts/144-nodiscard-position). All runs were made on Compiler Explorer on 2026-11-28. Dicanio's post was reposted on [isocpp.org](https://isocpp.org/blog/2026/11/where-to-put-nodiscard-a-silent-trap-with-msvc-giovanni-dicanio) on 17 November.
