@@ -1,0 +1,100 @@
+---
+title: "The enumerator can carry its SQL name, and the build says which one is missing"
+slug: "enumerator-carries-its-sql-name"
+pubDate: 2026-12-27
+author: filip-sajdak
+language: en
+kind: short
+audience: working-cpp
+tags: [cpp, cpp26, reflection, annotations, nttp, templates, enum, gcc]
+summary: "Leonardo Rossi's post maps an enum to SQL column names with a chain of if constexpr and a static_assert, and reads a member through a function pointer template argument. I ran both. The getter is one movsd on GCC 16.2, Clang 22.1 and MSVC. With C++26 annotations the name moves onto the enumerator, and a static_assert with a message names the enumerator that has none. Clang's Bloomberg fork lacks the library function this needs."
+draft: false
+relatedPosts: [enum-to-string, enum-aliases, annotations, turn-embedded-sql-schema-into-row-types, ctre-cnttp]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+Leonardo Rossi wrote a LinkedIn post on values as template parameters.
+Two of its examples are worth running. One reads a member through a function pointer that is a template argument. The other maps an enum to SQL column names with a build error for every new enumerator. I ran both on 2026-11-17, and then moved the names onto the enumerators with C++26 annotations.
+
+## In short
+
+- Their claim about the getter holds in my run. The template version is one `movsd` plus `ret` on GCC 16.2, Clang 22.1 and MSVC.
+- The same getter as a run-time member pointer needs an add, a test, a branch and an indirect jump on GCC and Clang.
+- Their chain of `if constexpr` works in C++17, and the `static_assert` in its last branch does stop the build for a new enumerator. It costs one line per enumerator in the chain, besides the enum.
+- With an annotation the name sits on the enumerator and the chain disappears. A `static_assert` with a message names the enumerator that lacks one, and the one that repeats a name.
+- A class used as a template argument needs public members. Both compilers say so in the error.
+
+## The getter is one instruction
+
+Their example takes the member function as a template argument:
+
+```cpp
+template <auto Getter>
+double readFrom(const Sensor& sensor) { return (sensor.*Getter)(); }
+```
+
+They write that the read becomes a single instruction on GCC, Clang and MSVC. I compiled two functions. `viaTemplate` calls `readFrom<&Sensor::intensity>`. `viaPointer` gets the member pointer as an argument.
+
+| compiler, options | `viaTemplate` | `viaPointer` |
+|---|---|---|
+| GCC 16.2, `-std=c++26 -O2` | `movsd xmm0, [rdi+8]`, `ret` | `add`, `test`, `je`, two loads, `jmp` |
+| Clang 22.1, `-std=c++26 -O2` | `movsd xmm0, [rdi+8]`, `ret` | `add`, `test`, `je`, two loads, `jmp` |
+| MSVC, `/std:c++latest /O2` | `movsd xmm0, [rcx+8]`, `ret` | `rex_jmp rdx` |
+
+The pointer is part of the type, so the compiler knows which member function it calls. `Sensor::intensity` is defined in the class, so its body is visible. For a getter defined in another translation unit I have no listing.
+
+<GodboltEmbed id="onM8oG1jv" gccOnly gccLabel="GCC 16.2" title="A getter as a template argument against a run-time member pointer" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O2 · assembly view" />
+
+## The chain, and what it guards
+
+Their `sqlName<Col>()` is a chain of `if constexpr (Col == Column::Name)` branches. The last branch holds `static_assert(Col == Column::Wavelength, "Map the new Column here.")`. A fourth enumerator reaches that branch and fails.
+
+I built the same shape in C++17 with three enumerators. It runs on GCC 16.2 and Clang 22.1 and prints `name wavelength_nm intensity`. With a fourth enumerator `Raw` and a use of `sqlName<Column::Raw>()`, both compilers stop. GCC 16.2 says `static assertion failed: Map the new Column here.` Clang 22.1 says `static assertion failed due to requirement '(Column)3 == Column::Intensity': Map the new Column here.`
+
+So the guard works. What it leaves is a second list. Every enumerator appears in the enum and again in the chain, and the guard fires only when someone instantiates the new one.
+
+<GodboltEmbed id="8ccohzqsP" gccOnly gccLabel="GCC 16.2" title="The C++17 chain of if constexpr with its static_assert" gcc_subtitle="x86-64 GCC 16.2 · -std=c++17 · runs live" />
+
+## The name on the enumerator
+
+C++26 annotations let the enumerator hold its own name:
+
+```cpp
+enum class Column {
+  Name [[=sql{"name"}]],
+  Wavelength [[=sql{"wavelength_nm"}]],
+  Intensity [[=sql{"intensity"}]],
+};
+```
+
+Here `sql` is a small structural type that holds a character array. A `string_view` is not structural. <PostLink slug="annotations">The annotations post</PostLink> explains why, and <PostLink slug="enum-to-string">the enum post</PostLink> shows the lookup by `enumerators_of`. A `consteval` function finds the annotation with `annotations_of_with_type`. Then `of_value<Column::Wavelength>` is `"wavelength_nm"`. There is no chain, so a new enumerator adds one line, in the enum.
+
+An enumerator with no annotation is the case their `static_assert` handled. In my first version the lookup indexed an empty list. GCC 16.2 answered with `call to non-'constexpr' function 'void std::__glibcxx_assert_fail(...)'` at `stl_vector.h:1253`. That names a library header, not the enumerator.
+
+A check over all the enumerators reads better. `problem<E>()` is `consteval` and returns a sentence, empty when all is well:
+
+```cpp
+static_assert(sqlnames::problem<Column>().empty(), sqlnames::problem<Column>());
+```
+
+C++26 allows a constant expression as the message. For a `Draft` enum whose last enumerator has no annotation, GCC 16.2 prints `static assertion failed: Draft::Raw has no [[=sql{...}]] annotation`. For two enumerators with the SQL name `x` it prints `static assertion failed: Twice::B repeats the SQL name 'x'`. Without the message the same assertion prints only `static assertion failed`.
+
+A value that is no enumerator, such as `static_cast<Column>(7)`, reaches a `throw` in the lookup. GCC 16.2 prints `uncaught exception '(const char*)"this value is not an enumerator"'`. A reflection avoids the question: `of_enumerator<^^Column::Intensity>` takes the enumerator itself, so no value can fail to match. That works because `std::meta::info` is a structural type and can be a template argument. <PostLink slug="enum-aliases">The aliases post</PostLink> covers the other benefit, that two enumerators with one value keep their own names.
+
+<GodboltEmbed id="1YTaar6aW" gccOnly gccLabel="GCC 16.2" title="The SQL name as an annotation, with a check that names the culprit" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -freflection · runs live" />
+
+## Structural types
+
+They also note that the argument must be a structural type, with all members public. I tried a class with one private member as a template parameter. GCC 16.2 says `'Pt' is not a valid type for a template non-type parameter because it is not structural`, with the note `'Pt::v_' is not public`. Clang 22.1 says `type 'Pt' of non-type template parameter is not a structural type`.
+
+The example wraps the test in a concept over a requires-expression, so the program compiles and prints which of two classes qualifies. Their post says Qt's `QFlags` cannot be used this way. I did not open the Qt sources, so that remark is theirs.
+
+<GodboltEmbed id="bMeW9W3v3" gccOnly gccLabel="GCC 16.2" title="Public members make a class usable as a template argument" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 · runs live" />
+
+## What I did not run
+
+- The annotation version builds on GCC 16.2 only. Clang's Bloomberg reflection fork (`clang_bb_p2996`, 2026-11-03 build) has no `annotations_of_with_type` and rejects the file.
+- I did not build the assembly example on other targets, and timed nothing.
+- The code is at [the examples repository](https://github.com/wrocpp/cpp26-reflection-examples/tree/62e503dec2697372ab9fc22d8ffa3916b9444731/posts/137-values-as-template-parameters).
