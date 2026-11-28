@@ -1,0 +1,110 @@
+---
+title: "Sean Parent's type erasure by hand in C++26, with a 24-byte buffer and deducing this"
+slug: "type-erasure-by-hand-cpp26"
+pubDate: 2027-01-15
+author: filip-sajdak
+language: en
+kind: short
+series: pimpl-type-erasure
+series_order: 3
+audience: working-cpp
+tags: [cpp, cpp23, cpp26, type-erasure, value-semantics, deducing-this, small-buffer, gcc, clang]
+summary: "A drawable value that holds any shape with draw, area and scale, copies like a value and needs no base class: Sean Parent's concept and model, a 24-byte buffer, and one deducing-this accessor. On GCC 16.2 it is 32 bytes, keeps circles inline, and copies a row of three shapes with three allocations. Every member is still written three times."
+draft: false
+relatedPosts: [which-std-type-can-be-a-buffer, std-polymorphic-instead-of-clone, deducing-this-clone-without-covariance]
+---
+
+import GodboltEmbed from '../../components/GodboltEmbed.astro';
+import PostLink from '../../components/PostLink.astro';
+
+A drawable value holds any shape that can draw itself, report its area and scale. It copies like a value, the shapes derive from nothing, and on GCC 16.2 it is 32 bytes. A circle lives in a 24-byte buffer inside it, and a square with a vector goes to the heap. Copying a row of three shapes costs three allocations. The design is Sean Parent's, from his talk [Better Code: Runtime Polymorphism](https://www.youtube.com/watch?v=QGcVXgEVMJg). This post writes it by hand with two C++23 features that make it shorter, deducing this and `std::forward_like`. The next one lets reflection write most of it.
+
+## In short
+
+- The shapes are plain structs with no base class and no virtual functions. The polymorphism lives inside `drawable`.
+- A private interface does the dispatch. A class template implements it for any stored type.
+- A model of up to 24 bytes lives in a buffer inside the `drawable`; a bigger one goes to the heap. Circles cost no allocation.
+- One accessor written with deducing this serves const and non-const callers, and carries the constness of the `drawable` to the model.
+- Each member of the interface is still written three times by hand.
+
+## The shapes know nothing
+
+```cpp
+struct Circle {
+  double radius;
+  void draw(std::string& out) const { out += "circle "; }
+  double area() const { return std::numbers::pi * radius * radius; }
+  void scale(double factor) { radius *= factor; }
+};
+```
+
+`Square` is the same with a side and a `std::vector<double>` history. The `drawable` accepts any type that satisfies a concept with those three members, and nothing else.
+
+## concept_t and model
+
+Inside `drawable` sits a private abstract class with one virtual function per member, plus the functions that copy and move a model. A class template implements it for each stored type:
+
+```cpp
+template <class T>
+struct model final : concept_t {
+  T value;
+  void draw(std::string& out) const override { value.draw(out); }
+  double area() const override { return value.area(); }
+  void scale(double factor) override { value.scale(factor); }
+  concept_t* copy_into(std::byte* buffer) const override { return make<T>(value, buffer); }
+  // move_into and is_inline are similar
+};
+```
+
+The `drawable` holds a `concept_t*` that points either into its own buffer or to the heap. Its public members forward through that pointer.
+
+## A 24-byte buffer
+
+A model goes in the buffer when it fits in 24 bytes, needs no more alignment than `std::max_align_t`, and moves without throwing. `model<Circle>` is a vtable pointer and a `double`, 16 bytes. `model<Square>` also holds a vector and goes to the heap. The program prints:
+
+```text
+circle square circle total area 22.28
+inline: circle 1, square 0; sizeof(drawable) 32
+allocations to copy the row of three: 3
+```
+
+The three allocations are the vector of drawables, the `Square` model, and the `Square`'s history. The two circles cost nothing. GCC trunk and Clang 22.1 print the same.
+
+<GodboltEmbed id="13xaWax5K" gccOnly gccLabel="GCC 16.2" title="A drawable value with a 24-byte buffer and no base class in the shapes" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O1 · runs live" />
+
+The standard library makes the same trade in its own wrappers. Here is how big a callable libstdc++ 16.2 keeps inline:
+
+| wrapper | sizeof | kept inline |
+|---|---|---|
+| `std::function<void()>` | 32 | 16 bytes |
+| `std::any` | 16 | 8 bytes |
+| `std::move_only_function<void()>` | 40 | 24 bytes |
+| `std::copyable_function<void()>` | 40 | 24 bytes |
+
+A 32-byte callable allocates in all four. The standard fixes none of these sizes. libc++ trunk has neither `move_only_function` nor `copyable_function`.
+
+<GodboltEmbed id="K4GjeqdYE" gccOnly gccLabel="GCC 16.2" title="What the standard wrappers keep inline in libstdc++ 16.2" gcc_subtitle="x86-64 GCC 16.2 · -std=c++26 -O1 · runs live" />
+
+## One accessor for const and non-const
+
+A pointer member does not pass constness on. In a `const` member function the pointer is const, but the `concept_t` it points to is not. Deducing this fixes that with one accessor:
+
+```cpp
+template <class Self>
+auto&& self(this Self&& me) {
+  return std::forward_like<Self>(*me.object_);
+}
+
+void draw(std::string& out) const { self().draw(out); }
+void scale(double factor) { self().scale(factor); }
+```
+
+Called from `draw`, which is const, it returns a `const concept_t&`, so only const functions of the model are reachable. Called from `scale` it returns a mutable reference. Before C++23 this took two overloads. The <PostLink slug="deducing-this-clone-without-covariance">deducing this clone post</PostLink> uses the same feature for a different job.
+
+One detail cost me a build. The accessor has a deduced return type, so it must be defined above the members that call it. Otherwise GCC 16.2 says `invalid use of 'auto'`, and Clang says the function `cannot be used before it is defined`.
+
+## Three places per member
+
+Count where `scale` appears. It is a pure virtual function in `concept_t` and an override in `model<T>`. It is also a forwarding member in `drawable`. Every member of the interface costs those three lines, and they must agree. That is the part reflection can take over. The next post builds the table from a plain struct that declares the members once.
+
+The sources and outputs are in [`posts/147-type-erasure-by-hand-cpp26`](https://github.com/wrocpp/cpp26-reflection-examples/tree/main/posts/147-type-erasure-by-hand-cpp26). The runs are from Compiler Explorer on 2026-11-28.
