@@ -1,0 +1,166 @@
+---
+title: "C++ Safety State of the Union: December 2026"
+slug: "cpp-safety-state-of-the-union-december-2026"
+pubDate: 2026-12-07
+author: filip-sajdak
+language: en
+kind: flagship
+audience: working-cpp
+tags: [news, safety, roundup, cpp26]
+summary: "After Búzios, contracts stay in the C++26 draft and a second ballot is planned. Two libstdc++ CVEs have fixes on the GCC 16 branch and in no point release. GCC 16.2 zeroed an unset int in C++26 mode, Clang did not. The CRA's next date binds Member States, not manufacturers. A 10-line checklist."
+draft: false
+relatedPosts: [cpp-safety-state-of-the-union-may-2026, buzios-2026-trip-report, hardened-stdlib-turn-it-on, vector-bool-size-wraps-to-zero]
+---
+
+import PostLink from '../../components/PostLink.astro';
+
+Two libstdc++ CVEs from October and November have fixes on the GCC 16 release branch, and no GCC point release carries either one. That is the most practical news of the last six weeks. Contracts stay in the C++26 draft, and nobody has reported what happened to profiles. The next EU Cyber Resilience Act date is an obligation on Member States. This sequel to the <PostLink slug="cpp-safety-state-of-the-union-may-2026">May essay</PostLink> links our posts instead of repeating them, and ends with a 10-line checklist.
+
+## In short
+
+- C++26 is still a draft. Contracts stay in it, and a second ballot is planned with no start date.
+- No one has reported an outcome for profiles or SG23 from Búzios.
+- CVE-2026-125709 (a file stream write) and CVE-2026-115455 (a bitset read from a wide stream) are fixed on the GCC 16 branch. GCC 16.2, the newest release, has neither fix.
+- On 11 December 2026 Member States must have notified enough conformity assessment bodies. Manufacturers face full application on 11 December 2027.
+- MISRA C++:2023 got a corrigendum with no new guidelines. Your checker's report may still change.
+
+## The standard after Búzios
+
+The committee met in Búzios from 16 to 21 November. Our <PostLink slug="buzios-2026-trip-report">four-post series</PostLink> covers the motions. The short version, from the two reports I read:
+
+| question | answer | source |
+|---|---|---|
+| Are contracts still in C++26? | yes; a removal poll failed 41 for, 90 against, 20 abstaining | Mateusz Pusz |
+| Was the revised draft approved for a new ballot? | yes, 111 for, 9 against, 8 abstaining | Pusz and Herb Sutter |
+| How long is the second ballot? | eight weeks, per Pusz | Pusz |
+| When does it start? | no date given | none found |
+| What happened to profiles and SG23? | no outcome reported | none found |
+
+[Sutter's trip report](https://herbsutter.com/2026/11/21/c26-is-done-again-trip-report-november-2026-iso-c-standards-meeting-buzios-brazil/) calls the plan "to reissue the updated C++26 document for a second approval ballot". [Pusz's report](https://mpusz.github.io/mp-units/HEAD/blog/2026/11/24/report-from-the-b%C3%BAzios-2026-iso-c-committee-meeting/) gives the vote counts. <PostLink slug="pusz-buzios-report-contracts-poll">Our short on his report</PostLink> sets them side by side.
+
+The committee also adopted P4451R2, a label that makes one contract assertion always terminate on violation. GCC 16.2 rejects its syntax, and <PostLink slug="buzios-always-enforced-contract-label">the label post</PostLink> ran it on two branch builds.
+
+I searched both reports and the [C++ Alliance report](https://cppalliance.org/newsmedia/news/b%C3%BAzios-trip-report-what-the-c26-ballot-taught-us/) for profiles, SG23 and P3100 on 28 November. Sutter and Pusz do not mention profiles. The Alliance names profiles only as background to its ballot vote. No minutes or post-meeting mailing were public. So I cannot say whether profiles moved, stalled or were not discussed.
+
+## What to switch on today
+
+Each row is a flag or a macro you can add to a build this week. Each links the post that ran it.
+
+| practice | compiler or library | flag or macro | our post |
+|---|---|---|---|
+| bounds checks in the optimised build | libstdc++ | `-D_GLIBCXX_ASSERTIONS` | <PostLink slug="hardened-stdlib-turn-it-on">hardened stdlib</PostLink> |
+| the same for libc++ | libc++ | `_LIBCPP_HARDENING_MODE` set to `_LIBCPP_HARDENING_MODE_FAST` | <PostLink slug="hardened-stdlib-turn-it-on">hardened stdlib</PostLink> |
+| the same for the MSVC STL | MSVC | `_MSVC_STL_HARDENING=1` | <PostLink slug="msvc-stl-hardening-cold-path-14-53">MSVC 14.52 and 14.53</PostLink> |
+| a misplaced attribute as an error | MSVC | `/we5240` | <PostLink slug="misplaced-nodiscard-msvc">misplaced nodiscard</PostLink> |
+| lifetime warnings | Clang 23.1 | `-Wlifetime-safety` | <PostLink slug="clang-lifetime-safety-warnings">6 of 7 dangling cases</PostLink> |
+| contracts that run in release | GCC 16.2 | `-fcontracts`; `-DNDEBUG` does not stop them | <PostLink slug="ndebug-does-not-disable-contracts">NDEBUG and contracts</PostLink> |
+| initialised automatic variables | GCC and Clang | `-ftrivial-auto-var-init=zero` or `=pattern` | this post, next section |
+| views of temporaries | clang-tidy | `bugprone-dangling-handle` with your view class added | <PostLink slug="tidy-agent-view-of-temporary">7 of 13 views</PostLink> |
+
+Three notes on the rows. The hardening post found that GCC checks an out-of-bounds index at -O0 and stops at -O2 without the macro. So the macro belongs in the release configuration. The Clang documentation suggests `-Wlifetime-safety-permissive` for a first rollout, as the lifetime post quotes. The MSVC post adds that the 14.53 preview lists a fixed ticket about cold-pathing the hardening checks.
+
+### What GCC and Clang do with an unset int
+
+I checked the auto-init flag spelling and behaviour on Compiler Explorer on 28 November. The program writes 12345 into a stack slot, then reads an uninitialised `int` from a second function:
+
+```cpp
+#include <cstdio>
+[[gnu::noinline]] int dirty() { volatile int junk = 12345; return junk; }
+[[gnu::noinline]] int read_unset() { int value; return value; }
+int main() { dirty(); std::printf("%d\n", read_unset()); }
+```
+
+Every build used -O0 and exited 0. The compiler ids are Compiler Explorer's.
+
+| options | `g162` (GCC 16.2) | `clang2210` (Clang 22.1) | `clang_trunk` |
+|---|---|---|---|
+| `-std=c++23` | 12345 | 12345 | 12345 |
+| `-std=c++26` | 0 | 12345 | 12345 |
+| `-std=c++26 -ftrivial-auto-var-init=uninitialized` | 12345 | 12345 | 12345 |
+| `-std=c++23 -ftrivial-auto-var-init=zero` | 0 | 0 | not run |
+| `-std=c++23 -ftrivial-auto-var-init=pattern` | -16843010 | -1431655766 | not run |
+
+So GCC 16.2 zeroed the variable in C++26 mode without a flag, and both Clang builds did not. Both compilers accept the same spelling of the flag. In C++26 such a read is erroneous behaviour (P2795R5), not undefined. The <PostLink slug="default-or-braces-constructor-initialisation">default-or-braces post</PostLink> measured the same difference on GCC 16.2.
+
+## Two libstdc++ CVEs to know
+
+Two CVEs against libstdc++ appeared in Red Hat's tracker in October and November. Both are out-of-bounds writes (CWE-787), and both are rated Moderate by Red Hat.
+
+| | CVE-2026-125709 | CVE-2026-115455 |
+|---|---|---|
+| what fails | a byte-by-byte file stream write that fails still appends to the buffer | extracting a `bitset` from a wide-character stream overflows the stack |
+| Red Hat CVSS 3.1 | 4.2 | 6.5 |
+| Red Hat bug filed | 2569390, 10 November | 2562933, 28 October |
+| upstream fix | PR118099, master 5 November, GCC 16 branch 6 November | PR124370, master 2 October, GCC 16, 15 and 14 branches 14 to 27 October |
+| Debian on 28 November | gcc-11 to gcc-16 unfixed, "Minor issue" | gcc-13, 14 and 15 fixed in sid; gcc-16 unfixed; gcc-11 and 12 not affected |
+
+### The file stream write
+
+The [Red Hat page for CVE-2026-125709](https://access.redhat.com/security/cve/CVE-2026-125709) describes a write that fails "during file stream processing". The [Bugzilla entry](https://bugzilla.redhat.com/show_bug.cgi?id=2569390) adds that a typical `stream << "foo"` write is not affected. Its trigger is repeated single-character writes after an error such as a full disk.
+
+Neither tracker links a fix. On 28 November I searched the GCC mirror's history of `fstream.tcc`. Jonathan Wakely's commit [2d296e9f024e](https://github.com/gcc-mirror/gcc/commit/2d296e9f024edbb49cad1f3ebb5ae34c71ea5f7a), "Fix buffer overflows in basic_filebuf::overflow", matches the description. Its message says each failure left the put pointer past the end, so "successive calls to overflow will write further past the end". The GCC 16 branch has it as [68b1b9056c70](https://github.com/gcc-mirror/gcc/commit/68b1b9056c70). I found no commit on the 15 or 14 branch. The link between this commit and the CVE is my reading; no source states it.
+
+The commit's test writes with `sputc` to `/dev/full` until a write fails, then writes three more times. The practice I take from it, as an inference: once a character write fails, stop writing to that stream and check its state.
+
+### The bitset read from a wide stream
+
+The [Red Hat page for CVE-2026-115455](https://access.redhat.com/security/cve/CVE-2026-115455) links the upstream fix, [5d419c69ce2e](https://github.com/gcc-mirror/gcc/commit/5d419c69ce2e6b86d7da75f18736904885674219). Its message says the stack buffer "didn't account for the size or alignment of wide characters". The test reads a `bitset<10>` from a `wistringstream` holding 14 digits. Red Hat errata for RHEL 8, 9 and 10 were added to the [Bugzilla entry](https://bugzilla.redhat.com/show_bug.cgi?id=2562933) on 11 and 12 November.
+
+The practice, again my inference: on an unfixed library, do not read untrusted wide input straight into a `bitset`. Read it into a string, check its length and characters, then construct the bitset from the string.
+
+### No point release has either fix
+
+I checked the release tags in the GCC mirror on 28 November. The newest were 16.2.0 (7 August), 15.3.0 (12 June) and 14.4.0 (26 June). All three are older than both fixes. The same holds for CVE-2026-114691, the <PostLink slug="vector-bool-size-wraps-to-zero">vector of SIZE_MAX bits</PostLink> from November. So a GCC you download from a release today has none of the three fixes. A distribution package may have them, as the RHEL errata show.
+
+## Regulation: the next CRA date binds Member States
+
+The Commission's [CRA implementation page](https://digital-strategy.ec.europa.eu/en/factpages/cyber-resilience-act-implementation), last updated 27 July 2026, lists three dates that matter here.
+
+| date | what the page says | who it binds |
+|---|---|---|
+| 11 September 2026 | "Entry into application of reporting obligations" | manufacturers, already |
+| 11 December 2026 | "Notification of sufficient Conformity Assessment Bodies across Member States" | Member States |
+| 11 December 2027 | "Full application of the Cyber Resilience Act" | manufacturers |
+
+The 11 December 2026 date is a deadline for Member States, not for manufacturers. A team shipping software in the EU gains no new obligation on that day. Reporting of actively exploited vulnerabilities has applied since 11 September, and <PostLink slug="cra-reporting-live-qt-declaration">the CRA reporting post</PostLink> quotes the 24 hour and 72 hour deadlines. None of this is legal advice.
+
+In the US, I found nothing new on memory safety since October. On 28 November the [CISA newsroom](https://www.cisa.gov/news-events/news) listed items up to 9 November, none on memory safety. The NSA press page refused my request, and a web search found nothing from the NSA or ONCD after October.
+
+## MISRA C++:2023 got its first corrigendum
+
+Julia Probst wrote on the [Qt quality-assurance blog](https://www.qt.io/quality-assurance/blog/misra-c2023-tc1-2026-update) on 7 September 2026 that MISRA had published TC1:2026. Qt sells a MISRA checker, Axivion, and the post says so. Per the Working Group's foreword as she relays it, TC1 adds no new guidelines and is "fully equivalent" to MISRA C++:2023.
+
+The changes she names:
+
+- a new term, "converting transfer", replaces "assignment" where the old text clashed with the C++ standard, in over a dozen rules;
+- a rule that had ruled out CRTP by accident is loosened;
+- coverage is added for `fwide` and the temporary-buffer functions.
+
+She also writes that "tool reporting may shift". So if your project claims MISRA compliance, rerun the checker after it adopts TC1 and diff the reports.
+
+## A checklist for this week
+
+| # | action | post |
+|---|---|---|
+| 1 | define the hardening macro of your standard library in the release build | <PostLink slug="hardened-stdlib-turn-it-on">hardened stdlib</PostLink> |
+| 2 | on MSVC, define `_MSVC_STL_HARDENING=1` and check your hottest indexed loops | <PostLink slug="msvc-stl-hardening-cold-path-14-53">MSVC 14.52 and 14.53</PostLink> |
+| 3 | on MSVC, add `/we5240` | <PostLink slug="misplaced-nodiscard-msvc">misplaced nodiscard</PostLink> |
+| 4 | add a Clang job with `-Wlifetime-safety-permissive` | <PostLink slug="clang-lifetime-safety-warnings">Clang lifetime warnings</PostLink> |
+| 5 | on Clang, pass `-ftrivial-auto-var-init=pattern` in test builds | this post |
+| 6 | build with `-fcontracts` and decide the evaluation semantic on purpose | <PostLink slug="ndebug-does-not-disable-contracts">NDEBUG and contracts</PostLink> |
+| 7 | check an untrusted count against `max_size()` before building a container | <PostLink slug="vector-bool-size-wraps-to-zero">vector of SIZE_MAX bits</PostLink> |
+| 8 | stop writing to a file stream after a failed write, and check its state | this post |
+| 9 | validate wide input as a string before it becomes a `bitset` | this post |
+| 10 | rerun your MISRA checker once it supports TC1:2026 | this post |
+
+The same settings will also be on a printable toolset page, "C++ safety settings to switch on today", which is still in review. A lambda that captures by reference and escapes is the subject of <PostLink slug="tidy-agent-escaping-ref-capture">the tidy-agent episode of 8 December</PostLink>.
+
+## What I did not verify
+
+- Any SG23 or EWG outcome for profiles. None was reported by 28 November.
+- That the PR118099 commits are the fix for CVE-2026-125709. The commit names no CVE, and GCC's Bugzilla refused my automated request.
+- Whether the PR118099 fix will reach the GCC 15 and 14 branches.
+- Either CVE on a compiler. I read the commits and their tests and ran nothing.
+- The start date of the second ballot. Pusz gives its length only.
+- NSA and ONCD publications. I searched the web; the NSA page refused my request.
+- MISRA's own foreword. I read Probst's summary of it, not the document.
