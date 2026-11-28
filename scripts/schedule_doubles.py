@@ -217,6 +217,10 @@ INTENTIONAL_DOUBLES: dict[str, dict] = {
     # in the 16:00Z slot, so a reader still has two days to submit.
     "2026-11-18": {"slug": "cpponline-2027-call-for-speakers", "hour": 16,
                    "why": "C++Online 2027 call for speakers closes 20 November, beside the api-contract-guard post"},
+    # News short on a misplaced [[nodiscard]] that MSVC ignores at /W4, beside
+    # the tidy-agent series post of the day.
+    "2026-12-02": {"slug": "misplaced-nodiscard-msvc", "hour": 16,
+                   "why": "safe-C++ news short beside the tidy-agent series post"},
     "2026-12-10": {"slug": "structured-binding-copies-in-range-for", "hour": 16,
                    "why": "structured-binding copies and reentrancy, from Adam Bienkunski's post, beside the first debugger post"},
     # The Buzios meeting ended on 21 November. Its coverage is four posts on
